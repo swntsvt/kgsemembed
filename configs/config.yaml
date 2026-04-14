@@ -3,6 +3,7 @@ defaults:
   - model: all-mpnet-base-v2
   - dataset: sample
   - verbalisation: v0
+  - candidates: char_ngram
   - optional local: runtime
   - _self_
 

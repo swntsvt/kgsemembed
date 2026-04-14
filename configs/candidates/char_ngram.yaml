@@ -1,0 +1,7 @@
+method: char_ngram
+n: 3
+metric: cosine
+top_k: 50
+strip_punctuation: true
+persist: false
+output_file: candidate_pairs.csv

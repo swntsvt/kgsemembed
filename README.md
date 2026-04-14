@@ -23,6 +23,7 @@ Hydra-based YAML config groups are used for reproducible runs:
 - `configs/model/*.yaml`
 - `configs/dataset/*.yaml`
 - `configs/verbalisation/*.yaml`
+- `configs/candidates/*.yaml`
 - `configs/experiment/*.yaml`
 
 ### Local-only runtime config
@@ -61,6 +62,26 @@ Label extraction priority:
 For this project phase, datasets are assumed to be exclusively English.
 Label extraction therefore prefers English (`@en`) literals and falls back to URI local-name when needed.
 
+## Candidate Input Pipeline (Issue #6)
+
+Character n-gram candidate generation is available for Stage-1 style filtering before dense retrieval.
+
+- deterministic preprocessing (lowercase, trim, whitespace normalize)
+- optional punctuation stripping
+- similarity metrics: `cosine`, `jaccard`
+- top-`k` candidates per source entity
+- deterministic tie-break: score desc, target URI asc
+- optional CSV persistence for downstream embedding evaluation
+
+Main candidate config keys:
+
+- `candidates.method` (`char_ngram`)
+- `candidates.n`
+- `candidates.metric` (`cosine|jaccard`)
+- `candidates.top_k`
+- `candidates.persist`
+- `candidates.output_file`
+
 ## Usage
 
 Base run:
@@ -73,15 +94,20 @@ Run with config-group overrides:
 python3.12 -m kgsemembed.pipeline.run_experiment model=all-minilm-l6-v2 dataset=sample verbalisation=v1
 ```
 
-Run with value overrides:
+Run with candidate overrides:
 ```bash
-python3.12 -m kgsemembed.pipeline.run_experiment model.device=mps experiment.seed=7 experiment.output_dir=outputs/dev
+python3.12 -m kgsemembed.pipeline.run_experiment candidates.n=2 candidates.metric=jaccard candidates.top_k=25
+```
+
+Persist candidate pairs:
+```bash
+python3.12 -m kgsemembed.pipeline.run_experiment candidates.persist=true experiment.output_dir=outputs/run1 candidates.output_file=candidates.csv
 ```
 
 ## Logging
 
 - Console + file logging
-- Includes resolved experiment/model/dataset/verbalisation at startup for traceability
+- Includes resolved experiment/model/dataset/verbalisation/candidate config at startup
 - Logs stored in `logs/`
 
 ## Testing
