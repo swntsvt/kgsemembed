@@ -1,0 +1,10 @@
+sentence-transformers
+transformers
+torch
+pandas
+numpy
+rdflib
+hydra-core
+pytest
+matplotlib
+seaborn
