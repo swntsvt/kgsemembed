@@ -1,0 +1,12 @@
+<?xml version="1.0"?>
+<rdf:RDF
+  xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+  xmlns:rdfs="http://www.w3.org/2000/01/rdf-schema#"
+  xmlns:ex="http://example.org/alignment/">
+
+  <rdf:Description rdf:about="http://example.org/alignment/Cell1">
+    <rdfs:label xml:lang="en">EntityA Alignment</rdfs:label>
+    <ex:entity1 rdf:resource="http://example.org/source/EntityA"/>
+    <ex:entity2 rdf:resource="http://example.org/target/EntityA_T"/>
+  </rdf:Description>
+</rdf:RDF>

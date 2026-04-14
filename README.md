@@ -37,6 +37,30 @@ cp configs/local/runtime.example.yaml configs/local/runtime.yaml
 
 `configs/local/runtime.yaml` is gitignored, while `runtime.example.yaml` is tracked.
 
+## Dataset Loader (Issue #5)
+
+The dataset loader supports OAEI-style graph inputs for:
+
+- source ontology graph
+- target ontology graph
+- alignment graph
+
+Supported formats:
+
+- RDF/XML (`.rdf`, `.xml`)
+- Turtle (`.ttl`)
+
+Label extraction priority:
+
+1. `rdfs:label`
+2. `skos:prefLabel`
+3. URI local-name fallback
+
+### English-only assumption
+
+For this project phase, datasets are assumed to be exclusively English.
+Label extraction therefore prefers English (`@en`) literals and falls back to URI local-name when needed.
+
 ## Usage
 
 Base run:

@@ -7,6 +7,8 @@ from pathlib import Path
 import hydra
 from omegaconf import DictConfig
 
+from kgsemembed.datasets import load_oaei_dataset
+from kgsemembed.utils.errors import DataError
 from kgsemembed.utils.logging import RunContext, get_logger, init_logging
 
 _CONFIG_DIR = Path(__file__).resolve().parents[3] / "configs"
@@ -33,6 +35,37 @@ def run_experiment(cfg: DictConfig) -> int:
         cfg.model.device,
         list(cfg.experiment.evaluation_ks),
     )
+
+    try:
+        bundle = load_oaei_dataset(
+            source_path=cfg.dataset.source_rdf,
+            target_path=cfg.dataset.target_rdf,
+            alignment_path=cfg.dataset.alignment_rdf,
+        )
+    except DataError:
+        raise
+    except Exception as exc:
+        raise DataError(f"Dataset loading failed: {exc}") from exc
+
+    log.info(
+        "Loaded source graph: format=%s entities=%d triples=%d",
+        bundle.source.format,
+        len(bundle.source.entities),
+        len(bundle.source.triples),
+    )
+    log.info(
+        "Loaded target graph: format=%s entities=%d triples=%d",
+        bundle.target.format,
+        len(bundle.target.entities),
+        len(bundle.target.triples),
+    )
+    log.info(
+        "Loaded alignment graph: format=%s entities=%d triples=%d",
+        bundle.alignment.format,
+        len(bundle.alignment.entities),
+        len(bundle.alignment.triples),
+    )
+
     return 0
 
 
