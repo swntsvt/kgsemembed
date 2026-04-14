@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import time
 from pathlib import Path
 
 import hydra
 from omegaconf import DictConfig
 
+from kgsemembed.candidates import build_candidate_table, generate_candidates
 from kgsemembed.datasets import load_oaei_dataset
 from kgsemembed.utils.errors import DataError
 from kgsemembed.utils.logging import RunContext, get_logger, init_logging
@@ -27,11 +29,15 @@ def run_experiment(cfg: DictConfig) -> int:
     log = get_logger("kgsemembed.pipeline", context)
     logger.info("Pipeline bootstrap complete", extra={"run_id": run_id, "stage": "init"})
     log.info(
-        "Resolved config: experiment=%s model=%s dataset=%s verbalisation=%s device=%s ks=%s",
+        "Resolved config: experiment=%s model=%s dataset=%s verbalisation=%s candidates=%s(n=%s,metric=%s,k=%s) device=%s ks=%s",
         cfg.experiment.name,
         cfg.model.name,
         cfg.dataset.name,
         cfg.verbalisation.strategy,
+        cfg.candidates.method,
+        cfg.candidates.n,
+        cfg.candidates.metric,
+        cfg.candidates.top_k,
         cfg.model.device,
         list(cfg.experiment.evaluation_ks),
     )
@@ -65,6 +71,36 @@ def run_experiment(cfg: DictConfig) -> int:
         len(bundle.alignment.entities),
         len(bundle.alignment.triples),
     )
+
+    t0 = time.perf_counter()
+    candidates = generate_candidates(
+        source_labels=bundle.source.labels,
+        target_labels=bundle.target.labels,
+        n=int(cfg.candidates.n),
+        metric=str(cfg.candidates.metric),
+        top_k=int(cfg.candidates.top_k),
+        strip_punctuation=bool(cfg.candidates.strip_punctuation),
+    )
+    elapsed = time.perf_counter() - t0
+    table = build_candidate_table(candidates)
+
+    log.info(
+        "Generated candidates: source=%d target=%d pairs=%d metric=%s n=%d top_k=%d runtime_sec=%.4f",
+        len(bundle.source.labels),
+        len(bundle.target.labels),
+        len(candidates),
+        cfg.candidates.metric,
+        int(cfg.candidates.n),
+        int(cfg.candidates.top_k),
+        elapsed,
+    )
+
+    if bool(cfg.candidates.persist):
+        out_dir = Path(str(cfg.experiment.output_dir))
+        out_dir.mkdir(parents=True, exist_ok=True)
+        out_path = out_dir / str(cfg.candidates.output_file)
+        table.to_csv(out_path, index=False)
+        log.info("Persisted candidate pairs to %s", out_path)
 
     return 0
 

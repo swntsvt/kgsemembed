@@ -6,5 +6,6 @@ def test_imports() -> None:
     import kgsemembed.evaluation
     import kgsemembed.utils
     import kgsemembed.datasets
+    import kgsemembed.candidates
 
     assert kgsemembed is not None
