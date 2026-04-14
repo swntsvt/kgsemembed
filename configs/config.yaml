@@ -1,0 +1,17 @@
+defaults:
+  - experiment: default
+  - model: all-mpnet-base-v2
+  - dataset: sample
+  - verbalisation: v0
+  - optional local: runtime
+  - _self_
+
+project:
+  name: kgsemembed
+
+hydra:
+  run:
+    dir: .
+  output_subdir: null
+  job:
+    chdir: false

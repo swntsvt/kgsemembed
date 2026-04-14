@@ -1,0 +1,13 @@
+# Copy this file to configs/local/runtime.yaml for local-only configuration.
+# runtime.yaml is intentionally gitignored.
+
+dataset:
+  source_rdf: /absolute/path/to/source.rdf
+  target_rdf: /absolute/path/to/target.rdf
+  alignment_rdf: /absolute/path/to/reference.rdf
+
+model:
+  device: mps
+
+experiment:
+  output_dir: /absolute/path/to/output-dir

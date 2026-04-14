@@ -1,0 +1,4 @@
+name: sentence-transformers/all-mpnet-base-v2
+batch_size: 32
+device: cpu
+normalize_embeddings: true
