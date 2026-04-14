@@ -1,0 +1,4 @@
+name: sentence-transformers/all-MiniLM-L6-v2
+batch_size: 64
+device: cpu
+normalize_embeddings: true
