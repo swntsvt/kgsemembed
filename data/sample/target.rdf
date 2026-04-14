@@ -1,0 +1,15 @@
+<?xml version="1.0"?>
+<rdf:RDF
+  xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+  xmlns:rdfs="http://www.w3.org/2000/01/rdf-schema#"
+  xmlns:ex="http://example.org/target/">
+
+  <rdf:Description rdf:about="http://example.org/target/EntityA_T">
+    <rdfs:label xml:lang="en">Entity A Target</rdfs:label>
+    <ex:relatedTo rdf:resource="http://example.org/target/EntityB_T"/>
+  </rdf:Description>
+
+  <rdf:Description rdf:about="http://example.org/target/EntityB_T">
+    <rdfs:label xml:lang="en">Entity B Target</rdfs:label>
+  </rdf:Description>
+</rdf:RDF>
