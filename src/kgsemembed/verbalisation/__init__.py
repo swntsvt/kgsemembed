@@ -15,12 +15,16 @@ from kgsemembed.verbalisation.ppas import (
 	ppas_sample,
 	should_apply_ppas,
 )
+from kgsemembed.verbalisation.v1 import LabelVerbaliser
+from kgsemembed.verbalisation.v2 import AnnotationVerbaliser
 
 __all__ = [
+	"AnnotationVerbaliser",
 	"CLASS_TIER_LIST",
 	"DEFINITION_PREDICATES",
 	"INSTANCE_TIER_LIST",
 	"LABEL_PREDICATES",
+	"LabelVerbaliser",
 	"PREDICATE_TIER_LIST",
 	"PPAS_BUDGETS",
 	"PPAS_TRIGGER_THRESHOLD",
