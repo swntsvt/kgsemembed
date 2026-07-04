@@ -1,15 +1,31 @@
 """Entity-to-text verbalisation strategies for Phase 2 embedding pipeline."""
 
 from kgsemembed.verbalisation.base import (
-    DEFINITION_PREDICATES,
-    LABEL_PREDICATES,
-    SYNONYM_PREDICATES,
-    VerbaliserBase,
+	DEFINITION_PREDICATES,
+	LABEL_PREDICATES,
+	SYNONYM_PREDICATES,
+	VerbaliserBase,
+)
+from kgsemembed.verbalisation.ppas import (
+	CLASS_TIER_LIST,
+	INSTANCE_TIER_LIST,
+	PREDICATE_TIER_LIST,
+	PPAS_BUDGETS,
+	PPAS_TRIGGER_THRESHOLD,
+	ppas_sample,
+	should_apply_ppas,
 )
 
 __all__ = [
-    "DEFINITION_PREDICATES",
-    "LABEL_PREDICATES",
-    "SYNONYM_PREDICATES",
-    "VerbaliserBase",
+	"CLASS_TIER_LIST",
+	"DEFINITION_PREDICATES",
+	"INSTANCE_TIER_LIST",
+	"LABEL_PREDICATES",
+	"PREDICATE_TIER_LIST",
+	"PPAS_BUDGETS",
+	"PPAS_TRIGGER_THRESHOLD",
+	"SYNONYM_PREDICATES",
+	"VerbaliserBase",
+	"ppas_sample",
+	"should_apply_ppas",
 ]
