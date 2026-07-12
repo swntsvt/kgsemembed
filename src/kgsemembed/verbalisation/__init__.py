@@ -17,6 +17,7 @@ from kgsemembed.verbalisation.ppas import (
 )
 from kgsemembed.verbalisation.v1 import LabelVerbaliser
 from kgsemembed.verbalisation.v2 import AnnotationVerbaliser
+from kgsemembed.verbalisation.v3 import TemplateNLVerbaliser
 from kgsemembed.verbalisation.v4 import StructuredKVVerbaliser
 from kgsemembed.verbalisation.v6 import SchemaAwareVerbaliser
 
@@ -33,6 +34,7 @@ __all__ = [
 	"SchemaAwareVerbaliser",
 	"StructuredKVVerbaliser",
 	"SYNONYM_PREDICATES",
+	"TemplateNLVerbaliser",
 	"VerbaliserBase",
 	"ppas_sample",
 	"should_apply_ppas",
