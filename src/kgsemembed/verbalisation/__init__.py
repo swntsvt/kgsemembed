@@ -17,6 +17,7 @@ from kgsemembed.verbalisation.ppas import (
 )
 from kgsemembed.verbalisation.v1 import LabelVerbaliser
 from kgsemembed.verbalisation.v2 import AnnotationVerbaliser
+from kgsemembed.verbalisation.v4 import StructuredKVVerbaliser
 
 __all__ = [
 	"AnnotationVerbaliser",
@@ -28,6 +29,7 @@ __all__ = [
 	"PREDICATE_TIER_LIST",
 	"PPAS_BUDGETS",
 	"PPAS_TRIGGER_THRESHOLD",
+	"StructuredKVVerbaliser",
 	"SYNONYM_PREDICATES",
 	"VerbaliserBase",
 	"ppas_sample",
