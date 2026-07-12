@@ -48,6 +48,8 @@ the PR description instead (see below).
 Never reference a coding agent, AI assistant, or any automated tool in commit
 messages. Write commit messages as if a human authored them.
 
+Never use `Co-Authored-By` trailers in commit messages.
+
 ### Raising a Pull Request
 - Open as a **draft PR** immediately when the branch is created, so the
   Issue→Branch→PR chain is visible on GitHub from the start.
@@ -65,44 +67,38 @@ git push origin --tags
 
 ## Development Commands
 
-All Python and pip commands must use the project virtual environment:
-
-```bash
-source venv/bin/activate
-```
+Always invoke Python, pip, and pytest via the venv binaries directly — never
+use `source venv/bin/activate`. This avoids shell evaluation and works without
+permission prompts in Claude Code.
 
 ### Installation & Setup
 ```bash
-source venv/bin/activate
-pip install -r requirements.txt
-pip install -e .                    # editable install
+venv/bin/pip install -r requirements.txt
+venv/bin/pip install -e .                    # editable install
 ```
 
 ### Running Experiments
 ```bash
-source venv/bin/activate
-
 # Base run
-python3.12 -m kgsemembed.pipeline.run_experiment
+venv/bin/python3.12 -m kgsemembed.pipeline.run_experiment
 
 # With Hydra overrides
-python3.12 -m kgsemembed.pipeline.run_experiment \
+venv/bin/python3.12 -m kgsemembed.pipeline.run_experiment \
   model=all-minilm-l6-v2 dataset=sample verbalisation=v1
 
 # Override candidate settings
-python3.12 -m kgsemembed.pipeline.run_experiment \
+venv/bin/python3.12 -m kgsemembed.pipeline.run_experiment \
   candidates.n=2 candidates.metric=jaccard candidates.top_k=25
 ```
 
 ### Testing
 ```bash
-source venv/bin/activate
-pytest                          # full suite
-pytest tests/test_filename.py  # single file
-pytest tests/ -x -q            # stop on first failure (preferred in CI)
+venv/bin/pytest                          # full suite
+venv/bin/pytest tests/test_filename.py  # single file
+venv/bin/pytest tests/ -x -q            # stop on first failure (preferred in CI)
 ```
 
-Always run `pytest tests/ -x -q` after changes to any module under
+Always run `venv/bin/pytest tests/ -x -q` after changes to any module under
 `kgsemembed/pipeline/` or `kgsemembed/evaluation/`.
 
 ## Coding Conventions
