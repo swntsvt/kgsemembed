@@ -3,7 +3,7 @@
 from abc import ABC, abstractmethod
 import re
 
-from rdflib import Graph, URIRef, Literal
+from rdflib import BNode, Graph, URIRef, Literal
 from rdflib.namespace import RDFS, SKOS
 from typing import Optional, List
 
@@ -26,6 +26,13 @@ SYNONYM_PREDICATES = [
     URIRef("http://purl.obolibrary.org/obo/hasSynonym"),
     URIRef("http://purl.obolibrary.org/obo/hasRelatedSynonym"),
 ]
+
+# Predicates and objects excluded from structured key-value serialisation
+_EXCLUDED_PREDICATES = [
+    "http://www.w3.org/2002/07/owl#sameAs",
+]
+
+_RDF_TYPE = "http://www.w3.org/1999/02/22-rdf-syntax-ns#type"
 
 
 class VerbaliserBase(ABC):
@@ -162,3 +169,109 @@ class VerbaliserBase(ABC):
                             seen.add(val)
                             results.append(val)
         return results
+
+    # ------------------------------------------------------------------
+    # Structured key-value serialisation helpers (shared by V4 and V6)
+    # ------------------------------------------------------------------
+
+    def _collect_triples(
+        self, graph: Graph, entity_uri: URIRef
+    ) -> list[tuple]:
+        """Return structured-KV triples for *entity_uri*, filtering noise.
+
+        Parameters
+        ----------
+        graph : Graph
+            RDF graph containing entity triples.
+        entity_uri : URIRef
+            URI of the entity whose triples are collected.
+
+        Returns
+        -------
+        list of tuple
+            Triples excluding ``owl:sameAs``, blank-node objects, and
+            reflexive statements.
+        """
+        return [
+            t
+            for t in graph.triples((entity_uri, None, None))
+            if not self._should_exclude(*t)
+        ]
+
+    @staticmethod
+    def _should_exclude(
+        subj: URIRef, pred: URIRef, obj: URIRef | BNode | Literal
+    ) -> bool:
+        """Return True if the triple should be excluded from serialisation."""
+        if str(pred) in _EXCLUDED_PREDICATES:
+            return True
+        if isinstance(obj, BNode):
+            return True
+        if subj == obj:
+            return True
+        return False
+
+    def _resolve_predicate_from_graph(
+        self, graph: Graph, pred: URIRef
+    ) -> str:
+        """Resolve a predicate's label from *graph*, else its local name.
+
+        Parameters
+        ----------
+        graph : Graph
+            RDF graph to query for predicate labels.
+        pred : URIRef
+            Predicate URI to resolve.
+
+        Returns
+        -------
+        str
+            Human-readable predicate label or local-name fallback.
+        """
+        for obj in graph.objects(pred, RDFS.label):
+            if isinstance(obj, Literal) and obj.language in ("en", None):
+                return str(obj)
+        return self.get_local_name(pred)
+
+    @staticmethod
+    def _verbalise_triple(
+        _subj: URIRef, pred: URIRef, obj: URIRef | BNode | Literal
+    ) -> str:
+        """Return ``"pred_local: obj"`` for fast token-cost estimation."""
+        pred_label = pred.split("#")[-1].split("/")[-1]
+        return f"{pred_label}: {obj}"
+
+    def _format_pair(
+        self,
+        graph: Graph,
+        pred: URIRef,
+        obj: URIRef | BNode | Literal,
+    ) -> str:
+        """Format a single triple as ``"key: value"``.
+
+        Parameters
+        ----------
+        graph : Graph
+            RDF graph used to resolve predicate and object labels.
+        pred : URIRef
+            Predicate URI of the triple.
+        obj : URIRef | BNode | Literal
+            Object of the triple.
+
+        Returns
+        -------
+        str
+            ``"key: value"`` string, or empty string for non-serialisable
+            objects.
+        """
+        is_type = str(pred) == _RDF_TYPE
+        key = "type" if is_type else self._resolve_predicate_from_graph(graph, pred)
+
+        if isinstance(obj, Literal):
+            value = str(obj)
+        elif isinstance(obj, URIRef):
+            value = self.get_label_or_local(graph, obj)
+        else:
+            return ""
+
+        return f"{key}: {value}"

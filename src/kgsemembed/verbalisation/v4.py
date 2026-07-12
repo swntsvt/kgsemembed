@@ -4,8 +4,7 @@ Serialises an entity as deterministic pipe-separated predicate-value pairs.
 Integrates with PPAS for entities exceeding the triple count threshold.
 """
 
-from rdflib import BNode, Graph, Literal, URIRef
-from rdflib.namespace import RDFS
+from rdflib import Graph, URIRef
 
 from kgsemembed.verbalisation.base import VerbaliserBase
 from kgsemembed.verbalisation.ppas import (
@@ -14,10 +13,6 @@ from kgsemembed.verbalisation.ppas import (
     ppas_sample,
     should_apply_ppas,
 )
-
-_EXCLUDED_PREDICATES = [
-    "http://www.w3.org/2002/07/owl#sameAs",
-]
 
 
 class StructuredKVVerbaliser(VerbaliserBase):
@@ -83,93 +78,3 @@ class StructuredKVVerbaliser(VerbaliserBase):
                 pairs.append(pair)
 
         return " | ".join(pairs)
-
-    # ------------------------------------------------------------------
-    # Triple collection & filtering
-    # ------------------------------------------------------------------
-
-    def _collect_triples(
-        self, graph: Graph, entity_uri: URIRef
-    ) -> list[tuple]:
-        """Return filtered triples for *entity_uri*."""
-        return [
-            t
-            for t in graph.triples((entity_uri, None, None))
-            if not self._should_exclude(*t)
-        ]
-
-    @staticmethod
-    def _should_exclude(
-        subj: URIRef, pred: URIRef, obj: URIRef | BNode | Literal
-    ) -> bool:
-        """Return True if the triple should be excluded from verbalisation."""
-        if str(pred) in _EXCLUDED_PREDICATES:
-            return True
-        if isinstance(obj, BNode):
-            return True
-        if subj == obj:
-            return True
-        return False
-
-    # ------------------------------------------------------------------
-    # Predicate / object resolution
-    # ------------------------------------------------------------------
-
-    def _resolve_predicate_from_graph(
-        self, graph: Graph, pred: URIRef
-    ) -> str:
-        """Resolve predicate label from the given graph.
-
-        Parameters
-        ----------
-        graph : Graph
-            RDF graph to query for predicate labels.
-        pred : URIRef
-            Predicate URI to resolve.
-
-        Returns
-        -------
-        str
-            Human-readable predicate label or local-name fallback.
-        """
-        for obj in graph.objects(pred, RDFS.label):
-            if isinstance(obj, Literal) and obj.language in ("en", None):
-                return str(obj)
-        return self.get_local_name(pred)
-
-    @staticmethod
-    def _verbalise_triple(
-        _subj: URIRef, pred: URIRef, obj: URIRef | BNode | Literal
-    ) -> str:
-        """Fast triple verbaliser used by PPAS for token-cost estimation.
-
-        Returns ``"pred_local: obj_str"`` using the predicate local name
-        and the object's string representation.
-        """
-        pred_label = pred.split("#")[-1].split("/")[-1]
-        return f"{pred_label}: {obj}"
-
-    # ------------------------------------------------------------------
-    # Pair formatting
-    # ------------------------------------------------------------------
-
-    def _format_pair(
-        self,
-        graph: Graph,
-        pred: URIRef,
-        obj: URIRef | BNode | Literal,
-    ) -> str:
-        """Format a single triple as ``"key: value"``."""
-        is_type = (
-            str(pred) == "http://www.w3.org/1999/02/22-rdf-syntax-ns#type"
-        )
-        key = "type" if is_type else self._resolve_predicate_from_graph(graph, pred)
-
-        if isinstance(obj, Literal):
-            value = str(obj)
-        elif isinstance(obj, URIRef):
-            value = self.get_label_or_local(graph, obj)
-        else:
-            return ""
-
-        return f"{key}: {value}"
