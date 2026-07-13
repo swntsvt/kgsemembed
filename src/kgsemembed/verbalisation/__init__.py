@@ -19,6 +19,7 @@ from kgsemembed.verbalisation.v1 import LabelVerbaliser
 from kgsemembed.verbalisation.v2 import AnnotationVerbaliser
 from kgsemembed.verbalisation.v3 import TemplateNLVerbaliser
 from kgsemembed.verbalisation.v4 import StructuredKVVerbaliser
+from kgsemembed.verbalisation.v5 import NeighbourhoodWalkVerbaliser
 from kgsemembed.verbalisation.v6 import SchemaAwareVerbaliser
 
 __all__ = [
@@ -28,6 +29,7 @@ __all__ = [
 	"INSTANCE_TIER_LIST",
 	"LABEL_PREDICATES",
 	"LabelVerbaliser",
+	"NeighbourhoodWalkVerbaliser",
 	"PREDICATE_TIER_LIST",
 	"PPAS_BUDGETS",
 	"PPAS_TRIGGER_THRESHOLD",
