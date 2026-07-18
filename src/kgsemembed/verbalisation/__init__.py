@@ -21,11 +21,13 @@ from kgsemembed.verbalisation.v3 import TemplateNLVerbaliser
 from kgsemembed.verbalisation.v4 import StructuredKVVerbaliser
 from kgsemembed.verbalisation.v5 import NeighbourhoodWalkVerbaliser
 from kgsemembed.verbalisation.v6 import SchemaAwareVerbaliser
+from kgsemembed.verbalisation.v7 import HierarchicalContextVerbaliser
 
 __all__ = [
 	"AnnotationVerbaliser",
 	"CLASS_TIER_LIST",
 	"DEFINITION_PREDICATES",
+	"HierarchicalContextVerbaliser",
 	"INSTANCE_TIER_LIST",
 	"LABEL_PREDICATES",
 	"LabelVerbaliser",
