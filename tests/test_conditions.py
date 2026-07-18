@@ -15,6 +15,29 @@ from kgsemembed.verbalisation.registry import VALID_STRATEGY_NAMES
 
 _NON_PPAS_IDS = {"C14", "C15"}
 
+_ALL = ["D1", "D2", "D3", "D4", "D5"]
+
+_CANONICAL_MATRIX = [
+    ("C1", "V1", "M1", _ALL, True, "A"),
+    ("C2", "V2", "M1", _ALL, True, "A"),
+    ("C17", "V1", "M4", ["D1", "D2"], True, "A"),
+    ("C3", "V2+V6", "M2", _ALL, True, "B"),
+    ("C9", "V8", "M2", _ALL, True, "B"),
+    ("C10", "V2+V8", "M2", _ALL, True, "B"),
+    ("C12", "V8", "M2", ["D3", "D4"], True, "B"),
+    ("C18", "V2+V8", "M1", _ALL, True, "B"),
+    ("C4", "V3", "M2", ["D1", "D2", "D3"], True, "C"),
+    ("C5", "V4", "M2", ["D4", "D5"], True, "C"),
+    ("C6", "V2+V7", "M4", ["D1", "D2"], True, "C"),
+    ("C7", "V6+V3", "M2", ["D3", "D4"], True, "C"),
+    ("C8", "V5", "M2", ["D4", "D5"], True, "C"),
+    ("C11", "V2+V8", "M4", ["D1", "D2"], True, "C"),
+    ("C13", "V2+V8", "M5", _ALL, True, "C"),
+    ("C16", "V2+V8+V7", "M4", ["D1", "D2"], True, "C"),
+    ("C14", "V4+V6", "M3", ["D5"], False, "D"),
+    ("C15", "V2+V8", "M3", ["D1"], False, "D"),
+]
+
 
 def _make_condition(**overrides) -> ExperimentCondition:
     defaults = dict(
@@ -32,6 +55,26 @@ def _make_condition(**overrides) -> ExperimentCondition:
 
 def test_registry_holds_eighteen_conditions():
     assert len(EXPERIMENT_CONDITIONS) == 18
+
+
+def test_registry_matches_canonical_matrix_in_order():
+    actual = [
+        (
+            c.condition_id,
+            c.strategy_name,
+            c.model_key,
+            c.datasets,
+            c.apply_ppas,
+            c.ablation_group,
+        )
+        for c in EXPERIMENT_CONDITIONS
+    ]
+    assert actual == _CANONICAL_MATRIX
+
+
+def test_every_condition_has_a_description():
+    for condition in EXPERIMENT_CONDITIONS:
+        assert condition.description.strip()
 
 
 def test_condition_identifiers_are_unique():
@@ -79,6 +122,13 @@ def test_get_condition_ppas_flags():
 def test_get_condition_unknown_raises_key_error():
     with pytest.raises(KeyError):
         get_condition("C999")
+
+
+def test_get_condition_uses_exact_string_matching():
+    with pytest.raises(KeyError):
+        get_condition("c1")
+    with pytest.raises(KeyError):
+        get_condition("C1 ")
 
 
 def test_get_conditions_for_dataset_includes_expected():
