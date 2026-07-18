@@ -104,7 +104,7 @@ MODEL_REGISTRY: Dict[str, ModelConfig] = {
         # queries only, while documents are encoded verbatim.  The query
         # instruction is required to reach reported retrieval quality and must
         # not be applied to documents.
-        query_prefix="Instruct: Retrieve semantically similar text.\nQuery: ",
+        query_prefix="Instruct: Retrieve semantically similar text.\nQuery: {}",
         doc_prefix=None,
         device_hint="cuda",
         batch_size=8,
