@@ -22,11 +22,16 @@ from kgsemembed.verbalisation.v4 import StructuredKVVerbaliser
 from kgsemembed.verbalisation.v5 import NeighbourhoodWalkVerbaliser
 from kgsemembed.verbalisation.v6 import SchemaAwareVerbaliser
 from kgsemembed.verbalisation.v7 import HierarchicalContextVerbaliser
+from kgsemembed.verbalisation.v8 import (
+	EXCLUDED_PREDICATES,
+	RelationalSignatureVerbaliser,
+)
 
 __all__ = [
 	"AnnotationVerbaliser",
 	"CLASS_TIER_LIST",
 	"DEFINITION_PREDICATES",
+	"EXCLUDED_PREDICATES",
 	"HierarchicalContextVerbaliser",
 	"INSTANCE_TIER_LIST",
 	"LABEL_PREDICATES",
@@ -35,6 +40,7 @@ __all__ = [
 	"PREDICATE_TIER_LIST",
 	"PPAS_BUDGETS",
 	"PPAS_TRIGGER_THRESHOLD",
+	"RelationalSignatureVerbaliser",
 	"SchemaAwareVerbaliser",
 	"StructuredKVVerbaliser",
 	"SYNONYM_PREDICATES",
