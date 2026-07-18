@@ -191,6 +191,7 @@ def test_package_exports() -> None:
     import kgsemembed.embeddings as embeddings
 
     assert set(embeddings.__all__) == {
+        "EmbeddingEncoder",
         "MODEL_REGISTRY",
         "ModelConfig",
         "get_model_config",
