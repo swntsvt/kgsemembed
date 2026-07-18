@@ -15,6 +15,11 @@ from kgsemembed.verbalisation.ppas import (
 	ppas_sample,
 	should_apply_ppas,
 )
+from kgsemembed.verbalisation.combined import CombinedVerbaliser
+from kgsemembed.verbalisation.registry import (
+	VALID_STRATEGY_NAMES,
+	build_verbaliser,
+)
 from kgsemembed.verbalisation.v1 import LabelVerbaliser
 from kgsemembed.verbalisation.v2 import AnnotationVerbaliser
 from kgsemembed.verbalisation.v3 import TemplateNLVerbaliser
@@ -30,6 +35,7 @@ from kgsemembed.verbalisation.v8 import (
 __all__ = [
 	"AnnotationVerbaliser",
 	"CLASS_TIER_LIST",
+	"CombinedVerbaliser",
 	"DEFINITION_PREDICATES",
 	"EXCLUDED_PREDICATES",
 	"HierarchicalContextVerbaliser",
@@ -45,7 +51,9 @@ __all__ = [
 	"StructuredKVVerbaliser",
 	"SYNONYM_PREDICATES",
 	"TemplateNLVerbaliser",
+	"VALID_STRATEGY_NAMES",
 	"VerbaliserBase",
+	"build_verbaliser",
 	"ppas_sample",
 	"should_apply_ppas",
 ]
