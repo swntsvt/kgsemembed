@@ -1,5 +1,6 @@
 """Tests for the embedding model registry and SentenceTransformer factory."""
 
+from dataclasses import FrozenInstanceError
 from unittest.mock import MagicMock
 
 import pytest
@@ -60,6 +61,11 @@ def test_registry_metadata_is_well_formed() -> None:
         assert isinstance(cfg.batch_size, int) and cfg.batch_size > 0
 
 
+def test_model_config_is_immutable() -> None:
+    with pytest.raises(FrozenInstanceError):
+        MODEL_REGISTRY["M1"].batch_size = 1
+
+
 # ---------------------------------------------------------------------------
 # Model lookup
 # ---------------------------------------------------------------------------
@@ -81,6 +87,10 @@ def test_m5_query_prefix_is_instruction() -> None:
 
 def test_m2_query_prefix_is_none() -> None:
     assert get_model_config("M2").query_prefix is None
+
+
+def test_m5_documents_are_encoded_without_prefix() -> None:
+    assert get_model_config("M5").doc_prefix is None
 
 
 def test_unknown_model_key_raises_descriptive_keyerror() -> None:
