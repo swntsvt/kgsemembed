@@ -1,5 +1,11 @@
 """Phase 2 evaluation metrics for knowledge graph matching."""
 
+from kgsemembed.evaluation.aggregator import (
+    build_condition_summary_table,
+    build_dataset_breakdown_table,
+    generate_markdown_report,
+    load_all_results,
+)
 from kgsemembed.evaluation.metrics import (
     EntityPair,
     RankedList,
@@ -32,4 +38,8 @@ __all__ = [
     "wilcoxon_comparison",
     "run_group_comparisons",
     "export_stats_table",
+    "load_all_results",
+    "build_condition_summary_table",
+    "build_dataset_breakdown_table",
+    "generate_markdown_report",
 ]
