@@ -10,6 +10,13 @@ from kgsemembed.evaluation.metrics import (
     compute_recall_at_k,
     tune_threshold,
 )
+from kgsemembed.evaluation.stats import (
+    collect_f1_scores,
+    export_stats_table,
+    load_results_for_condition,
+    run_group_comparisons,
+    wilcoxon_comparison,
+)
 
 __all__ = [
     "EntityPair",
@@ -20,4 +27,9 @@ __all__ = [
     "compute_mrr",
     "compute_recall_at_k",
     "compute_all_metrics",
+    "load_results_for_condition",
+    "collect_f1_scores",
+    "wilcoxon_comparison",
+    "run_group_comparisons",
+    "export_stats_table",
 ]
