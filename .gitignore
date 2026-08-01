@@ -212,3 +212,16 @@ configs/local/*.yaml
 SCRATCHPAD.md
 .vscode/extensions.json
 .vscode/settings.json
+
+# Dataset files — ignore contents, keep directory skeleton via .gitkeep
+# Ignore all contents of data/ recursively
+data/**
+
+# Keep descending into subdirectories so the negation below can reach nested files
+!data/**/
+
+# Don't ignore .gitkeep files anywhere under data/
+!data/**/.gitkeep
+
+# macOS
+.DS_Store
