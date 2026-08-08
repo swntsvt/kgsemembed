@@ -1,7 +1,7 @@
 """Shared pytest configuration.
 
-Registers the ``slow`` marker and deselects slow integration tests by default.
-Run them explicitly with ``pytest --runslow``.
+Registers the ``slow`` and ``integration`` markers, and deselects slow
+integration tests by default. Run them explicitly with ``pytest --runslow``.
 """
 
 import pytest
@@ -11,6 +11,10 @@ def pytest_configure(config: pytest.Config) -> None:
     config.addinivalue_line(
         "markers",
         "slow: slow integration test (deselected by default; run with --runslow)",
+    )
+    config.addinivalue_line(
+        "markers",
+        "integration: tests requiring real data/ files on disk",
     )
 
 
