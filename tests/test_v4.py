@@ -1,5 +1,8 @@
 """Tests for StructuredKVVerbaliser (V4)."""
 
+import logging
+from contextlib import contextmanager
+from typing import Iterator
 from unittest.mock import patch
 
 from rdflib import BNode, Graph, Literal, URIRef
@@ -350,6 +353,128 @@ def test_exactly_twenty_triples() -> None:
         result = v.verbalise(g, _ENT, "instance")
         mock_sample.assert_not_called()
         assert len(result) > 0
+
+
+# ---------------------------------------------------------------------------
+# PPAS Fallback for Untiered Predicates
+# ---------------------------------------------------------------------------
+
+
+def _make_untiered_graph(triple_count: int = 49) -> Graph:
+    """Return a graph whose entity uses only predicates outside the tiers."""
+    g = Graph()
+    for i in range(triple_count):
+        pred = URIRef(f"http://dbpedia.org/ontology/combatant_{i}")
+        g.add((_ENT, pred, Literal(f"Force {i}")))
+    return g
+
+
+@contextmanager
+def _capture_warnings() -> Iterator[list[logging.LogRecord]]:
+    """Collect warnings from the V4 logger, bypassing global log config.
+
+    ``init_logging`` disables propagation on the ``kgsemembed`` logger, so
+    pytest's ``caplog`` fixture cannot see these records once any earlier test
+    has initialised logging.
+    """
+    records: list[logging.LogRecord] = []
+
+    class _Collector(logging.Handler):
+        def emit(self, record: logging.LogRecord) -> None:
+            records.append(record)
+
+    logger = logging.getLogger("kgsemembed.verbalisation.v4")
+    handler = _Collector(level=logging.WARNING)
+    previous_level = logger.level
+    logger.addHandler(handler)
+    logger.setLevel(logging.WARNING)
+    try:
+        yield records
+    finally:
+        logger.removeHandler(handler)
+        logger.setLevel(previous_level)
+
+
+def test_fallback_when_all_predicates_untiered() -> None:
+    """Entity with 49 untiered triples still produces a non-empty string."""
+    g = _make_untiered_graph()
+    triples = list(g.triples((_ENT, None, None)))
+    assert len(triples) == 49
+    assert should_apply_ppas(triples, "M2") is True
+
+    v = StructuredKVVerbaliser(model_key="M2")
+    result = v.verbalise(g, _ENT, "instance")
+
+    assert result != ""
+    assert result.count(" | ") == 48
+    assert "Force 0" in result
+
+
+def test_fallback_logs_warning() -> None:
+    """A warning is logged whenever the fallback is triggered."""
+    g = _make_untiered_graph()
+    v = StructuredKVVerbaliser(model_key="M2")
+
+    with _capture_warnings() as records:
+        v.verbalise(g, _ENT, "instance")
+
+    assert len(records) == 1
+    assert records[0].levelno == logging.WARNING
+    assert str(_ENT) in records[0].getMessage()
+    assert "49" in records[0].getMessage()
+
+
+def test_no_fallback_when_predicates_tiered() -> None:
+    """Entity with tiered predicates keeps PPAS output and logs no warning."""
+    g = Graph()
+    g.add((_ENT, LABEL_PREDICATES[0], Literal("Aspirin", lang="en")))
+    for i in range(30):
+        g.add(
+            (
+                _ENT,
+                URIRef("http://www.w3.org/1999/02/22-rdf-syntax-ns#type"),
+                URIRef(f"http://example.org/ont#Class_{i}"),
+            )
+        )
+
+    v = StructuredKVVerbaliser(model_key="M2")
+
+    with _capture_warnings() as records:
+        result = v.verbalise(g, _ENT, "instance")
+
+    assert "label: Aspirin" in result
+    assert "type: Class 0" in result
+    assert records == []
+
+
+def test_fallback_preserves_ppas_selection_when_non_empty() -> None:
+    """A non-empty PPAS result is used verbatim, never replaced by fallback."""
+    g = _make_untiered_graph()
+    v = StructuredKVVerbaliser(model_key="M2")
+
+    with patch(
+        "kgsemembed.verbalisation.v4.ppas_sample",
+        side_effect=lambda t, tier_list, budget, fn: t[:3],
+    ):
+        with _capture_warnings() as records:
+            result = v.verbalise(g, _ENT, "instance")
+
+    assert result.count(" | ") == 2
+    assert records == []
+
+
+def test_fallback_output_matches_unsampled_verbalisation() -> None:
+    """Fallback output equals the output produced with PPAS disabled."""
+    g = _make_untiered_graph()
+
+    fallback = StructuredKVVerbaliser(model_key="M2").verbalise(
+        g, _ENT, "instance"
+    )
+    unsampled = StructuredKVVerbaliser(model_key="M3").verbalise(
+        g, _ENT, "instance"
+    )
+
+    assert fallback == unsampled
 
 
 # ---------------------------------------------------------------------------

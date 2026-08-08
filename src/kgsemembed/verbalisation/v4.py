@@ -4,6 +4,8 @@ Serialises an entity as deterministic pipe-separated predicate-value pairs.
 Integrates with PPAS for entities exceeding the triple count threshold.
 """
 
+import logging
+
 from rdflib import Graph, URIRef
 
 from kgsemembed.verbalisation.base import VerbaliserBase
@@ -13,6 +15,8 @@ from kgsemembed.verbalisation.ppas import (
     ppas_sample,
     should_apply_ppas,
 )
+
+logger = logging.getLogger(__name__)
 
 
 class StructuredKVVerbaliser(VerbaliserBase):
@@ -64,12 +68,7 @@ class StructuredKVVerbaliser(VerbaliserBase):
         triples = self._collect_triples(graph, entity_uri)
 
         if should_apply_ppas(triples, self.model_key):
-            triples = ppas_sample(
-                triples,
-                INSTANCE_TIER_LIST,
-                PPAS_BUDGETS[self.model_key],
-                self._verbalise_triple,
-            )
+            triples = self._sample_triples(triples, entity_uri)
 
         pairs: list[str] = []
         for subj, pred, obj in triples:
@@ -78,3 +77,40 @@ class StructuredKVVerbaliser(VerbaliserBase):
                 pairs.append(pair)
 
         return " | ".join(pairs)
+
+    def _sample_triples(
+        self, triples: list[tuple], entity_uri: URIRef
+    ) -> list[tuple]:
+        """
+        Apply PPAS, falling back to the unsampled triples when it selects none.
+
+        Parameters
+        ----------
+        triples : list of tuple
+            Collected triples for the entity, in original order.
+        entity_uri : URIRef
+            URI of the entity, reported when the fallback is used.
+
+        Returns
+        -------
+        list of tuple
+            PPAS-selected triples, or *triples* unchanged when PPAS selects
+            nothing because no predicate belongs to a configured tier.
+        """
+        sampled = ppas_sample(
+            triples,
+            INSTANCE_TIER_LIST,
+            PPAS_BUDGETS[self.model_key],
+            self._verbalise_triple,
+        )
+
+        if sampled:
+            return sampled
+
+        logger.warning(
+            "PPAS selected no triples for %s; falling back to all %d "
+            "unsampled triples (no predicate matches INSTANCE_TIER_LIST)",
+            entity_uri,
+            len(triples),
+        )
+        return triples
