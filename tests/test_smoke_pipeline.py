@@ -120,10 +120,14 @@ def test_result_json_matches_required_schema(fakes, tmp_path):
         "strategy",
         "model_key",
         "model_id",
+        "apply_ppas",
+        "ppas_effective",
         "metrics",
         "n_source_entities",
         "n_candidates_per_entity",
     }
+    assert payload["apply_ppas"] is True
+    assert payload["ppas_effective"] is True
     assert set(payload["metrics"]) == {
         "f1",
         "precision",
@@ -468,3 +472,24 @@ def test_pipeline_package_exports_runner():
 
     assert "run_condition" in pipeline.__all__
     assert "run_all_conditions" in pipeline.__all__
+
+
+# ---------------------------------------------------------------------------
+# PPAS configuration reporting
+# ---------------------------------------------------------------------------
+
+
+def test_effective_ppas_false_for_model_without_budget():
+    assert runner._effective_ppas("M3") is False
+
+
+def test_effective_ppas_true_for_budgeted_models():
+    for model_key in ("M1", "M2", "M4", "M5"):
+        assert runner._effective_ppas(model_key) is True
+
+
+def test_effective_ppas_matches_ppas_disabled_conditions():
+    from kgsemembed.pipeline.conditions import EXPERIMENT_CONDITIONS
+
+    for condition in EXPERIMENT_CONDITIONS:
+        assert runner._effective_ppas(condition.model_key) is condition.apply_ppas

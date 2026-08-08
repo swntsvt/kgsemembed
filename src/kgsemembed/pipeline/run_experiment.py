@@ -42,6 +42,7 @@ from kgsemembed.pipeline.conditions import (
 from kgsemembed.utils.errors import DataError
 from kgsemembed.utils.logging import RunContext, get_logger, init_logging
 from kgsemembed.verbalisation.base import VerbaliserBase
+from kgsemembed.verbalisation.ppas import PPAS_BUDGETS
 from kgsemembed.verbalisation.registry import build_verbaliser
 
 _CONFIG_DIR = Path(__file__).resolve().parents[3] / "configs"
@@ -268,6 +269,40 @@ def _candidate_count(candidates: Dict[str, List[str]]) -> int:
     return len(next(iter(candidates.values()))) if candidates else 0
 
 
+def _effective_ppas(model_key: str) -> bool:
+    """
+    Return whether verbalisation applies PPAS sampling for ``model_key``.
+
+    Verbalisers gate PPAS on the model token budget alone, so a model without
+    a budget (e.g. ``"M3"``) never samples.  This value is read from the same
+    table the verbalisers consult and is recorded alongside the condition's
+    declared ``apply_ppas`` flag, making any divergence between configured
+    intent and executed behaviour visible in the results.
+
+    Parameters
+    ----------
+    model_key : str
+        Embedding model key of the condition being run, e.g. ``"M3"``.
+
+    Returns
+    -------
+    bool
+        ``True`` when verbalisation applies PPAS sampling.
+    """
+    return PPAS_BUDGETS.get(model_key) is not None
+
+
+def _log_ppas_configuration(condition: ExperimentCondition) -> None:
+    """Log the configured and effective PPAS setting for ``condition``."""
+    _LOGGER.info(
+        "Condition %s: model=%s apply_ppas=%s ppas_effective=%s",
+        condition.condition_id,
+        condition.model_key,
+        condition.apply_ppas,
+        _effective_ppas(condition.model_key),
+    )
+
+
 def _write_result(
     results_dir: str | Path,
     condition: ExperimentCondition,
@@ -284,6 +319,8 @@ def _write_result(
         "strategy": condition.strategy_name,
         "model_key": condition.model_key,
         "model_id": MODEL_REGISTRY[condition.model_key].model_id,
+        "apply_ppas": condition.apply_ppas,
+        "ppas_effective": _effective_ppas(condition.model_key),
         "metrics": {key: metrics[key] for key in _METRIC_KEYS},
         "n_source_entities": len(pair.source_entities),
         "n_candidates_per_entity": n_candidates,
@@ -359,6 +396,7 @@ def _run_condition_with_encoder(
     force_recompute: bool,
 ) -> Dict[str, Dict[str, float]]:
     results: Dict[str, Dict[str, float]] = {}
+    _log_ppas_configuration(condition)
     for dataset_id in _select_datasets(condition, dataset_ids):
         try:
             metrics = _run_dataset(
