@@ -1,15 +1,106 @@
-<?xml version="1.0"?>
+<?xml version="1.0" encoding="utf-8"?>
 <rdf:RDF
-  xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
-  xmlns:rdfs="http://www.w3.org/2000/01/rdf-schema#"
-  xmlns:ex="http://example.org/target/">
-
-  <rdf:Description rdf:about="http://example.org/target/EntityA_T">
-    <rdfs:label xml:lang="en">Entity A Target</rdfs:label>
-    <ex:relatedTo rdf:resource="http://example.org/target/EntityB_T"/>
+   xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+   xmlns:rdfs="http://www.w3.org/2000/01/rdf-schema#"
+>
+  <rdf:Description rdf:about="http://human.owl#NCI_C32446">
+    <rdf:type rdf:resource="http://www.w3.org/2002/07/owl#Class"/>
+    <rdfs:label rdf:datatype="http://www.w3.org/2001/XMLSchema#string">Deltoid</rdfs:label>
   </rdf:Description>
-
-  <rdf:Description rdf:about="http://example.org/target/EntityB_T">
-    <rdfs:label xml:lang="en">Entity B Target</rdfs:label>
+  <rdf:Description rdf:about="http://human.owl#NCI_C52902">
+    <rdf:type rdf:resource="http://www.w3.org/2002/07/owl#Class"/>
+    <rdfs:label rdf:datatype="http://www.w3.org/2001/XMLSchema#string">Erector_Spinae</rdfs:label>
+  </rdf:Description>
+  <rdf:Description rdf:about="http://human.owl#NCI_C32462">
+    <rdf:type rdf:resource="http://www.w3.org/2002/07/owl#Class"/>
+    <rdfs:label rdf:datatype="http://www.w3.org/2001/XMLSchema#string">Digastric_Muscle</rdfs:label>
+  </rdf:Description>
+  <rdf:Description rdf:about="http://human.owl#NCI_C52935">
+    <rdf:type rdf:resource="http://www.w3.org/2002/07/owl#Class"/>
+    <rdfs:label rdf:datatype="http://www.w3.org/2001/XMLSchema#string">Gracilis</rdfs:label>
+  </rdf:Description>
+  <rdf:Description rdf:about="http://human.owl#NCI_C52918">
+    <rdf:type rdf:resource="http://www.w3.org/2002/07/owl#Class"/>
+    <rdfs:label rdf:datatype="http://www.w3.org/2001/XMLSchema#string">Extensor_Digitorum_Longus</rdfs:label>
+  </rdf:Description>
+  <rdf:Description rdf:about="http://human.owl#NCI_C52901">
+    <rdf:type rdf:resource="http://www.w3.org/2002/07/owl#Class"/>
+    <rdfs:label rdf:datatype="http://www.w3.org/2001/XMLSchema#string">Cutaneous_Trunci</rdfs:label>
+  </rdf:Description>
+  <rdf:Description rdf:about="http://human.owl#NCI_C52702">
+    <rdf:type rdf:resource="http://www.w3.org/2002/07/owl#Class"/>
+    <rdfs:label rdf:datatype="http://www.w3.org/2001/XMLSchema#string">Plantar_Foot_Interosseus_Muscle</rdfs:label>
+  </rdf:Description>
+  <rdf:Description rdf:about="http://human.owl#NCI_C52914">
+    <rdf:type rdf:resource="http://www.w3.org/2002/07/owl#Class"/>
+    <rdfs:label rdf:datatype="http://www.w3.org/2001/XMLSchema#string">Extensor_Carpi_Ulnaris</rdfs:label>
+  </rdf:Description>
+  <rdf:Description rdf:about="http://human.owl#NCI_C52923">
+    <rdf:type rdf:resource="http://www.w3.org/2002/07/owl#Class"/>
+    <rdfs:label rdf:datatype="http://www.w3.org/2001/XMLSchema#string">Flexor_Digitorum_Profundus</rdfs:label>
+  </rdf:Description>
+  <rdf:Description rdf:about="http://human.owl#NCI_C52701">
+    <rdf:type rdf:resource="http://www.w3.org/2002/07/owl#Class"/>
+    <rdfs:label rdf:datatype="http://www.w3.org/2001/XMLSchema#string">Dorsal_Foot_Interosseous_Muscle</rdfs:label>
+  </rdf:Description>
+  <rdf:Description rdf:about="http://human.owl#NCI_C53156">
+    <rdf:type rdf:resource="http://www.w3.org/2002/07/owl#Class"/>
+    <rdfs:label rdf:datatype="http://www.w3.org/2001/XMLSchema#string">Flexor_Carpi_Ulnaris</rdfs:label>
+  </rdf:Description>
+  <rdf:Description rdf:about="http://human.owl#NCI_C52560">
+    <rdf:type rdf:resource="http://www.w3.org/2002/07/owl#Class"/>
+    <rdfs:label rdf:datatype="http://www.w3.org/2001/XMLSchema#string">Gluteus_Maximus</rdfs:label>
+  </rdf:Description>
+  <rdf:Description rdf:about="http://human.owl#NCI_C52933">
+    <rdf:type rdf:resource="http://www.w3.org/2002/07/owl#Class"/>
+    <rdfs:label rdf:datatype="http://www.w3.org/2001/XMLSchema#string">Gluteus_Medius</rdfs:label>
+  </rdf:Description>
+  <rdf:Description rdf:about="http://human.owl#NCI_C52913">
+    <rdf:type rdf:resource="http://www.w3.org/2002/07/owl#Class"/>
+    <rdfs:label rdf:datatype="http://www.w3.org/2001/XMLSchema#string">Extensor_Carpi_Radialis_Longus</rdfs:label>
+  </rdf:Description>
+  <rdf:Description rdf:about="http://human.owl#NCI_C52925">
+    <rdf:type rdf:resource="http://www.w3.org/2002/07/owl#Class"/>
+    <rdfs:label rdf:datatype="http://www.w3.org/2001/XMLSchema#string">Flexor_Hallucis_Longus</rdfs:label>
+  </rdf:Description>
+  <rdf:Description rdf:about="http://human.owl#NCI_C53152">
+    <rdf:type rdf:resource="http://www.w3.org/2002/07/owl#Class"/>
+    <rdfs:label rdf:datatype="http://www.w3.org/2001/XMLSchema#string">Depressor_Labii_Inferioris</rdfs:label>
+  </rdf:Description>
+  <rdf:Description rdf:about="http://human.owl#NCI_C52921">
+    <rdf:type rdf:resource="http://www.w3.org/2002/07/owl#Class"/>
+    <rdfs:label rdf:datatype="http://www.w3.org/2001/XMLSchema#string">Flexor_Digitorum_Longus</rdfs:label>
+  </rdf:Description>
+  <rdf:Description rdf:about="http://human.owl#NCI_C32666">
+    <rdf:type rdf:resource="http://www.w3.org/2002/07/owl#Class"/>
+    <rdfs:label rdf:datatype="http://www.w3.org/2001/XMLSchema#string">Gastrocnemius_Muscle</rdfs:label>
+  </rdf:Description>
+  <rdf:Description rdf:about="http://human.owl#NCI_C53155">
+    <rdf:type rdf:resource="http://www.w3.org/2002/07/owl#Class"/>
+    <rdfs:label rdf:datatype="http://www.w3.org/2001/XMLSchema#string">Flexor_Carpi_Radialis</rdfs:label>
+  </rdf:Description>
+  <rdf:Description rdf:about="http://human.owl#NCI_C52911">
+    <rdf:type rdf:resource="http://www.w3.org/2002/07/owl#Class"/>
+    <rdfs:label rdf:datatype="http://www.w3.org/2001/XMLSchema#string">Extensor_Carpi_Radialis_Brevis</rdfs:label>
+  </rdf:Description>
+  <rdf:Description rdf:about="http://human.owl#NCI_C52916">
+    <rdf:type rdf:resource="http://www.w3.org/2002/07/owl#Class"/>
+    <rdfs:label rdf:datatype="http://www.w3.org/2001/XMLSchema#string">Extensor_Digitorum_Communis</rdfs:label>
+  </rdf:Description>
+  <rdf:Description rdf:about="http://human.owl#NCI_C53172">
+    <rdf:type rdf:resource="http://www.w3.org/2002/07/owl#Class"/>
+    <rdfs:label rdf:datatype="http://www.w3.org/2001/XMLSchema#string">Foot_Interosseous_Muscle</rdfs:label>
+  </rdf:Description>
+  <rdf:Description rdf:about="http://human.owl#NCI_C52917">
+    <rdf:type rdf:resource="http://www.w3.org/2002/07/owl#Class"/>
+    <rdfs:label rdf:datatype="http://www.w3.org/2001/XMLSchema#string">Extensor_Digitorum_Lateralis</rdfs:label>
+  </rdf:Description>
+  <rdf:Description rdf:about="http://human.owl#NCI_C52928">
+    <rdf:type rdf:resource="http://www.w3.org/2002/07/owl#Class"/>
+    <rdfs:label rdf:datatype="http://www.w3.org/2001/XMLSchema#string">Genioglossus</rdfs:label>
+  </rdf:Description>
+  <rdf:Description rdf:about="http://human.owl#NCI_C52930">
+    <rdf:type rdf:resource="http://www.w3.org/2002/07/owl#Class"/>
+    <rdfs:label rdf:datatype="http://www.w3.org/2001/XMLSchema#string">Geniohyoid</rdfs:label>
   </rdf:Description>
 </rdf:RDF>

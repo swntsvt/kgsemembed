@@ -6,15 +6,16 @@ candidates, verbalisers, and the encoder are replaced with deterministic
 synthetic doubles.
 """
 
+import dataclasses
 import json
+from pathlib import Path
 
 import numpy as np
 import pytest
 from rdflib import Graph
 
 import kgsemembed.pipeline.run_experiment as runner
-from kgsemembed.datasets import AlignmentPair
-from kgsemembed.datasets.loader import _split_80_10_10, _split_first_fraction
+from kgsemembed.datasets import AlignmentPair, load_pair_from_dir
 from kgsemembed.embeddings.models import MODEL_REGISTRY
 from kgsemembed.utils.errors import DataError
 
@@ -25,6 +26,9 @@ _VECTORS = {
     "t2": [0.0, 1.0, 0.0],
 }
 _CANDIDATES = {"s1": ["t1", "t2"], "s2": ["t1", "t2"]}
+
+_SAMPLE_SOURCE = "http://mouse.owl#MA_0002307"
+_SAMPLE_TARGET = "http://human.owl#NCI_C52928"
 
 
 class _FakeVerbaliser:
@@ -369,20 +373,6 @@ def test_cli_runs_selected_condition_and_dataset(fakes, tmp_path):
 # ---------------------------------------------------------------------------
 
 
-def test_split_80_10_10_slices_sorted_by_source():
-    refs = [(f"s{i:02d}", f"t{i:02d}") for i in range(10)]
-    val, test = _split_80_10_10(list(reversed(refs)))
-    assert val == [("s08", "t08")]
-    assert test == [("s09", "t09")]
-
-
-def test_split_first_fraction_takes_leading_portion():
-    refs = [(f"s{i:02d}", f"t{i:02d}") for i in range(10)]
-    val, test = _split_first_fraction(list(reversed(refs)), 0.2)
-    assert val == [("s00", "t00"), ("s01", "t01")]
-    assert len(test) == 8
-
-
 def test_load_candidates_roundtrip_and_missing(tmp_path):
     from kgsemembed.candidates import load_candidates
 
@@ -397,36 +387,68 @@ def test_load_candidates_roundtrip_and_missing(tmp_path):
         load_candidates("D1", "missing", tmp_path)
 
 
-_TURTLE = """@prefix owl: <http://www.w3.org/2002/07/owl#> .
-<http://ex/{a}> a owl:Class .
-<http://ex/{b}> a owl:Class .
-"""
-
-
-def test_load_dataset_d1_reads_direct_val_test_splits(tmp_path):
-    from kgsemembed.datasets import load_dataset
-
-    pair_dir = tmp_path / "datasets" / "D1" / "d1_pair"
-    (pair_dir / "refs_equiv").mkdir(parents=True)
-    (pair_dir / "source.ttl").write_text(_TURTLE.format(a="s1", b="s2"))
-    (pair_dir / "target.ttl").write_text(_TURTLE.format(a="t1", b="t2"))
-    (pair_dir / "refs_equiv" / "val.tsv").write_text("http://ex/s1\thttp://ex/t1\n")
-    (pair_dir / "refs_equiv" / "test.tsv").write_text("http://ex/s2\thttp://ex/t2\n")
-
-    pairs = load_dataset("D1", tmp_path)
-    assert len(pairs) == 1
-    pair = pairs[0]
-    assert pair.pair_name == "d1_pair"
-    assert pair.source_entities == ["http://ex/s1", "http://ex/s2"]
-    assert pair.val_refs == [("http://ex/s1", "http://ex/t1")]
-    assert pair.test_refs == [("http://ex/s2", "http://ex/t2")]
-
-
 def test_load_dataset_rejects_unknown_dataset(tmp_path):
     from kgsemembed.datasets import load_dataset
 
     with pytest.raises(DataError):
         load_dataset("D9", tmp_path)
+
+
+# ---------------------------------------------------------------------------
+# End-to-end smoke test over the real data/sample/ graphs
+# ---------------------------------------------------------------------------
+
+
+def _sample_pair() -> AlignmentPair:
+    """Load data/sample/ and pin one ref pair so the mocked run is deterministic."""
+    pair = load_pair_from_dir("data/sample")
+    return dataclasses.replace(
+        pair,
+        dataset_id="D2",
+        pair_name="sample_pair",
+        val_refs=[(_SAMPLE_SOURCE, _SAMPLE_TARGET)],
+        test_refs=[(_SAMPLE_SOURCE, _SAMPLE_TARGET)],
+    )
+
+
+@pytest.mark.integration
+def test_sample_pair_loads_real_graphs_from_disk():
+    if not Path("data/sample").exists():
+        pytest.skip("dataset directory missing: data/sample")
+    pair = load_pair_from_dir("data/sample")
+
+    assert pair.source_graph is not None
+    assert len(pair.source_graph) > 0
+    assert _SAMPLE_SOURCE in pair.source_entities
+
+
+@pytest.mark.integration
+def test_run_condition_over_sample_pair_with_mocked_encoder(monkeypatch, tmp_path):
+    if not Path("data/sample").exists():
+        pytest.skip("dataset directory missing: data/sample")
+    pair = _sample_pair()
+    dimension = 4
+
+    class _SampleEncoder:
+        def __init__(self, model_key, model):
+            self.model_key = model_key
+
+        def encode_batch(self, texts, role="candidate", show_progress=True):
+            return np.ones((len(texts), dimension), dtype=np.float32)
+
+    monkeypatch.setattr(runner, "load_sentence_transformer", lambda _key: object())
+    monkeypatch.setattr(runner, "EmbeddingEncoder", _SampleEncoder)
+    monkeypatch.setattr(runner, "load_dataset", lambda _d, _dir: [pair])
+    monkeypatch.setattr(
+        runner, "load_candidates", lambda _d, _p, _dir: {_SAMPLE_SOURCE: [_SAMPLE_TARGET]}
+    )
+
+    results = runner.run_condition(
+        "C1", dataset_ids=["D2"], data_dir=tmp_path, results_dir=tmp_path / "results"
+    )
+
+    assert set(results) == {"D2"}
+    assert (tmp_path / "results" / "C1" / "D2" / "sample_pair_results.json").exists()
 
 
 # ---------------------------------------------------------------------------

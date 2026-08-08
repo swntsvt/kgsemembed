@@ -9,8 +9,9 @@ from kgsemembed.candidates.generator import (
     build_candidate_table,
     generate_candidates,
 )
+from kgsemembed.candidates.ngram import dump_candidates, load_candidates
 from kgsemembed.pipeline.run_experiment import run_experiment
-from kgsemembed.utils.errors import ConfigurationError
+from kgsemembed.utils.errors import ConfigurationError, DataError
 
 
 def test_char_ngrams_for_multiple_n() -> None:
@@ -67,6 +68,43 @@ def test_reproducible_output_across_runs() -> None:
     run2 = generate_candidates(source, target, n=3, metric="cosine", top_k=5)
 
     assert run1 == run2
+
+
+def test_dump_candidates_round_trips_through_load_candidates(tmp_path: Path) -> None:
+    candidates = {
+        "http://ex/s1": ["http://ex/t1", "http://ex/t2"],
+        "http://ex/s2": ["http://ex/t3"],
+    }
+    path = tmp_path / "candidates" / "D1" / "d1_pair_candidates.json"
+
+    dump_candidates(candidates, path)
+
+    assert load_candidates("D1", "d1_pair", tmp_path) == candidates
+
+
+def test_dump_candidates_creates_missing_parent_directories(tmp_path: Path) -> None:
+    path = tmp_path / "deep" / "nested" / "pair_candidates.json"
+
+    dump_candidates({"http://ex/s1": ["http://ex/t1"]}, path)
+
+    assert path.exists()
+
+
+def test_dump_candidates_writes_empty_map_readable_by_loader(tmp_path: Path) -> None:
+    path = tmp_path / "candidates" / "D2" / "empty_candidates.json"
+
+    dump_candidates({}, path)
+
+    assert load_candidates("D2", "empty", tmp_path) == {}
+
+
+def test_load_candidates_rejects_file_without_candidates_key(tmp_path: Path) -> None:
+    path = tmp_path / "candidates" / "D3" / "bad_candidates.json"
+    path.parent.mkdir(parents=True)
+    path.write_text('{"not_candidates": {}}')
+
+    with pytest.raises(DataError):
+        load_candidates("D3", "bad", tmp_path)
 
 
 def test_pipeline_persists_candidate_csv_with_expected_schema(tmp_path: Path) -> None:

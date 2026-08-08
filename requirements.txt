@@ -3,8 +3,12 @@ transformers
 torch
 pandas
 numpy
+scipy
 rdflib
 hydra-core
+omegaconf
+tqdm
 pytest
 matplotlib
 seaborn
+orjson
