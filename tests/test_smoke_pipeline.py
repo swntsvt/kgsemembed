@@ -136,7 +136,7 @@ def test_result_json_matches_required_schema(fakes, tmp_path):
     }
     assert payload["condition_id"] == "C1"
     assert payload["model_id"] == MODEL_REGISTRY["M1"].model_id
-    assert payload["n_candidates_per_entity"] == 20
+    assert payload["n_candidates_per_entity"] == 2
     assert payload["n_source_entities"] == 2
 
 

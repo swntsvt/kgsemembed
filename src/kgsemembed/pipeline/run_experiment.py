@@ -31,6 +31,7 @@ from tqdm import tqdm
 
 from kgsemembed.candidates import build_candidate_table, generate_candidates, load_candidates
 from kgsemembed.datasets import AlignmentPair, load_dataset, load_oaei_dataset
+from kgsemembed.datasets.loader import _resolve_entity_type
 from kgsemembed.embeddings import EmbeddingEncoder, MODEL_REGISTRY, load_sentence_transformer
 from kgsemembed.evaluation import RankedList, compute_all_metrics, tune_threshold
 from kgsemembed.pipeline.conditions import (
@@ -47,8 +48,7 @@ _CONFIG_DIR = Path(__file__).resolve().parents[3] / "configs"
 
 _LOGGER = logging.getLogger("kgsemembed.pipeline.runner")
 
-_DEFAULT_ENTITY_TYPE = "class"
-_N_CANDIDATES_PER_ENTITY = 20
+_MIXED_ENTITY_TYPE = "mixed"
 _METRIC_KEYS = (
     "f1",
     "precision",
@@ -161,11 +161,23 @@ def _result_path(
     return Path(results_dir) / condition_id / dataset_id / f"{pair_name}_results.json"
 
 
+def _entity_type_for(pair_entity_type: str, graph: Graph, uri: str) -> str:
+    if pair_entity_type == _MIXED_ENTITY_TYPE:
+        return _resolve_entity_type(graph, uri)
+    return pair_entity_type
+
+
 def _verbalise_uris(
-    verbaliser: VerbaliserBase, graph: Graph, uris: List[str], desc: str
+    verbaliser: VerbaliserBase,
+    graph: Graph,
+    uris: List[str],
+    entity_type: str,
+    desc: str,
 ) -> List[str]:
     return [
-        verbaliser.verbalise(graph, URIRef(uri), _DEFAULT_ENTITY_TYPE)
+        verbaliser.verbalise(
+            graph, URIRef(uri), _entity_type_for(entity_type, graph, uri)
+        )
         for uri in tqdm(uris, desc=desc)
     ]
 
@@ -225,11 +237,19 @@ def _process_pair(
 ) -> Dict[str, float]:
     verbaliser = build_verbaliser(condition.strategy_name, condition.model_key)
     source_texts = _verbalise_uris(
-        verbaliser, pair.source_graph, pair.source_entities, "source verbalisation"
+        verbaliser,
+        pair.source_graph,
+        pair.source_entities,
+        pair.entity_type,
+        "source verbalisation",
     )
     candidate_uris = _unique_candidate_uris(pair, candidates)
     candidate_texts = _verbalise_uris(
-        verbaliser, pair.target_graph, candidate_uris, "candidate verbalisation"
+        verbaliser,
+        pair.target_graph,
+        candidate_uris,
+        pair.entity_type,
+        "candidate verbalisation",
     )
     source_embeddings = encoder.encode_batch(source_texts, role="source", show_progress=True)
     candidate_embeddings = encoder.encode_batch(
@@ -244,11 +264,16 @@ def _process_pair(
     return compute_all_metrics(ranked_lists, pair.test_refs, threshold=threshold)
 
 
+def _candidate_count(candidates: Dict[str, List[str]]) -> int:
+    return len(next(iter(candidates.values()))) if candidates else 0
+
+
 def _write_result(
     results_dir: str | Path,
     condition: ExperimentCondition,
     pair: AlignmentPair,
     metrics: Dict[str, float],
+    n_candidates: int,
 ) -> None:
     path = _result_path(results_dir, condition.condition_id, pair.dataset_id, pair.pair_name)
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -261,7 +286,7 @@ def _write_result(
         "model_id": MODEL_REGISTRY[condition.model_key].model_id,
         "metrics": {key: metrics[key] for key in _METRIC_KEYS},
         "n_source_entities": len(pair.source_entities),
-        "n_candidates_per_entity": _N_CANDIDATES_PER_ENTITY,
+        "n_candidates_per_entity": n_candidates,
     }
     path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
 
@@ -286,7 +311,7 @@ def _run_pair(
             return _read_metrics(path)
         candidates = load_candidates(pair.dataset_id, pair.pair_name, data_dir)
         metrics = _process_pair(pair, condition, encoder, candidates)
-        _write_result(results_dir, condition, pair, metrics)
+        _write_result(results_dir, condition, pair, metrics, _candidate_count(candidates))
         return metrics
     except Exception as exc:
         _LOGGER.error(
