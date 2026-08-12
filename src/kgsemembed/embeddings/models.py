@@ -9,7 +9,7 @@ instantiates a model.
 """
 
 from dataclasses import dataclass
-from typing import Dict, Optional
+from typing import Dict, Optional, Tuple
 
 import torch
 from sentence_transformers import SentenceTransformer
@@ -160,7 +160,37 @@ def _select_device() -> str:
     return "cpu"
 
 
-def load_sentence_transformer(model_key: str) -> SentenceTransformer:
+def _resolve_hf_revision(model: SentenceTransformer) -> str:
+    """
+    Determine the Hugging Face revision behind a loaded model.
+
+    The commit hash recorded on the underlying transformer configuration is
+    preferred. When that attribute is unavailable the tokenizer's source path
+    is used instead, and when neither can be read the revision is unknown.
+
+    Parameters
+    ----------
+    model : SentenceTransformer
+        A loaded model instance.
+
+    Returns
+    -------
+    str
+        The commit hash, the tokenizer source path, or ``"unknown"``.
+    """
+    try:
+        return model[0].auto_model.config._commit_hash
+    except (AttributeError, TypeError, IndexError, KeyError):
+        pass
+    try:
+        return model.tokenizer.name_or_path
+    except (AttributeError, TypeError):
+        return "unknown"
+
+
+def load_sentence_transformer(
+    model_key: str,
+) -> Tuple[SentenceTransformer, Dict[str, str]]:
     """
     Load the ``SentenceTransformer`` for ``model_key`` onto the best device.
 
@@ -171,10 +201,18 @@ def load_sentence_transformer(model_key: str) -> SentenceTransformer:
 
     Returns
     -------
-    SentenceTransformer
-        A model instance placed on the selected device.
+    Tuple[SentenceTransformer, Dict[str, str]]
+        The model placed on the selected device, and provenance metadata
+        holding ``model_key``, ``model_id``, ``device`` and ``hf_revision``.
     """
     config = get_model_config(model_key)
     device = _select_device()
     print(f"Loading model {config.model_id} on device {device}")
-    return SentenceTransformer(config.model_id, device=device)
+    model = SentenceTransformer(config.model_id, device=device)
+    model_info = {
+        "model_key": model_key,
+        "model_id": config.model_id,
+        "device": device,
+        "hf_revision": _resolve_hf_revision(model),
+    }
+    return model, model_info
