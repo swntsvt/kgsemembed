@@ -17,6 +17,7 @@ from kgsemembed.verbalisation.ppas import (
     PPAS_BUDGETS,
     ppas_sample,
     should_apply_ppas,
+    untiered_predicates,
 )
 
 
@@ -96,7 +97,7 @@ class StructuredKVVerbaliser(VerbaliserBase):
             from the appended synthetic tier.
         """
         augmented = INSTANCE_TIER_LIST + [
-            self._untiered_predicates(triples, INSTANCE_TIER_LIST)
+            untiered_predicates(triples, INSTANCE_TIER_LIST)
         ]
         return ppas_sample(
             triples,
@@ -104,16 +105,3 @@ class StructuredKVVerbaliser(VerbaliserBase):
             PPAS_BUDGETS[self.model_key],
             self._verbalise_triple,
         )
-
-    @staticmethod
-    def _untiered_predicates(
-        triples: list[tuple], tier_list: list[list[str]]
-    ) -> list[str]:
-        """Return predicates present in *triples* but absent from any tier."""
-        tiered = {predicate for tier in tier_list for predicate in tier}
-        untiered: list[str] = []
-        for _subj, pred, _obj in triples:
-            key = str(pred)
-            if key not in tiered and key not in untiered:
-                untiered.append(key)
-        return untiered
