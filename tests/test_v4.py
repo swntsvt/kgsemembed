@@ -10,7 +10,9 @@ from rdflib import BNode, Graph, Literal, URIRef
 from kgsemembed.verbalisation.base import LABEL_PREDICATES
 from kgsemembed.verbalisation.v4 import StructuredKVVerbaliser
 from kgsemembed.verbalisation.ppas import (
+    INSTANCE_TIER_LIST,
     PPAS_BUDGETS,
+    estimate_tokens,
     should_apply_ppas,
 )
 
@@ -356,7 +358,7 @@ def test_exactly_twenty_triples() -> None:
 
 
 # ---------------------------------------------------------------------------
-# PPAS Fallback for Untiered Predicates
+# Untiered Predicate Handling
 # ---------------------------------------------------------------------------
 
 
@@ -410,18 +412,75 @@ def test_fallback_when_all_predicates_untiered() -> None:
     assert "Force 0" in result
 
 
-def test_fallback_logs_warning() -> None:
-    """A warning is logged whenever the fallback is triggered."""
+def test_untiered_predicates_log_no_warning() -> None:
+    """Untiered predicates are handled by PPAS without any warning."""
     g = _make_untiered_graph()
     v = StructuredKVVerbaliser(model_key="M2")
 
     with _capture_warnings() as records:
         v.verbalise(g, _ENT, "instance")
 
-    assert len(records) == 1
-    assert records[0].levelno == logging.WARNING
-    assert str(_ENT) in records[0].getMessage()
-    assert "49" in records[0].getMessage()
+    assert records == []
+
+
+def test_untiered_predicates_appended_as_lowest_tier() -> None:
+    """Untiered predicates reach PPAS as a synthetic tier after the configured ones."""
+    g = _make_untiered_graph()
+    captured: list[list[list[str]]] = []
+
+    def _capture_tiers(triples, tier_list, budget, fn):
+        captured.append(tier_list)
+        return triples
+
+    v = StructuredKVVerbaliser(model_key="M2")
+    with patch(
+        "kgsemembed.verbalisation.v4.ppas_sample", side_effect=_capture_tiers
+    ):
+        v.verbalise(g, _ENT, "instance")
+
+    tier_list = captured[0]
+    assert tier_list[: len(INSTANCE_TIER_LIST)] == INSTANCE_TIER_LIST
+    assert len(tier_list) == len(INSTANCE_TIER_LIST) + 1
+    assert tier_list[-1] == [
+        f"http://dbpedia.org/ontology/combatant_{i}" for i in range(49)
+    ]
+
+
+def test_untiered_predicates_respect_token_budget() -> None:
+    """Large untiered entities are capped to the budget instead of bypassing it."""
+    g = Graph()
+    value = " ".join(["word"] * 20)
+    for i in range(40):
+        pred = URIRef(f"http://dbpedia.org/ontology/combatant_{i}")
+        g.add((_ENT, pred, Literal(f"{value} {i}")))
+
+    v = StructuredKVVerbaliser(model_key="M2")
+    with _capture_warnings() as records:
+        result = v.verbalise(g, _ENT, "instance")
+
+    assert result != ""
+    assert records == []
+
+    triples = list(g.triples((_ENT, None, None)))
+    unit_cost = estimate_tokens(v._verbalise_triple(*triples[0]))
+    affordable = PPAS_BUDGETS["M2"] // unit_cost
+    assert affordable < len(triples)
+    assert result.count(" | ") == affordable - 1
+
+
+def test_tiered_predicates_selected_before_untiered() -> None:
+    """Tier-0 predicates win the budget ahead of untiered ones."""
+    g = Graph()
+    g.add((_ENT, LABEL_PREDICATES[0], Literal("Aspirin", lang="en")))
+    value = " ".join(["word"] * 20)
+    for i in range(40):
+        pred = URIRef(f"http://dbpedia.org/ontology/combatant_{i}")
+        g.add((_ENT, pred, Literal(f"{value} {i}")))
+
+    v = StructuredKVVerbaliser(model_key="M2")
+    result = v.verbalise(g, _ENT, "instance")
+
+    assert result.startswith("label: Aspirin")
 
 
 def test_no_fallback_when_predicates_tiered() -> None:
