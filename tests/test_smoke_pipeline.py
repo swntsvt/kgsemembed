@@ -64,7 +64,12 @@ def fakes(monkeypatch):
 
     def fake_load_model(model_key):
         calls["models"].append(model_key)
-        return object()
+        return object(), {
+            "model_key": model_key,
+            "model_id": f"fake/{model_key}",
+            "device": "cpu",
+            "hf_revision": "unknown",
+        }
 
     def fake_encoder(model_key, model):
         calls["encoders"] += 1
@@ -440,7 +445,11 @@ def test_run_condition_over_sample_pair_with_mocked_encoder(monkeypatch, tmp_pat
         def encode_batch(self, texts, role="candidate", show_progress=True):
             return np.ones((len(texts), dimension), dtype=np.float32)
 
-    monkeypatch.setattr(runner, "load_sentence_transformer", lambda _key: object())
+    monkeypatch.setattr(
+        runner,
+        "load_sentence_transformer",
+        lambda _key: (object(), {"device": "cpu"}),
+    )
     monkeypatch.setattr(runner, "EmbeddingEncoder", _SampleEncoder)
     monkeypatch.setattr(runner, "load_dataset", lambda _d, _dir: [pair])
     monkeypatch.setattr(

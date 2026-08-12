@@ -462,7 +462,7 @@ def run_condition(
         If ``condition_id`` is not registered.
     """
     condition = get_condition(condition_id)
-    model = load_sentence_transformer(condition.model_key)
+    model, _ = load_sentence_transformer(condition.model_key)
     try:
         encoder = EmbeddingEncoder(condition.model_key, model)
         return _run_condition_with_encoder(
@@ -539,7 +539,7 @@ def run_all_conditions(
     conditions = _select_conditions(condition_ids)
     summary: Dict[str, Dict[str, Dict[str, float]]] = {}
     for model_key, group in _group_by_model(conditions).items():
-        model = load_sentence_transformer(model_key)
+        model, _ = load_sentence_transformer(model_key)
         try:
             encoder = EmbeddingEncoder(model_key, model)
             for condition in group:
