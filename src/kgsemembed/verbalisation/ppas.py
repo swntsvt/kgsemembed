@@ -109,6 +109,40 @@ def estimate_tokens(text: str) -> int:
     return math.ceil(len(text.split()) * 1.3)
 
 
+def untiered_predicates(
+    triples: List[Tuple], tier_list: List[List[str]]
+) -> List[str]:
+    """Return predicates present in *triples* but absent from every tier.
+
+    The result is intended to be appended to *tier_list* as a synthetic
+    lowest-priority tier, so that :func:`ppas_sample` selects untiered
+    triples within the token budget instead of discarding them.
+
+    Predicate URIs are returned as :class:`str`, matching the tier-list
+    convention, because :func:`ppas_sample` compares them against
+    ``str(triple[1])``.
+
+    Parameters
+    ----------
+    triples : list of tuple
+        RDF triples as ``(subject, predicate, object)`` rdflib tuples.
+    tier_list : list of list of str
+        Predicate URI strings grouped by tier priority.
+
+    Returns
+    -------
+    list of str
+        Untiered predicate URIs, deduplicated in first-occurrence order.
+    """
+    tiered = {predicate for tier in tier_list for predicate in tier}
+    untiered: List[str] = []
+    for _subj, pred, _obj in triples:
+        key = str(pred)
+        if key not in tiered and key not in untiered:
+            untiered.append(key)
+    return untiered
+
+
 def ppas_sample(
     triples: List[Tuple],
     tier_list: List[List[str]],

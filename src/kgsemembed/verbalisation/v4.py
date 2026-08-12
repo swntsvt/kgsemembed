@@ -2,9 +2,12 @@
 
 Serialises an entity as deterministic pipe-separated predicate-value pairs.
 Integrates with PPAS for entities exceeding the triple count threshold.
-"""
 
-import logging
+Predicates absent from every configured tier are appended as a synthetic
+lowest-priority tier, mirroring :mod:`kgsemembed.verbalisation.v3`, so that
+untiered triples are selected within the model token budget rather than
+bypassing PPAS.
+"""
 
 from rdflib import Graph, URIRef
 
@@ -14,9 +17,8 @@ from kgsemembed.verbalisation.ppas import (
     PPAS_BUDGETS,
     ppas_sample,
     should_apply_ppas,
+    untiered_predicates,
 )
-
-logger = logging.getLogger(__name__)
 
 
 class StructuredKVVerbaliser(VerbaliserBase):
@@ -68,7 +70,7 @@ class StructuredKVVerbaliser(VerbaliserBase):
         triples = self._collect_triples(graph, entity_uri)
 
         if should_apply_ppas(triples, self.model_key):
-            triples = self._sample_triples(triples, entity_uri)
+            triples = self._select_triples(triples)
 
         pairs: list[str] = []
         for subj, pred, obj in triples:
@@ -78,39 +80,28 @@ class StructuredKVVerbaliser(VerbaliserBase):
 
         return " | ".join(pairs)
 
-    def _sample_triples(
-        self, triples: list[tuple], entity_uri: URIRef
-    ) -> list[tuple]:
+    def _select_triples(self, triples: list[tuple]) -> list[tuple]:
         """
-        Apply PPAS, falling back to the unsampled triples when it selects none.
+        Apply PPAS with untiered predicates as the lowest-priority tier.
 
         Parameters
         ----------
         triples : list of tuple
             Collected triples for the entity, in original order.
-        entity_uri : URIRef
-            URI of the entity, reported when the fallback is used.
 
         Returns
         -------
         list of tuple
-            PPAS-selected triples, or *triples* unchanged when PPAS selects
-            nothing because no predicate belongs to a configured tier.
+            Triples selected in tier-priority order within the model token
+            budget; entities whose predicates are all untiered are selected
+            from the appended synthetic tier.
         """
-        sampled = ppas_sample(
+        augmented = INSTANCE_TIER_LIST + [
+            untiered_predicates(triples, INSTANCE_TIER_LIST)
+        ]
+        return ppas_sample(
             triples,
-            INSTANCE_TIER_LIST,
+            augmented,
             PPAS_BUDGETS[self.model_key],
             self._verbalise_triple,
         )
-
-        if sampled:
-            return sampled
-
-        logger.warning(
-            "PPAS selected no triples for %s; falling back to all %d "
-            "unsampled triples (no predicate matches INSTANCE_TIER_LIST)",
-            entity_uri,
-            len(triples),
-        )
-        return triples

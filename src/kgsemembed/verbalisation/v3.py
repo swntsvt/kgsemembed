@@ -23,6 +23,7 @@ from kgsemembed.verbalisation.ppas import (
     PREDICATE_TIER_LIST,
     estimate_tokens,
     ppas_sample,
+    untiered_predicates,
 )
 
 _TIER_LISTS: dict[str, list[list[str]]] = {
@@ -124,24 +125,11 @@ class TemplateNLVerbaliser(VerbaliserBase):
         """Order triples by predicate tier and cap them to the model budget."""
         if not triples:
             return []
-        augmented = tier_list + [self._untiered_predicates(triples, tier_list)]
+        augmented = tier_list + [untiered_predicates(triples, tier_list)]
         budget = PPAS_BUDGETS.get(self.model_key)
         if budget is None:
             budget = self._total_cost(triples)
         return ppas_sample(triples, augmented, budget, self._verbalise_triple)
-
-    @staticmethod
-    def _untiered_predicates(
-        triples: list[tuple], tier_list: list[list[str]]
-    ) -> list[str]:
-        """Return predicates present in *triples* but absent from any tier."""
-        tiered = {predicate for tier in tier_list for predicate in tier}
-        untiered: list[str] = []
-        for _subj, pred, _obj in triples:
-            key = str(pred)
-            if key not in tiered and key not in untiered:
-                untiered.append(key)
-        return untiered
 
     def _total_cost(self, triples: list[tuple]) -> int:
         """Return the summed token cost of *triples* for the uncapped path."""
