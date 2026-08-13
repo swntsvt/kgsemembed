@@ -17,6 +17,7 @@ from kgsemembed.evaluation import (
     tune_threshold,
 )
 from kgsemembed.evaluation.metrics import _reference_map
+from kgsemembed.pipeline.conditions import get_condition
 from kgsemembed.pipeline.run_experiment import (
     _resolve_threshold,
     _validation_scored_pairs,
@@ -347,6 +348,64 @@ def test_resolve_threshold_warns_when_validation_empty(monkeypatch) -> None:
     _resolve_threshold([("a", "x", 0.9)], [])
     assert len(warnings) == 1
     assert "validation" in warnings[0].lower()
+
+
+# ---------------------------------------------------------------------------
+# Experiment-level seeding
+# ---------------------------------------------------------------------------
+def test_seed_random_state_sets_python_and_numpy_generators() -> None:
+    import random
+
+    runner._seed_random_state()
+    observed = (random.random(), float(np.random.random()))
+
+    random.seed(42)
+    np.random.seed(42)
+    assert observed == (random.random(), float(np.random.random()))
+
+
+def test_condition_run_is_isolated_from_preceding_conditions(monkeypatch) -> None:
+    import random
+
+    condition = get_condition("C1")
+    runs: list[list[float]] = []
+
+    def _record(*args, **kwargs):
+        runs[-1].append(random.random())
+        return None
+
+    monkeypatch.setattr(runner, "_run_dataset", _record)
+    for hostile_seed in (999, 12345):
+        random.seed(hostile_seed)  # state a preceding condition would leave behind
+        runs.append([])
+        runner._run_condition_with_encoder(
+            condition, object(), None, "data/", "results/", False
+        )
+
+    assert runs[0] and runs[0] == runs[1]
+
+
+def test_run_condition_seeds_before_loading_the_model(monkeypatch) -> None:
+    import random
+
+    seeded_before_load: list[bool] = []
+
+    def _fake_load(model_key):
+        seeded_before_load.append(random.random() == _seeded_first_draw())
+        raise RuntimeError("stop after seeding check")
+
+    monkeypatch.setattr(runner, "load_sentence_transformer", _fake_load)
+    random.seed(999)
+    with pytest.raises(RuntimeError):
+        runner.run_condition("C1")
+    assert seeded_before_load == [True]
+
+
+def _seeded_first_draw() -> float:
+    import random
+
+    generator = random.Random(42)
+    return generator.random()
 
 
 # ---------------------------------------------------------------------------

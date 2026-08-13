@@ -1,8 +1,11 @@
 """Tests for Predicate-Priority Adaptive Sampling (PPAS)."""
 
+from unittest.mock import patch
+
 from rdflib import Graph, Literal, URIRef
 
 from kgsemembed.verbalisation.base import VerbaliserBase
+from kgsemembed.verbalisation.v3 import TemplateNLVerbaliser
 from kgsemembed.verbalisation.ppas import (
     CLASS_TIER_LIST,
     INSTANCE_TIER_LIST,
@@ -462,3 +465,20 @@ def test_ppas_keeps_highest_priority_triples_under_tight_budget() -> None:
     tier_list = [["http://ex/p0"], [f"http://ex/p{i}" for i in (3, 5, 7, 11)]]
     selected = ppas_sample(triples, tier_list, 3, _verbalise)
     assert [str(p) for _, p, _ in selected] == ["http://ex/p0"]
+
+
+def test_verbaliser_passes_sorted_triples_to_ppas() -> None:
+    """The sorted collection, not raw graph order, is what PPAS receives."""
+    graph = _unordered_graph()
+    graph.add((_ENTITY, URIRef("http://www.w3.org/2000/01/rdf-schema#label"), Literal("Ent")))
+    captured: list[list] = []
+
+    def _capture(triples, tier_list, budget, fn):
+        captured.append(list(triples))
+        return triples
+
+    with patch("kgsemembed.verbalisation.v3.ppas_sample", side_effect=_capture):
+        TemplateNLVerbaliser(model_key="M2").verbalise(graph, _ENTITY, "instance")
+
+    keys = [(str(s), str(p), str(o)) for s, p, o in captured[0]]
+    assert keys == sorted(keys)

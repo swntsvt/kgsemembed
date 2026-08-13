@@ -59,6 +59,7 @@ _LOGGER = logging.getLogger("kgsemembed.pipeline.runner")
 
 _MIXED_ENTITY_TYPE = "mixed"
 _DEFAULT_THRESHOLD = 0.5
+_RANDOM_SEED = 42
 _METRIC_KEYS = (
     "f1",
     "precision",
@@ -479,6 +480,18 @@ def _select_datasets(
     return [dataset_id for dataset_id in condition.datasets if dataset_id in requested]
 
 
+def _seed_random_state() -> None:
+    """
+    Reset the Python and NumPy global generators to the fixed experiment seed.
+
+    Called once per condition rather than once per process so that a condition
+    produces the same results whether it is run alone or after other conditions
+    in the same interpreter.
+    """
+    random.seed(_RANDOM_SEED)
+    np.random.seed(_RANDOM_SEED)
+
+
 def _run_condition_with_encoder(
     condition: ExperimentCondition,
     encoder: EmbeddingEncoder,
@@ -488,6 +501,7 @@ def _run_condition_with_encoder(
     force_recompute: bool,
 ) -> Dict[str, Dict[str, float]]:
     results: Dict[str, Dict[str, float]] = {}
+    _seed_random_state()
     _log_ppas_configuration(condition)
     for dataset_id in _select_datasets(condition, dataset_ids):
         try:
@@ -553,8 +567,7 @@ def run_condition(
     KeyError
         If ``condition_id`` is not registered.
     """
-    random.seed(42)
-    np.random.seed(42)
+    _seed_random_state()
     condition = get_condition(condition_id)
     model, _ = load_sentence_transformer(condition.model_key)
     try:
@@ -665,8 +678,7 @@ def _build_arg_parser() -> argparse.ArgumentParser:
 
 def cli_main(argv: Optional[List[str]] = None) -> None:
     """Parse command-line arguments and run the requested conditions."""
-    random.seed(42)
-    np.random.seed(42)
+    _seed_random_state()
     args = _build_arg_parser().parse_args(argv)
     run_all_conditions(
         condition_ids=args.conditions,
