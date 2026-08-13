@@ -2,7 +2,7 @@
 
 This module is the single authoritative source of embedding model metadata for
 Phase 2 experiments: model identifiers, token limits, PPAS budgets, prompting
-behaviour, preferred hardware, and recommended batch sizes.  Configuration,
+behaviour, and recommended batch sizes.  Configuration,
 lookup, device selection, and model loading are kept as separate
 responsibilities so that importing this module has no side effects and never
 instantiates a model.
@@ -34,8 +34,6 @@ class ModelConfig:
         Instruction prepended to query text, or ``None`` when unused.
     doc_prefix : Optional[str]
         Instruction prepended to document text, or ``None`` when unused.
-    device_hint : str
-        Preferred hardware for this model (``"mps"``, ``"cuda"`` or ``"cpu"``).
     batch_size : int
         Recommended encoding batch size for this model.
     trust_remote_code : bool
@@ -50,7 +48,6 @@ class ModelConfig:
     ppas_budget: Optional[int]
     query_prefix: Optional[str]
     doc_prefix: Optional[str]
-    device_hint: str
     batch_size: int
     trust_remote_code: bool = False
 
@@ -63,7 +60,6 @@ MODEL_REGISTRY: Dict[str, ModelConfig] = {
         ppas_budget=200,
         query_prefix=None,
         doc_prefix=None,
-        device_hint="mps",
         batch_size=64,
     ),
     "M2": ModelConfig(
@@ -77,7 +73,6 @@ MODEL_REGISTRY: Dict[str, ModelConfig] = {
         # the prefix is omitted on both sides to avoid biasing similarity.
         query_prefix=None,
         doc_prefix=None,
-        device_hint="mps",
         batch_size=32,
     ),
     "M3": ModelConfig(
@@ -87,7 +82,6 @@ MODEL_REGISTRY: Dict[str, ModelConfig] = {
         ppas_budget=None,
         query_prefix=None,
         doc_prefix=None,
-        device_hint="cuda",
         batch_size=16,
         # BGE-M3 is a stock XLM-RoBERTa architecture, so the long context is
         # available without executing modelling code from the repository.
@@ -100,7 +94,6 @@ MODEL_REGISTRY: Dict[str, ModelConfig] = {
         ppas_budget=420,
         query_prefix=None,
         doc_prefix=None,
-        device_hint="mps",
         batch_size=32,
     ),
     "M5": ModelConfig(
@@ -114,7 +107,6 @@ MODEL_REGISTRY: Dict[str, ModelConfig] = {
         # not be applied to documents.
         query_prefix="Instruct: Retrieve semantically similar text.\nQuery: {}",
         doc_prefix=None,
-        device_hint="cuda",
         batch_size=8,
     ),
 }

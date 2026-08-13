@@ -59,7 +59,6 @@ def test_registry_exposes_expected_token_limits(
 
 def test_registry_metadata_is_well_formed() -> None:
     for cfg in MODEL_REGISTRY.values():
-        assert cfg.device_hint in {"mps", "cuda", "cpu"}
         assert isinstance(cfg.batch_size, int) and cfg.batch_size > 0
 
 
@@ -81,7 +80,6 @@ def test_trust_remote_code_defaults_to_false() -> None:
         ppas_budget=None,
         query_prefix=None,
         doc_prefix=None,
-        device_hint="cpu",
         batch_size=8,
     )
     assert config.trust_remote_code is False
