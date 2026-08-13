@@ -2,14 +2,14 @@
 
 This module is the single authoritative source of embedding model metadata for
 Phase 2 experiments: model identifiers, token limits, PPAS budgets, prompting
-behaviour, preferred hardware, and recommended batch sizes.  Configuration,
+behaviour, and recommended batch sizes.  Configuration,
 lookup, device selection, and model loading are kept as separate
 responsibilities so that importing this module has no side effects and never
 instantiates a model.
 """
 
 from dataclasses import dataclass
-from typing import Dict, Optional
+from typing import Dict, Optional, Tuple
 
 import torch
 from sentence_transformers import SentenceTransformer
@@ -34,10 +34,12 @@ class ModelConfig:
         Instruction prepended to query text, or ``None`` when unused.
     doc_prefix : Optional[str]
         Instruction prepended to document text, or ``None`` when unused.
-    device_hint : str
-        Preferred hardware for this model (``"mps"``, ``"cuda"`` or ``"cpu"``).
     batch_size : int
         Recommended encoding batch size for this model.
+    trust_remote_code : bool
+        Whether loading executes custom modelling code published in the model
+        repository. Enabled only for models whose architecture is not part of
+        ``transformers``.
     """
 
     model_key: str
@@ -46,8 +48,8 @@ class ModelConfig:
     ppas_budget: Optional[int]
     query_prefix: Optional[str]
     doc_prefix: Optional[str]
-    device_hint: str
     batch_size: int
+    trust_remote_code: bool = False
 
 
 MODEL_REGISTRY: Dict[str, ModelConfig] = {
@@ -58,7 +60,6 @@ MODEL_REGISTRY: Dict[str, ModelConfig] = {
         ppas_budget=200,
         query_prefix=None,
         doc_prefix=None,
-        device_hint="mps",
         batch_size=64,
     ),
     "M2": ModelConfig(
@@ -72,18 +73,19 @@ MODEL_REGISTRY: Dict[str, ModelConfig] = {
         # the prefix is omitted on both sides to avoid biasing similarity.
         query_prefix=None,
         doc_prefix=None,
-        device_hint="mps",
         batch_size=32,
     ),
     "M3": ModelConfig(
         model_key="M3",
-        model_id="Alibaba-NLP/gte-large-en-v1.5",
+        model_id="BAAI/bge-m3",
         max_tokens=8192,
         ppas_budget=None,
         query_prefix=None,
         doc_prefix=None,
-        device_hint="cuda",
-        batch_size=8,
+        batch_size=16,
+        # BGE-M3 is a stock XLM-RoBERTa architecture, so the long context is
+        # available without executing modelling code from the repository.
+        trust_remote_code=False,
     ),
     "M4": ModelConfig(
         model_key="M4",
@@ -92,7 +94,6 @@ MODEL_REGISTRY: Dict[str, ModelConfig] = {
         ppas_budget=420,
         query_prefix=None,
         doc_prefix=None,
-        device_hint="mps",
         batch_size=32,
     ),
     "M5": ModelConfig(
@@ -106,7 +107,6 @@ MODEL_REGISTRY: Dict[str, ModelConfig] = {
         # not be applied to documents.
         query_prefix="Instruct: Retrieve semantically similar text.\nQuery: {}",
         doc_prefix=None,
-        device_hint="cuda",
         batch_size=8,
     ),
 }
@@ -160,7 +160,37 @@ def _select_device() -> str:
     return "cpu"
 
 
-def load_sentence_transformer(model_key: str) -> SentenceTransformer:
+def _resolve_hf_revision(model: SentenceTransformer) -> str:
+    """
+    Determine the Hugging Face revision behind a loaded model.
+
+    The commit hash recorded on the underlying transformer configuration is
+    preferred. When that attribute is unavailable the tokenizer's source path
+    is used instead, and when neither can be read the revision is unknown.
+
+    Parameters
+    ----------
+    model : SentenceTransformer
+        A loaded model instance.
+
+    Returns
+    -------
+    str
+        The commit hash, the tokenizer source path, or ``"unknown"``.
+    """
+    try:
+        return model[0].auto_model.config._commit_hash
+    except (AttributeError, TypeError, IndexError, KeyError):
+        pass
+    try:
+        return model.tokenizer.name_or_path
+    except (AttributeError, TypeError):
+        return "unknown"
+
+
+def load_sentence_transformer(
+    model_key: str,
+) -> Tuple[SentenceTransformer, Dict[str, str]]:
     """
     Load the ``SentenceTransformer`` for ``model_key`` onto the best device.
 
@@ -171,10 +201,20 @@ def load_sentence_transformer(model_key: str) -> SentenceTransformer:
 
     Returns
     -------
-    SentenceTransformer
-        A model instance placed on the selected device.
+    Tuple[SentenceTransformer, Dict[str, str]]
+        The model placed on the selected device, and provenance metadata
+        holding ``model_key``, ``model_id``, ``device`` and ``hf_revision``.
     """
     config = get_model_config(model_key)
     device = _select_device()
     print(f"Loading model {config.model_id} on device {device}")
-    return SentenceTransformer(config.model_id, device=device)
+    model = SentenceTransformer(
+        config.model_id, device=device, trust_remote_code=config.trust_remote_code
+    )
+    model_info = {
+        "model_key": model_key,
+        "model_id": config.model_id,
+        "device": device,
+        "hf_revision": _resolve_hf_revision(model),
+    }
+    return model, model_info

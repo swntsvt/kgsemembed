@@ -1,6 +1,8 @@
 """Tests for the embedding model registry and SentenceTransformer factory."""
 
+import dataclasses
 from dataclasses import FrozenInstanceError
+from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 import pytest
@@ -20,7 +22,7 @@ EXPECTED_KEYS = {"M1", "M2", "M3", "M4", "M5"}
 EXPECTED_MODEL_IDS = {
     "M1": "sentence-transformers/all-MiniLM-L6-v2",
     "M2": "BAAI/bge-large-en-v1.5",
-    "M3": "Alibaba-NLP/gte-large-en-v1.5",
+    "M3": "BAAI/bge-m3",
     "M4": "FremyCompany/BioLORD-2023",
     "M5": "dunzhang/stella_en_1.5B_v5",
 }
@@ -57,13 +59,40 @@ def test_registry_exposes_expected_token_limits(
 
 def test_registry_metadata_is_well_formed() -> None:
     for cfg in MODEL_REGISTRY.values():
-        assert cfg.device_hint in {"mps", "cuda", "cpu"}
         assert isinstance(cfg.batch_size, int) and cfg.batch_size > 0
 
 
 def test_model_config_is_immutable() -> None:
     with pytest.raises(FrozenInstanceError):
         MODEL_REGISTRY["M1"].batch_size = 1
+
+
+def test_no_registered_model_executes_remote_code() -> None:
+    enabled = {key for key, cfg in MODEL_REGISTRY.items() if cfg.trust_remote_code}
+    assert enabled == set()
+
+
+def test_trust_remote_code_defaults_to_false() -> None:
+    config = ModelConfig(
+        model_key="MX",
+        model_id="acme/example",
+        max_tokens=128,
+        ppas_budget=None,
+        query_prefix=None,
+        doc_prefix=None,
+        batch_size=8,
+    )
+    assert config.trust_remote_code is False
+
+
+def test_factory_forwards_trust_remote_code(monkeypatch: pytest.MonkeyPatch) -> None:
+    fake = _patch_cpu_and_mock_transformer(monkeypatch)
+    trusting = dataclasses.replace(MODEL_REGISTRY["M3"], trust_remote_code=True)
+    monkeypatch.setitem(MODEL_REGISTRY, "M3", trusting)
+    load_sentence_transformer("M3")
+    fake.assert_called_once_with(
+        "BAAI/bge-m3", device="cpu", trust_remote_code=True
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -147,11 +176,11 @@ def test_model_constructed_only_when_factory_called(
 ) -> None:
     fake = _patch_cpu_and_mock_transformer(monkeypatch)
     assert fake.call_count == 0
-    result = load_sentence_transformer("M1")
+    model, _ = load_sentence_transformer("M1")
     fake.assert_called_once_with(
-        "sentence-transformers/all-MiniLM-L6-v2", device="cpu"
+        "sentence-transformers/all-MiniLM-L6-v2", device="cpu", trust_remote_code=False
     )
-    assert result is fake.return_value
+    assert model is fake.return_value
 
 
 def test_factory_reports_device_and_model_before_loading(
@@ -181,7 +210,88 @@ def test_factory_selects_mps_over_cuda(
     fake = MagicMock(name="SentenceTransformer")
     monkeypatch.setattr(models, "SentenceTransformer", fake)
     load_sentence_transformer("M2")
-    fake.assert_called_once_with("BAAI/bge-large-en-v1.5", device="mps")
+    fake.assert_called_once_with(
+        "BAAI/bge-large-en-v1.5", device="mps", trust_remote_code=False
+    )
+
+
+# ---------------------------------------------------------------------------
+# Model metadata
+# ---------------------------------------------------------------------------
+class _FakeModel:
+    """Stand-in exposing only the attributes the revision lookup inspects."""
+
+    def __init__(self, module=None, tokenizer=None):
+        self._module = module
+        if tokenizer is not None:
+            self.tokenizer = tokenizer
+
+    def __getitem__(self, index):
+        if self._module is None:
+            raise AttributeError("no transformer module")
+        return self._module
+
+
+def _model_with_commit_hash(commit_hash: str) -> _FakeModel:
+    config = SimpleNamespace(_commit_hash=commit_hash)
+    return _FakeModel(module=SimpleNamespace(auto_model=SimpleNamespace(config=config)))
+
+
+def _load_with_model(monkeypatch: pytest.MonkeyPatch, model: _FakeModel):
+    monkeypatch.setattr(models.torch.backends.mps, "is_available", lambda: False)
+    monkeypatch.setattr(models.torch.cuda, "is_available", lambda: False)
+    monkeypatch.setattr(models, "SentenceTransformer", lambda *_a, **_k: model)
+    return load_sentence_transformer("M1")
+
+
+def test_loader_returns_model_and_metadata_tuple(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake_model = _model_with_commit_hash("abc123")
+    model, model_info = _load_with_model(monkeypatch, fake_model)
+    assert model is fake_model
+    assert model_info == {
+        "model_key": "M1",
+        "model_id": "sentence-transformers/all-MiniLM-L6-v2",
+        "device": "cpu",
+        "hf_revision": "abc123",
+    }
+
+
+def test_metadata_holds_exactly_the_expected_keys(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _, model_info = _load_with_model(monkeypatch, _model_with_commit_hash("abc123"))
+    assert set(model_info) == {"model_key", "model_id", "device", "hf_revision"}
+
+
+def test_metadata_records_selected_device(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(models.torch.backends.mps, "is_available", lambda: True)
+    monkeypatch.setattr(models.torch.cuda, "is_available", lambda: False)
+    monkeypatch.setattr(
+        models, "SentenceTransformer", lambda *_a, **_k: _model_with_commit_hash("d4")
+    )
+    _, model_info = load_sentence_transformer("M2")
+    assert model_info["device"] == "mps"
+    assert model_info["model_key"] == "M2"
+    assert model_info["model_id"] == "BAAI/bge-large-en-v1.5"
+
+
+def test_revision_prefers_commit_hash() -> None:
+    model = _model_with_commit_hash("9f1c2d")
+    assert models._resolve_hf_revision(model) == "9f1c2d"
+
+
+def test_revision_falls_back_to_tokenizer_path_on_attribute_error() -> None:
+    model = _FakeModel(
+        module=SimpleNamespace(),
+        tokenizer=SimpleNamespace(name_or_path="/cache/all-MiniLM-L6-v2"),
+    )
+    assert models._resolve_hf_revision(model) == "/cache/all-MiniLM-L6-v2"
+
+
+def test_revision_is_unknown_when_both_lookups_fail() -> None:
+    assert models._resolve_hf_revision(_FakeModel()) == "unknown"
 
 
 # ---------------------------------------------------------------------------
@@ -211,5 +321,6 @@ def test_registry_budgets_match_ppas_budgets() -> None:
 # ---------------------------------------------------------------------------
 @pytest.mark.slow
 def test_load_sentence_transformer_returns_instance() -> None:
-    model = load_sentence_transformer("M1")
+    model, model_info = load_sentence_transformer("M1")
     assert isinstance(model, SentenceTransformer)
+    assert set(model_info) == {"model_key", "model_id", "device", "hf_revision"}

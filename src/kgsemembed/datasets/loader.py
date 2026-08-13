@@ -486,7 +486,9 @@ def _parse_rdf_xml(path: Path) -> Graph:
 
 
 def _triple_object(value: str) -> URIRef | Literal:
-    if value.startswith(("http://", "https://")):
+    if (value.startswith(("http://", "https://"))
+            and not value.endswith(">")
+            and " " not in value):
         return URIRef(value)
     return Literal(value)
 

@@ -13,7 +13,7 @@ from typing import Callable, Dict, List, Optional, Tuple
 PPAS_BUDGETS: Dict[str, Optional[int]] = {
     "M1": 200,
     "M2": 420,
-    "M3": None,  # No cap -- long-context ablation model (gte-large-en-v1.5)
+    "M3": None,  # No cap -- long-context ablation model (bge-m3)
     "M4": 420,
     "M5": 420,
 }
