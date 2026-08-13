@@ -5,6 +5,8 @@ no real experiment outputs, embedding models, or repository datasets are used.
 """
 
 import json
+import re
+import warnings
 from pathlib import Path
 from typing import Dict, List, Optional
 from unittest import mock
@@ -268,8 +270,115 @@ def test_wilcoxon_return_keys(tmp_path: Path) -> None:
         "mean_f1_a",
         "mean_f1_b",
         "delta_f1",
+        "wilcoxon_warning",
     }
     assert result["n_pairs"] == 6
+
+
+# ---------------------------------------------------------------------------
+# Wilcoxon warning capture
+# ---------------------------------------------------------------------------
+def _warning_wilcoxon(message: str, category: type = RuntimeWarning):
+    """Return a wilcoxon double that raises ``message`` before returning."""
+
+    def _call(*_args, **_kwargs):
+        warnings.warn(message, category)
+        return mock.Mock(statistic=1.0, pvalue=0.5)
+
+    return _call
+
+
+def _compare_with_warning(
+    tmp_path: Path, message: str, category: type = RuntimeWarning
+) -> dict:
+    _write_condition(tmp_path, "C1", "D1", _pairs("D1", 6, 0.30))
+    _write_condition(tmp_path, "C2", "D1", _pairs("D1", 6, 0.50))
+    with mock.patch(
+        "kgsemembed.evaluation.stats.wilcoxon", _warning_wilcoxon(message, category)
+    ):
+        return wilcoxon_comparison("C1", "C2", ["D1"], str(tmp_path))
+
+
+def test_wilcoxon_warning_is_captured_in_result(tmp_path: Path) -> None:
+    result = _compare_with_warning(tmp_path, "zero differences detected")
+    assert result["wilcoxon_warning"] == "zero differences detected"
+
+
+def test_wilcoxon_warning_is_preserved_as_string(tmp_path: Path) -> None:
+    result = _compare_with_warning(tmp_path, "sample too small")
+    assert isinstance(result["wilcoxon_warning"], str)
+
+
+def test_wilcoxon_warning_is_none_without_warning(tmp_path: Path) -> None:
+    _write_condition(tmp_path, "C1", "D1", _pairs("D1", 6, 0.30))
+    _write_condition(tmp_path, "C2", "D1", _pairs("D1", 6, 0.50))
+    result = wilcoxon_comparison("C1", "C2", ["D1"], str(tmp_path))
+    assert result["wilcoxon_warning"] is None
+
+
+def test_wilcoxon_warning_does_not_alter_statistics(tmp_path: Path) -> None:
+    result = _compare_with_warning(tmp_path, "ties detected")
+    assert result["statistic"] == pytest.approx(1.0)
+    assert result["p_value"] == pytest.approx(0.5)
+    assert result["delta_f1"] == pytest.approx(0.20)
+
+
+def test_scipy_runtime_warning_is_no_longer_suppressed(tmp_path: Path) -> None:
+    # Identical score lists make SciPy divide by a zero-valued statistic, which
+    # previously vanished behind a module-level RuntimeWarning filter.
+    pairs = _pairs("D1", 6, 0.4)
+    _write_condition(tmp_path, "C1", "D1", pairs)
+    _write_condition(tmp_path, "C2", "D1", pairs)
+    result = wilcoxon_comparison("C1", "C2", ["D1"], str(tmp_path))
+    assert result["wilcoxon_warning"] is not None
+    assert result["p_value"] == pytest.approx(1.0)
+
+
+def test_repeated_warnings_are_joined_in_order(tmp_path: Path) -> None:
+    def _two_warnings(*_args, **_kwargs):
+        warnings.warn("first problem", RuntimeWarning)
+        warnings.warn("second problem", RuntimeWarning)
+        return mock.Mock(statistic=1.0, pvalue=0.5)
+
+    _write_condition(tmp_path, "C1", "D1", _pairs("D1", 6, 0.30))
+    _write_condition(tmp_path, "C2", "D1", _pairs("D1", 6, 0.50))
+    with mock.patch("kgsemembed.evaluation.stats.wilcoxon", _two_warnings):
+        result = wilcoxon_comparison("C1", "C2", ["D1"], str(tmp_path))
+    assert result["wilcoxon_warning"] == "first problem; second problem"
+
+
+def test_user_warning_is_treated_as_a_reliability_warning(tmp_path: Path) -> None:
+    result = _compare_with_warning(tmp_path, "zero differences", UserWarning)
+    assert result["wilcoxon_warning"] == "zero differences"
+
+
+def test_unrelated_warning_is_reissued_not_captured(tmp_path: Path) -> None:
+    _write_condition(tmp_path, "C1", "D1", _pairs("D1", 6, 0.30))
+    _write_condition(tmp_path, "C2", "D1", _pairs("D1", 6, 0.50))
+    with warnings.catch_warnings(record=True) as escaped:
+        warnings.simplefilter("always")
+        with mock.patch(
+            "kgsemembed.evaluation.stats.wilcoxon",
+            _warning_wilcoxon("api change", DeprecationWarning),
+        ):
+            result = wilcoxon_comparison("C1", "C2", ["D1"], str(tmp_path))
+
+    assert result["wilcoxon_warning"] is None
+    assert [str(entry.message) for entry in escaped] == ["api change"]
+
+
+def test_capture_does_not_change_global_warning_filters(tmp_path: Path) -> None:
+    _write_condition(tmp_path, "C1", "D1", _pairs("D1", 6, 0.30))
+    _write_condition(tmp_path, "C2", "D1", _pairs("D1", 6, 0.50))
+    before = list(warnings.filters)
+    wilcoxon_comparison("C1", "C2", ["D1"], str(tmp_path))
+    assert warnings.filters == before
+
+
+def test_group_comparisons_carry_warning_field(tmp_path: Path) -> None:
+    _seed_group(tmp_path, "D")
+    for result in run_group_comparisons("D", str(tmp_path)):
+        assert "wilcoxon_warning" in result
 
 
 # ---------------------------------------------------------------------------
@@ -385,6 +494,7 @@ def _example_results() -> List[dict]:
             "mean_f1_a": 0.40,
             "mean_f1_b": 0.42,
             "delta_f1": 0.02,
+            "wilcoxon_warning": None,
         }
     ]
 
@@ -399,7 +509,9 @@ def test_export_header_matches_schema(tmp_path: Path) -> None:
     output = tmp_path / "stats.md"
     export_stats_table(_example_results(), str(output))
     content = output.read_text(encoding="utf-8")
-    header = "Condition A | Condition B | n | p-value | Corrected sig. | delta-F1"
+    header = (
+        "Condition A | Condition B | n | p-value | Corrected sig. | delta-F1 | Warning"
+    )
     assert header in content
 
 
@@ -407,7 +519,7 @@ def test_export_row_maps_values_to_columns(tmp_path: Path) -> None:
     output = tmp_path / "stats.md"
     export_stats_table(_example_results(), str(output))
     lines = output.read_text(encoding="utf-8").strip().splitlines()
-    assert lines[-1] == "| C1 | C2 | 5 | 0.0625 | False | 0.0200 |"
+    assert lines[-1] == "| C1 | C2 | 5 | 0.0625 | False | 0.0200 | - |"
 
 
 def test_export_one_row_per_comparison(tmp_path: Path) -> None:
@@ -416,6 +528,48 @@ def test_export_one_row_per_comparison(tmp_path: Path) -> None:
     export_stats_table(results, str(output))
     lines = output.read_text(encoding="utf-8").strip().splitlines()
     assert len(lines) == 2 + 3
+
+
+def _results_with_warning(message: Optional[str]) -> List[dict]:
+    results = _example_results()
+    results[0]["wilcoxon_warning"] = message
+    return results
+
+
+def test_export_surfaces_warning_message(tmp_path: Path) -> None:
+    output = tmp_path / "stats.md"
+    export_stats_table(_results_with_warning("zero differences detected"), str(output))
+    lines = output.read_text(encoding="utf-8").strip().splitlines()
+    assert lines[-1].endswith("| zero differences detected |")
+
+
+def test_export_tolerates_result_without_warning_field(tmp_path: Path) -> None:
+    output = tmp_path / "stats.md"
+    results = _example_results()
+    del results[0]["wilcoxon_warning"]
+    export_stats_table(results, str(output))
+    lines = output.read_text(encoding="utf-8").strip().splitlines()
+    assert lines[-1].endswith("| - |")
+
+
+def test_export_marks_absent_warning(tmp_path: Path) -> None:
+    output = tmp_path / "stats.md"
+    export_stats_table(_results_with_warning(None), str(output))
+    lines = output.read_text(encoding="utf-8").strip().splitlines()
+    assert lines[-1].endswith("| - |")
+
+
+def _cell_count(row: str) -> int:
+    """Count table cells, ignoring pipes escaped for Markdown."""
+    return len(re.split(r"(?<!\\)\|", row)) - 2
+
+
+def test_export_keeps_warning_inside_one_cell(tmp_path: Path) -> None:
+    output = tmp_path / "stats.md"
+    export_stats_table(_results_with_warning("ties |\nand zeros"), str(output))
+    header, _, row = output.read_text(encoding="utf-8").strip().splitlines()
+    assert _cell_count(row) == _cell_count(header)
+    assert row.endswith("| ties \\| and zeros |")
 
 
 def test_export_is_deterministic(tmp_path: Path) -> None:

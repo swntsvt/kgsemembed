@@ -33,9 +33,13 @@ _TABLE_COLUMNS: Tuple[str, ...] = (
     "p-value",
     "Corrected sig.",
     "delta-F1",
+    "Warning",
 )
 _TABLE_HEADER = "| " + " | ".join(_TABLE_COLUMNS) + " |"
 _TABLE_SEPARATOR = "| " + " | ".join(["---"] * len(_TABLE_COLUMNS)) + " |"
+_NO_WARNING_CELL = "-"
+
+_RELIABILITY_WARNINGS = (RuntimeWarning, UserWarning)
 
 
 @dataclass(frozen=True)
@@ -273,15 +277,64 @@ def _matched_pair_names(
     return sorted(names_a)
 
 
+def _reliability_message(caught: List[warnings.WarningMessage]) -> Optional[str]:
+    """
+    Join the warnings that question a result's reliability into one message.
+
+    Only categories SciPy uses to flag a degenerate test — ``RuntimeWarning``
+    for numerical failures and ``UserWarning`` for zeros, ties, or an
+    approximation fallback — describe the reliability of the comparison.  Any
+    other category is re-issued so that intercepting the test does not hide it.
+
+    Parameters
+    ----------
+    caught : List[warnings.WarningMessage]
+        Warnings recorded while the test ran, in the order they were raised.
+
+    Returns
+    -------
+    Optional[str]
+        Reliability warning messages joined by ``"; "``, or ``None`` when none
+        were raised.
+    """
+    messages: List[str] = []
+    for entry in caught:
+        if issubclass(entry.category, _RELIABILITY_WARNINGS):
+            messages.append(str(entry.message))
+        else:
+            warnings.warn_explicit(
+                entry.message, entry.category, entry.filename, entry.lineno
+            )
+    return "; ".join(messages) or None
+
+
 def _paired_wilcoxon(
     scores_a: List[float],
     scores_b: List[float],
-) -> Tuple[float, float]:
-    """Run the two-sided paired Wilcoxon signed-rank test on aligned scores."""
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore", RuntimeWarning)
+) -> Tuple[float, float, Optional[str]]:
+    """
+    Run the two-sided paired Wilcoxon signed-rank test on aligned scores.
+
+    Warnings raised by SciPy — zero differences, ties, or a sample too small
+    for the normal approximation — mark a result as potentially unreliable, so
+    they are captured and returned rather than suppressed.  Capture is local to
+    this call and leaves the global warning configuration untouched.
+
+    Parameters
+    ----------
+    scores_a, scores_b : List[float]
+        Paired F1 observations in matching order.
+
+    Returns
+    -------
+    Tuple[float, float, Optional[str]]
+        Test statistic, p-value, and the captured warning messages joined into
+        one string, or ``None`` when SciPy raised no warning.
+    """
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
         result = wilcoxon(scores_a, scores_b, alternative="two-sided")
-    return float(result.statistic), float(result.pvalue)
+    return float(result.statistic), float(result.pvalue), _reliability_message(caught)
 
 
 def wilcoxon_comparison(
@@ -312,7 +365,8 @@ def wilcoxon_comparison(
     dict
         Comparison summary with ``condition_a``, ``condition_b``, ``n_pairs``,
         ``statistic``, ``p_value``, ``significant``, ``mean_f1_a``,
-        ``mean_f1_b``, and ``delta_f1`` (``mean_f1_b - mean_f1_a``).
+        ``mean_f1_b``, ``delta_f1`` (``mean_f1_b - mean_f1_a``), and
+        ``wilcoxon_warning`` holding any warning SciPy raised, else ``None``.
 
     Raises
     ------
@@ -331,7 +385,7 @@ def wilcoxon_comparison(
         )
     scores_a = [f1_a[name] for name in pair_names]
     scores_b = [f1_b[name] for name in pair_names]
-    statistic, p_value = _paired_wilcoxon(scores_a, scores_b)
+    statistic, p_value, wilcoxon_warning = _paired_wilcoxon(scores_a, scores_b)
     mean_a = sum(scores_a) / len(scores_a)
     mean_b = sum(scores_b) / len(scores_b)
     return {
@@ -344,6 +398,7 @@ def wilcoxon_comparison(
         "mean_f1_a": mean_a,
         "mean_f1_b": mean_b,
         "delta_f1": mean_b - mean_a,
+        "wilcoxon_warning": wilcoxon_warning,
     }
 
 
@@ -405,6 +460,14 @@ def run_group_comparisons(
     return results
 
 
+def _warning_cell(result: dict) -> str:
+    """Render a captured Wilcoxon warning as a single Markdown table cell."""
+    message = result.get("wilcoxon_warning")
+    if not message:
+        return _NO_WARNING_CELL
+    return " ".join(message.split()).replace("|", "\\|")
+
+
 def _format_row(result: dict) -> str:
     """Render a single comparison result as a Markdown table row."""
     cells = (
@@ -414,6 +477,7 @@ def _format_row(result: dict) -> str:
         f"{result['p_value']:.4f}",
         str(result["corrected_significant"]),
         f"{result['delta_f1']:.4f}",
+        _warning_cell(result),
     )
     return "| " + " | ".join(cells) + " |"
 
@@ -429,7 +493,8 @@ def export_stats_table(
     ----------
     comparison_results : List[dict]
         Results produced by :func:`run_group_comparisons`; each must carry a
-        ``corrected_significant`` flag.
+        ``corrected_significant`` flag.  Any ``wilcoxon_warning`` is rendered in
+        a dedicated warning column, which reads ``"-"`` when SciPy was silent.
     output_path : str
         Destination Markdown file; parent directories are created as needed.
     """
