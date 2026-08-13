@@ -82,16 +82,16 @@ MODEL_REGISTRY: Dict[str, ModelConfig] = {
     ),
     "M3": ModelConfig(
         model_key="M3",
-        model_id="Alibaba-NLP/gte-large-en-v1.5",
+        model_id="BAAI/bge-m3",
         max_tokens=8192,
         ppas_budget=None,
         query_prefix=None,
         doc_prefix=None,
         device_hint="cuda",
-        batch_size=8,
-        # GTE v1.5 ships a custom NewModel architecture that is not part of
-        # transformers, so loading must execute code from the model repository.
-        trust_remote_code=True,
+        batch_size=16,
+        # BGE-M3 is a stock XLM-RoBERTa architecture, so the long context is
+        # available without executing modelling code from the repository.
+        trust_remote_code=False,
     ),
     "M4": ModelConfig(
         model_key="M4",

@@ -1,5 +1,6 @@
 """Tests for the embedding model registry and SentenceTransformer factory."""
 
+import dataclasses
 from dataclasses import FrozenInstanceError
 from types import SimpleNamespace
 from unittest.mock import MagicMock
@@ -21,7 +22,7 @@ EXPECTED_KEYS = {"M1", "M2", "M3", "M4", "M5"}
 EXPECTED_MODEL_IDS = {
     "M1": "sentence-transformers/all-MiniLM-L6-v2",
     "M2": "BAAI/bge-large-en-v1.5",
-    "M3": "Alibaba-NLP/gte-large-en-v1.5",
+    "M3": "BAAI/bge-m3",
     "M4": "FremyCompany/BioLORD-2023",
     "M5": "dunzhang/stella_en_1.5B_v5",
 }
@@ -67,9 +68,9 @@ def test_model_config_is_immutable() -> None:
         MODEL_REGISTRY["M1"].batch_size = 1
 
 
-def test_trust_remote_code_enabled_only_for_m3() -> None:
+def test_no_registered_model_executes_remote_code() -> None:
     enabled = {key for key, cfg in MODEL_REGISTRY.items() if cfg.trust_remote_code}
-    assert enabled == {"M3"}
+    assert enabled == set()
 
 
 def test_trust_remote_code_defaults_to_false() -> None:
@@ -88,9 +89,11 @@ def test_trust_remote_code_defaults_to_false() -> None:
 
 def test_factory_forwards_trust_remote_code(monkeypatch: pytest.MonkeyPatch) -> None:
     fake = _patch_cpu_and_mock_transformer(monkeypatch)
+    trusting = dataclasses.replace(MODEL_REGISTRY["M3"], trust_remote_code=True)
+    monkeypatch.setitem(MODEL_REGISTRY, "M3", trusting)
     load_sentence_transformer("M3")
     fake.assert_called_once_with(
-        "Alibaba-NLP/gte-large-en-v1.5", device="cpu", trust_remote_code=True
+        "BAAI/bge-m3", device="cpu", trust_remote_code=True
     )
 
 
