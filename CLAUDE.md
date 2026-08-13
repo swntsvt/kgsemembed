@@ -175,6 +175,24 @@ kgsemembed/                      # repo root
 - **Key dependencies**: `rdflib`, `bm25s`, `sentence-transformers`, `scipy.stats`,
   `pandas`, `numpy`. GraphRAG stack (Phase 3): `leidenalg`, `igraph`.
 
+### Embedding Models
+
+Registered in `src/kgsemembed/embeddings/models.py` as `MODEL_REGISTRY`.
+
+| Key | Model ID | `max_tokens` | `ppas_budget` | `batch_size` |
+|-----|----------|--------------|---------------|--------------|
+| M1 | `sentence-transformers/all-MiniLM-L6-v2` | 256 | 200 | 64 |
+| M2 | `BAAI/bge-large-en-v1.5` | 512 | 420 | 32 |
+| M3 | `BAAI/bge-m3` | 8192 | `None` | 16 |
+| M4 | `FremyCompany/BioLORD-2023` | 512 | 420 | 32 |
+| M5 | `dunzhang/stella_en_1.5B_v5` | 512 | 420 | 8 |
+
+M3 requires no `trust_remote_code`.
+
+> Original spec named Alibaba-NLP/gte-large-en-v1.5 and Jina v2 — both use
+> custom remote code incompatible with transformers 5.x. bge-m3 uses standard
+> XLM-RoBERTa architecture with no remote code dependency.
+
 ## Constraints
 
 - Always use `venv` for Python and pip — never the system Python.
