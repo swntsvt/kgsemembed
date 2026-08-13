@@ -224,27 +224,55 @@ def test_parse_alignment_refs_malformed_xml_raises(tmp_path: Path) -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_split_80_10_10_slices_sorted_by_source() -> None:
+def test_split_80_10_10_slice_sizes() -> None:
     refs = [(f"s{i:02d}", f"t{i:02d}") for i in range(10)]
-    train, val, test = _split_80_10_10(list(reversed(refs)))
-    assert train == refs[:8]
-    assert val == [("s08", "t08")]
-    assert test == [("s09", "t09")]
+    train, val, test = _split_80_10_10(refs)
+    assert (len(train), len(val), len(test)) == (8, 1, 1)
+    assert sorted(train + val + test) == sorted(refs)
 
 
 def test_split_val_test_20_80_leaves_train_empty() -> None:
     refs = [(f"s{i:02d}", f"t{i:02d}") for i in range(10)]
-    train, val, test = _split_val_test_20_80(list(reversed(refs)))
+    train, val, test = _split_val_test_20_80(refs)
     assert train == []
-    assert val == [("s00", "t00"), ("s01", "t01")]
+    assert len(val) == 2
     assert len(test) == 8
+    assert sorted(val + test) == sorted(refs)
 
 
 def test_split_val_test_20_80_keeps_one_val_for_tiny_inputs() -> None:
     train, val, test = _split_val_test_20_80([("s0", "t0"), ("s1", "t1")])
     assert train == []
-    assert val == [("s0", "t0")]
-    assert test == [("s1", "t1")]
+    assert len(val) == 1
+    assert len(test) == 1
+
+
+def test_split_val_test_20_80_handles_empty_references() -> None:
+    assert _split_val_test_20_80([]) == ([], [], [])
+
+
+def test_splits_are_disjoint() -> None:
+    refs = [(f"s{i:02d}", f"t{i:02d}") for i in range(50)]
+    _, val, test = _split_val_test_20_80(refs)
+    assert set(val).isdisjoint(set(test))
+
+
+@pytest.mark.parametrize("split_fn", [_split_80_10_10, _split_val_test_20_80])
+def test_split_is_deterministic_across_repeated_calls(split_fn) -> None:
+    refs = [(f"s{i:02d}", f"t{i:02d}") for i in range(50)]
+    assert split_fn(refs) == split_fn(refs)
+
+
+@pytest.mark.parametrize("split_fn", [_split_80_10_10, _split_val_test_20_80])
+def test_split_is_independent_of_input_order(split_fn) -> None:
+    refs = [(f"s{i:02d}", f"t{i:02d}") for i in range(50)]
+    assert split_fn(list(reversed(refs))) == split_fn(refs)
+
+
+def test_split_shuffles_rather_than_slicing_sorted_order() -> None:
+    refs = [(f"s{i:02d}", f"t{i:02d}") for i in range(50)]
+    _, val, _ = _split_val_test_20_80(refs)
+    assert val != sorted(refs)[: len(val)]
 
 
 # ---------------------------------------------------------------------------

@@ -155,9 +155,13 @@ def tune_threshold(
     return best
 
 
-def _reference_map(references: List[EntityPair]) -> Dict[str, str]:
+def _reference_map(references: List[EntityPair]) -> Dict[str, List[str]]:
     """
-    Map each source URI to its gold target, keeping the first occurrence.
+    Map each source URI to every gold target aligned with it.
+
+    A source may carry several gold targets under a 1:N reference alignment, so
+    all of them are retained in first-occurrence order rather than collapsing
+    to the first.
 
     Parameters
     ----------
@@ -166,41 +170,47 @@ def _reference_map(references: List[EntityPair]) -> Dict[str, str]:
 
     Returns
     -------
-    Dict[str, str]
-        Mapping from source URI to its first-seen gold target URI.
+    Dict[str, List[str]]
+        Mapping from source URI to its gold target URIs.
     """
-    mapping: Dict[str, str] = {}
+    mapping: Dict[str, List[str]] = {}
     for source, target in references:
-        if source not in mapping:
-            mapping[source] = target
+        targets = mapping.setdefault(source, [])
+        if target not in targets:
+            targets.append(target)
     return mapping
 
 
-def _reciprocal_rank(ranked_list: RankedList, reference_map: Dict[str, str]) -> float:
+def _reciprocal_rank(
+    ranked_list: RankedList, reference_map: Dict[str, List[str]]
+) -> float:
     """
-    Compute the reciprocal of the one-based rank of a source's gold target.
+    Compute the reciprocal rank of a source's best-ranked gold target.
+
+    Under a 1:N alignment the source is credited with its highest-ranked gold
+    target, so recovering any one of several equivalent targets at rank one
+    scores the same as an unambiguous 1:1 match.
 
     Parameters
     ----------
     ranked_list : RankedList
         Ranked candidate pairs for a single source entity.
-    reference_map : Dict[str, str]
-        Mapping from source URI to gold target URI.
+    reference_map : Dict[str, List[str]]
+        Mapping from source URI to its gold target URIs.
 
     Returns
     -------
     float
-        ``1 / rank`` of the gold target, or ``0.0`` when the source has no
-        reference or its gold target is absent from the ranked list.
+        ``1 / rank`` of the earliest gold target, or ``0.0`` when the source has
+        no reference or none of its gold targets appear in the ranked list.
     """
     if not ranked_list:
         return 0.0
-    source = ranked_list[0][0]
-    target = reference_map.get(source)
-    if target is None:
+    targets = reference_map.get(ranked_list[0][0])
+    if not targets:
         return 0.0
     for rank, (_, candidate, _) in enumerate(ranked_list, start=1):
-        if candidate == target:
+        if candidate in targets:
             return 1.0 / rank
     return 0.0
 
@@ -223,8 +233,9 @@ def compute_mrr(
     -------
     float
         Arithmetic mean of the reciprocal ranks across all evaluated source
-        entities, in ``[0.0, 1.0]``.  Sources without a reference or without
-        their gold target in the ranked list contribute zero.
+        entities, in ``[0.0, 1.0]``.  Each source contributes the reciprocal
+        rank of its best-ranked gold target; sources without a reference or
+        with no gold target in the ranked list contribute zero.
     """
     reference_map = _reference_map(references)
     reciprocal_ranks = [

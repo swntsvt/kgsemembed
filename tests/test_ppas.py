@@ -1,7 +1,8 @@
 """Tests for Predicate-Priority Adaptive Sampling (PPAS)."""
 
-from rdflib import URIRef
+from rdflib import Graph, Literal, URIRef
 
+from kgsemembed.verbalisation.base import VerbaliserBase
 from kgsemembed.verbalisation.ppas import (
     CLASS_TIER_LIST,
     INSTANCE_TIER_LIST,
@@ -395,3 +396,69 @@ def test_ppas_budgets_contains_all_model_keys() -> None:
 def test_ppas_trigger_threshold_is_positive_int() -> None:
     assert isinstance(PPAS_TRIGGER_THRESHOLD, int)
     assert PPAS_TRIGGER_THRESHOLD > 0
+
+
+# ---------------------------------------------------------------------------
+# Deterministic triple ordering feeding PPAS
+# ---------------------------------------------------------------------------
+
+
+class _OrderingVerbaliser(VerbaliserBase):
+    """Concrete stub exposing the inherited triple collector."""
+
+    def verbalise(self, graph: Graph, entity_uri: URIRef, entity_type: str) -> str:
+        return ""
+
+
+_ENTITY = URIRef("http://ex/entity")
+
+
+def _unordered_graph() -> Graph:
+    graph = Graph()
+    for index in (7, 3, 11, 0, 5):
+        graph.add((_ENTITY, URIRef(f"http://ex/p{index}"), Literal(f"v{index}")))
+    return graph
+
+
+def test_collected_triples_are_sorted_by_spo() -> None:
+    triples = _OrderingVerbaliser()._collect_triples(_unordered_graph(), _ENTITY)
+    keys = [(str(s), str(p), str(o)) for s, p, o in triples]
+    assert keys == sorted(keys)
+
+
+def test_collected_triples_ordering_is_stable_across_calls() -> None:
+    graph = _unordered_graph()
+    verbaliser = _OrderingVerbaliser()
+    first = verbaliser._collect_triples(graph, _ENTITY)
+    second = verbaliser._collect_triples(graph, _ENTITY)
+    assert first == second
+
+
+def test_collected_triples_ordering_independent_of_insertion_order() -> None:
+    forward = Graph()
+    reverse = Graph()
+    predicates = [URIRef(f"http://ex/p{i}") for i in (7, 3, 11, 0, 5)]
+    for pred in predicates:
+        forward.add((_ENTITY, pred, Literal("v")))
+    for pred in reversed(predicates):
+        reverse.add((_ENTITY, pred, Literal("v")))
+
+    verbaliser = _OrderingVerbaliser()
+    assert verbaliser._collect_triples(forward, _ENTITY) == verbaliser._collect_triples(
+        reverse, _ENTITY
+    )
+
+
+def test_ppas_selection_is_stable_for_sorted_triples() -> None:
+    triples = _OrderingVerbaliser()._collect_triples(_unordered_graph(), _ENTITY)
+    tier_list = [[f"http://ex/p{i}" for i in (0, 3, 5, 7, 11)]]
+    first = ppas_sample(triples, tier_list, 100, _verbalise)
+    second = ppas_sample(triples, tier_list, 100, _verbalise)
+    assert first == second
+
+
+def test_ppas_keeps_highest_priority_triples_under_tight_budget() -> None:
+    triples = _OrderingVerbaliser()._collect_triples(_unordered_graph(), _ENTITY)
+    tier_list = [["http://ex/p0"], [f"http://ex/p{i}" for i in (3, 5, 7, 11)]]
+    selected = ppas_sample(triples, tier_list, 3, _verbalise)
+    assert [str(p) for _, p, _ in selected] == ["http://ex/p0"]

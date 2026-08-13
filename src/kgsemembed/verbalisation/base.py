@@ -190,13 +190,15 @@ class VerbaliserBase(ABC):
         -------
         list of tuple
             Triples excluding ``owl:sameAs``, blank-node objects, and
-            reflexive statements.
+            reflexive statements, sorted by ``(subject, predicate, object)``
+            so that budget-based filtering receives a stable ordering.
         """
-        return [
+        triples = [
             t
             for t in graph.triples((entity_uri, None, None))
             if not self._should_exclude(*t)
         ]
+        return sorted(triples, key=lambda t: (str(t[0]), str(t[1]), str(t[2])))
 
     @staticmethod
     def _should_exclude(

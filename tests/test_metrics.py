@@ -8,12 +8,18 @@ import numpy as np
 import pytest
 
 import kgsemembed.evaluation as evaluation
+import kgsemembed.pipeline.run_experiment as runner
 from kgsemembed.evaluation import (
     compute_all_metrics,
     compute_f1_at_threshold,
     compute_mrr,
     compute_recall_at_k,
     tune_threshold,
+)
+from kgsemembed.evaluation.metrics import _reference_map
+from kgsemembed.pipeline.run_experiment import (
+    _resolve_threshold,
+    _validation_scored_pairs,
 )
 
 
@@ -240,6 +246,107 @@ def test_mrr_within_unit_interval() -> None:
     ranked = [[("a", "n", 0.9), ("a", "x", 0.5)]]
     references = [("a", "x")]
     assert 0.0 <= compute_mrr(ranked, references) <= 1.0
+
+
+# ---------------------------------------------------------------------------
+# 1:N reference alignments
+# ---------------------------------------------------------------------------
+def test_reference_map_retains_every_gold_target() -> None:
+    references = [("a", "x"), ("a", "y"), ("b", "z")]
+    assert _reference_map(references) == {"a": ["x", "y"], "b": ["z"]}
+
+
+def test_reference_map_deduplicates_repeated_targets() -> None:
+    assert _reference_map([("a", "x"), ("a", "x")]) == {"a": ["x"]}
+
+
+def test_reference_map_preserves_single_target_behaviour() -> None:
+    assert _reference_map([("a", "x")]) == {"a": ["x"]}
+
+
+def test_mrr_uses_best_ranked_gold_target() -> None:
+    ranked = [[("a", "y", 0.9), ("a", "x", 0.5)]]
+    references = [("a", "x"), ("a", "y")]
+    assert compute_mrr(ranked, references) == 1.0
+
+
+def test_mrr_second_gold_target_used_when_first_is_absent() -> None:
+    ranked = [[("a", "n", 0.9), ("a", "y", 0.5)]]
+    references = [("a", "x"), ("a", "y")]
+    assert compute_mrr(ranked, references) == 0.5
+
+
+def test_mrr_zero_when_no_gold_target_is_ranked() -> None:
+    ranked = [[("a", "n", 0.9), ("a", "m", 0.5)]]
+    references = [("a", "x"), ("a", "y")]
+    assert compute_mrr(ranked, references) == 0.0
+
+
+def test_mrr_one_to_n_scores_at_least_as_high_as_one_to_one() -> None:
+    ranked = [[("a", "y", 0.9), ("a", "x", 0.5)]]
+    single = compute_mrr(ranked, [("a", "x")])
+    multi = compute_mrr(ranked, [("a", "x"), ("a", "y")])
+    assert multi >= single
+
+
+def test_recall_at_k_counts_every_gold_target() -> None:
+    ranked = [[("a", "x", 0.9), ("a", "y", 0.5), ("a", "n", 0.1)]]
+    references = [("a", "x"), ("a", "y")]
+    assert compute_recall_at_k(ranked, references, 1) == 0.5
+    assert compute_recall_at_k(ranked, references, 2) == 1.0
+
+
+def test_recall_at_k_partial_credit_for_one_to_n() -> None:
+    ranked = [[("a", "x", 0.9), ("a", "n", 0.5)]]
+    references = [("a", "x"), ("a", "absent")]
+    assert compute_recall_at_k(ranked, references, 5) == 0.5
+
+
+# ---------------------------------------------------------------------------
+# Validation-only threshold selection
+# ---------------------------------------------------------------------------
+def test_validation_scored_pairs_drops_test_sources() -> None:
+    scored = [("a", "x", 0.9), ("b", "y", 0.8), ("c", "z", 0.7)]
+    val_refs = [("a", "x"), ("c", "z")]
+    assert _validation_scored_pairs(scored, val_refs) == [
+        ("a", "x", 0.9),
+        ("c", "z", 0.7),
+    ]
+
+
+def test_validation_scored_pairs_empty_when_no_source_matches() -> None:
+    assert _validation_scored_pairs([("a", "x", 0.9)], [("b", "y")]) == []
+
+
+def test_resolve_threshold_ignores_test_source_pairs() -> None:
+    scored = [("a", "x", 0.9), ("b", "y", 0.2)]
+    val_refs = [("a", "x")]
+    val_only = _resolve_threshold(scored, val_refs)
+    assert val_only == tune_threshold(
+        [("a", "x", 0.9)], val_refs
+    )["best_threshold"]
+
+
+def test_resolve_threshold_defaults_when_validation_empty() -> None:
+    assert _resolve_threshold([("a", "x", 0.9)], []) == 0.5
+
+
+def test_resolve_threshold_skips_tuning_when_validation_empty(monkeypatch) -> None:
+    def _fail(*args, **kwargs):
+        raise AssertionError("tune_threshold must not run without validation refs")
+
+    monkeypatch.setattr(runner, "tune_threshold", _fail)
+    assert _resolve_threshold([("a", "x", 0.9)], []) == 0.5
+
+
+def test_resolve_threshold_warns_when_validation_empty(monkeypatch) -> None:
+    warnings: list[str] = []
+    monkeypatch.setattr(
+        runner._LOGGER, "warning", lambda message, *args: warnings.append(message % args)
+    )
+    _resolve_threshold([("a", "x", 0.9)], [])
+    assert len(warnings) == 1
+    assert "validation" in warnings[0].lower()
 
 
 # ---------------------------------------------------------------------------
