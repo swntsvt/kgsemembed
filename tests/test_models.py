@@ -67,6 +67,33 @@ def test_model_config_is_immutable() -> None:
         MODEL_REGISTRY["M1"].batch_size = 1
 
 
+def test_trust_remote_code_enabled_only_for_m3() -> None:
+    enabled = {key for key, cfg in MODEL_REGISTRY.items() if cfg.trust_remote_code}
+    assert enabled == {"M3"}
+
+
+def test_trust_remote_code_defaults_to_false() -> None:
+    config = ModelConfig(
+        model_key="MX",
+        model_id="acme/example",
+        max_tokens=128,
+        ppas_budget=None,
+        query_prefix=None,
+        doc_prefix=None,
+        device_hint="cpu",
+        batch_size=8,
+    )
+    assert config.trust_remote_code is False
+
+
+def test_factory_forwards_trust_remote_code(monkeypatch: pytest.MonkeyPatch) -> None:
+    fake = _patch_cpu_and_mock_transformer(monkeypatch)
+    load_sentence_transformer("M3")
+    fake.assert_called_once_with(
+        "Alibaba-NLP/gte-large-en-v1.5", device="cpu", trust_remote_code=True
+    )
+
+
 # ---------------------------------------------------------------------------
 # Model lookup
 # ---------------------------------------------------------------------------
@@ -150,7 +177,7 @@ def test_model_constructed_only_when_factory_called(
     assert fake.call_count == 0
     model, _ = load_sentence_transformer("M1")
     fake.assert_called_once_with(
-        "sentence-transformers/all-MiniLM-L6-v2", device="cpu"
+        "sentence-transformers/all-MiniLM-L6-v2", device="cpu", trust_remote_code=False
     )
     assert model is fake.return_value
 
@@ -182,7 +209,9 @@ def test_factory_selects_mps_over_cuda(
     fake = MagicMock(name="SentenceTransformer")
     monkeypatch.setattr(models, "SentenceTransformer", fake)
     load_sentence_transformer("M2")
-    fake.assert_called_once_with("BAAI/bge-large-en-v1.5", device="mps")
+    fake.assert_called_once_with(
+        "BAAI/bge-large-en-v1.5", device="mps", trust_remote_code=False
+    )
 
 
 # ---------------------------------------------------------------------------

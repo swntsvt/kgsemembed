@@ -38,6 +38,10 @@ class ModelConfig:
         Preferred hardware for this model (``"mps"``, ``"cuda"`` or ``"cpu"``).
     batch_size : int
         Recommended encoding batch size for this model.
+    trust_remote_code : bool
+        Whether loading executes custom modelling code published in the model
+        repository. Enabled only for models whose architecture is not part of
+        ``transformers``.
     """
 
     model_key: str
@@ -48,6 +52,7 @@ class ModelConfig:
     doc_prefix: Optional[str]
     device_hint: str
     batch_size: int
+    trust_remote_code: bool = False
 
 
 MODEL_REGISTRY: Dict[str, ModelConfig] = {
@@ -84,6 +89,9 @@ MODEL_REGISTRY: Dict[str, ModelConfig] = {
         doc_prefix=None,
         device_hint="cuda",
         batch_size=8,
+        # GTE v1.5 ships a custom NewModel architecture that is not part of
+        # transformers, so loading must execute code from the model repository.
+        trust_remote_code=True,
     ),
     "M4": ModelConfig(
         model_key="M4",
@@ -208,7 +216,9 @@ def load_sentence_transformer(
     config = get_model_config(model_key)
     device = _select_device()
     print(f"Loading model {config.model_id} on device {device}")
-    model = SentenceTransformer(config.model_id, device=device)
+    model = SentenceTransformer(
+        config.model_id, device=device, trust_remote_code=config.trust_remote_code
+    )
     model_info = {
         "model_key": model_key,
         "model_id": config.model_id,
