@@ -18,8 +18,10 @@ import argparse
 import gc
 import json
 import logging
+import platform
 import random
 import time
+from importlib import metadata
 from pathlib import Path
 from typing import Dict, List, Optional
 
@@ -303,6 +305,35 @@ def _log_ppas_configuration(condition: ExperimentCondition) -> None:
     )
 
 
+_PROVENANCE_DISTRIBUTIONS = {
+    "torch": "torch",
+    "transformers": "transformers",
+    "sentence_transformers": "sentence-transformers",
+}
+
+
+def _library_versions() -> Dict[str, str]:
+    """
+    Report versions of the interpreter and libraries that determine embeddings.
+
+    Encoder output depends on the installed embedding stack, so the versions are
+    recorded alongside every result to make a run reproducible after upgrades.
+
+    Returns
+    -------
+    Dict[str, str]
+        Mapping from ``"python"`` and each library name to its version, with
+        ``"unknown"`` for a library that is not installed.
+    """
+    versions = {"python": platform.python_version()}
+    for name, distribution in _PROVENANCE_DISTRIBUTIONS.items():
+        try:
+            versions[name] = metadata.version(distribution)
+        except metadata.PackageNotFoundError:
+            versions[name] = "unknown"
+    return versions
+
+
 def _write_result(
     results_dir: str | Path,
     condition: ExperimentCondition,
@@ -324,6 +355,7 @@ def _write_result(
         "metrics": {key: metrics[key] for key in _METRIC_KEYS},
         "n_source_entities": len(pair.source_entities),
         "n_candidates_per_entity": n_candidates,
+        "versions": _library_versions(),
     }
     path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
 

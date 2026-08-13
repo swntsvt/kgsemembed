@@ -8,6 +8,7 @@ synthetic doubles.
 
 import dataclasses
 import json
+import platform
 from pathlib import Path
 
 import numpy as np
@@ -130,6 +131,7 @@ def test_result_json_matches_required_schema(fakes, tmp_path):
         "metrics",
         "n_source_entities",
         "n_candidates_per_entity",
+        "versions",
     }
     assert payload["apply_ppas"] is True
     assert payload["ppas_effective"] is True
@@ -147,6 +149,31 @@ def test_result_json_matches_required_schema(fakes, tmp_path):
     assert payload["model_id"] == MODEL_REGISTRY["M1"].model_id
     assert payload["n_candidates_per_entity"] == 2
     assert payload["n_source_entities"] == 2
+    assert set(payload["versions"]) == {
+        "python",
+        "torch",
+        "transformers",
+        "sentence_transformers",
+    }
+    assert all(isinstance(value, str) for value in payload["versions"].values())
+
+
+def test_library_versions_reports_installed_versions():
+    versions = runner._library_versions()
+    assert versions["python"] == platform.python_version()
+    assert versions["sentence_transformers"] != "unknown"
+
+
+def test_library_versions_marks_missing_distribution_unknown(monkeypatch):
+    def raise_not_found(_name):
+        raise runner.metadata.PackageNotFoundError
+
+    monkeypatch.setattr(runner.metadata, "version", raise_not_found)
+    versions = runner._library_versions()
+    assert versions["torch"] == "unknown"
+    assert versions["transformers"] == "unknown"
+    assert versions["sentence_transformers"] == "unknown"
+    assert versions["python"] == platform.python_version()
 
 
 def test_dataset_filter_restricts_execution(fakes, tmp_path):
