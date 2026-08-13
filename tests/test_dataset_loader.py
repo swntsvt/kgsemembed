@@ -224,27 +224,163 @@ def test_parse_alignment_refs_malformed_xml_raises(tmp_path: Path) -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_split_80_10_10_slices_sorted_by_source() -> None:
+def test_split_80_10_10_slice_sizes() -> None:
     refs = [(f"s{i:02d}", f"t{i:02d}") for i in range(10)]
-    train, val, test = _split_80_10_10(list(reversed(refs)))
-    assert train == refs[:8]
-    assert val == [("s08", "t08")]
-    assert test == [("s09", "t09")]
+    train, val, test = _split_80_10_10(refs)
+    assert (len(train), len(val), len(test)) == (8, 1, 1)
+    assert sorted(train + val + test) == sorted(refs)
 
 
 def test_split_val_test_20_80_leaves_train_empty() -> None:
     refs = [(f"s{i:02d}", f"t{i:02d}") for i in range(10)]
-    train, val, test = _split_val_test_20_80(list(reversed(refs)))
+    train, val, test = _split_val_test_20_80(refs)
     assert train == []
-    assert val == [("s00", "t00"), ("s01", "t01")]
+    assert len(val) == 2
     assert len(test) == 8
+    assert sorted(val + test) == sorted(refs)
 
 
 def test_split_val_test_20_80_keeps_one_val_for_tiny_inputs() -> None:
     train, val, test = _split_val_test_20_80([("s0", "t0"), ("s1", "t1")])
     assert train == []
-    assert val == [("s0", "t0")]
-    assert test == [("s1", "t1")]
+    assert len(val) == 1
+    assert len(test) == 1
+
+
+def test_split_val_test_20_80_handles_empty_references() -> None:
+    assert _split_val_test_20_80([]) == ([], [], [])
+
+
+def test_splits_are_disjoint() -> None:
+    refs = [(f"s{i:02d}", f"t{i:02d}") for i in range(50)]
+    _, val, test = _split_val_test_20_80(refs)
+    assert set(val).isdisjoint(set(test))
+
+
+@pytest.mark.parametrize("split_fn", [_split_80_10_10, _split_val_test_20_80])
+def test_split_is_deterministic_across_repeated_calls(split_fn) -> None:
+    refs = [(f"s{i:02d}", f"t{i:02d}") for i in range(50)]
+    assert split_fn(refs) == split_fn(refs)
+
+
+@pytest.mark.parametrize("split_fn", [_split_80_10_10, _split_val_test_20_80])
+def test_split_is_independent_of_input_order(split_fn) -> None:
+    refs = [(f"s{i:02d}", f"t{i:02d}") for i in range(50)]
+    assert split_fn(list(reversed(refs))) == split_fn(refs)
+
+
+def test_split_shuffles_rather_than_slicing_sorted_order() -> None:
+    refs = [(f"s{i:02d}", f"t{i:02d}") for i in range(50)]
+    _, val, _ = _split_val_test_20_80(refs)
+    assert val != sorted(refs)[: len(val)]
+
+
+# ---------------------------------------------------------------------------
+# Per-dataset split dispatch
+# ---------------------------------------------------------------------------
+
+
+def _write_pair_dataset(root: Path, name: str, count: int) -> None:
+    """Write one ``source/target/reference`` pair directory under *root*."""
+    pair_dir = root / name
+    pair_dir.mkdir(parents=True)
+    (pair_dir / "source.rdf").write_text(_ontology_xml("src", count), encoding="utf-8")
+    (pair_dir / "target.rdf").write_text(_ontology_xml("tgt", count), encoding="utf-8")
+    (pair_dir / "reference.rdf").write_text(_edoal_xml(count), encoding="utf-8")
+
+
+@pytest.mark.parametrize(
+    "dataset_id,dir_name", [("D1", "d1_snomed_fma"), ("D2", "d2_anatomy")]
+)
+def test_d1_and_d2_dispatch_to_20_80_val_test_split(
+    tmp_path: Path, dataset_id: str, dir_name: str
+) -> None:
+    _write_pair_dataset(tmp_path, dir_name, 100)
+    pair = load_dataset(dataset_id, tmp_path)[0]
+
+    assert pair.train_refs == []
+    assert len(pair.val_refs) == 20
+    assert len(pair.test_refs) == 80
+    assert set(pair.val_refs).isdisjoint(pair.test_refs)
+
+
+def test_d3_dispatch_retains_20_80_val_test_split(tmp_path: Path) -> None:
+    _write_pair_dataset(tmp_path / "d3_conference", "alpha-beta", 100)
+    pair = load_dataset("D3", tmp_path)[0]
+
+    assert pair.train_refs == []
+    assert len(pair.val_refs) == 20
+    assert len(pair.test_refs) == 80
+
+
+def test_d4_dispatch_to_20_80_val_test_split(tmp_path: Path) -> None:
+    root = tmp_path / "d4_kgtrack"
+    (root / "ontologies").mkdir(parents=True)
+    (root / "references").mkdir(parents=True)
+    (root / "ontologies" / "memoryalpha.rdf").write_text(
+        _ontology_xml("src", 100), encoding="utf-8"
+    )
+    (root / "ontologies" / "stexpanded.rdf").write_text(
+        _ontology_xml("tgt", 100), encoding="utf-8"
+    )
+    (root / "references" / "memoryalpha-stexpanded.rdf").write_text(
+        _edoal_xml(100), encoding="utf-8"
+    )
+
+    schema, instance = load_dataset("D4", tmp_path)
+    assert schema.train_refs == [] and instance.train_refs == []
+    assert len(schema.val_refs) == 20
+    assert len(schema.test_refs) == 80
+
+
+def test_d5_links_are_used_verbatim_without_shuffling(tmp_path: Path) -> None:
+    fold_dir = tmp_path / "d5_openea" / "D_W_15K_V2" / "721_5fold" / "1"
+    fold_dir.mkdir(parents=True)
+    dataset_dir = tmp_path / "d5_openea" / "D_W_15K_V2"
+    for name in ("rel_triples_1", "attr_triples_1", "rel_triples_2", "attr_triples_2"):
+        (dataset_dir / name).write_text(
+            "http://ex/a\thttp://ex/p\thttp://ex/b\n", encoding="utf-8"
+        )
+    valid = [(f"http://ex/v{i}", f"http://ex/w{i}") for i in range(5)]
+    test = [(f"http://ex/s{i}", f"http://ex/t{i}") for i in range(20)]
+    for name, rows in (("valid_links", valid), ("test_links", test)):
+        (fold_dir / name).write_text(
+            "".join(f"{s}\t{t}\n" for s, t in rows), encoding="utf-8"
+        )
+
+    pair = load_dataset("D5", tmp_path)[0]
+    assert pair.train_refs == []
+    assert pair.val_refs == valid
+    assert pair.test_refs == test
+
+
+def test_dataset_split_preserves_every_reference(tmp_path: Path) -> None:
+    _write_pair_dataset(tmp_path, "d1_snomed_fma", 100)
+    pair = load_dataset("D1", tmp_path)[0]
+
+    expected = _parse_alignment_refs(tmp_path / "d1_snomed_fma" / "reference.rdf")
+    assert sorted(pair.val_refs + pair.test_refs) == sorted(expected)
+
+
+def test_dataset_loading_is_deterministic_across_calls(tmp_path: Path) -> None:
+    _write_pair_dataset(tmp_path, "d1_snomed_fma", 100)
+    first = load_dataset("D1", tmp_path)[0]
+    second = load_dataset("D1", tmp_path)[0]
+
+    assert first.val_refs == second.val_refs
+    assert first.test_refs == second.test_refs
+
+
+def test_dataset_loading_does_not_disturb_global_random_state(tmp_path: Path) -> None:
+    import random
+
+    _write_pair_dataset(tmp_path, "d1_snomed_fma", 100)
+    random.seed(4242)
+    expected = [random.random() for _ in range(3)]
+
+    random.seed(4242)
+    load_dataset("D1", tmp_path)
+    assert [random.random() for _ in range(3)] == expected
 
 
 # ---------------------------------------------------------------------------
@@ -370,9 +506,13 @@ def test_load_dataset_d4_reference_entity_types_are_consistent() -> None:
     schema, instance = load_dataset("D4")
     graph = schema.source_graph
 
-    for uri, _ in schema.train_refs[:10]:
+    schema_refs = schema.val_refs + schema.test_refs
+    instance_refs = instance.val_refs + instance.test_refs
+    assert schema_refs and instance_refs
+
+    for uri, _ in schema_refs[:10]:
         assert _resolve_entity_type(graph, uri) in ("class", "predicate")
-    for uri, _ in instance.train_refs[:10]:
+    for uri, _ in instance_refs[:10]:
         assert _resolve_entity_type(graph, uri) == "instance"
 
 

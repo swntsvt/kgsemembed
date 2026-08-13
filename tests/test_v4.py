@@ -441,9 +441,9 @@ def test_untiered_predicates_appended_as_lowest_tier() -> None:
     tier_list = captured[0]
     assert tier_list[: len(INSTANCE_TIER_LIST)] == INSTANCE_TIER_LIST
     assert len(tier_list) == len(INSTANCE_TIER_LIST) + 1
-    assert tier_list[-1] == [
+    assert tier_list[-1] == sorted(
         f"http://dbpedia.org/ontology/combatant_{i}" for i in range(49)
-    ]
+    )
 
 
 def test_untiered_predicates_respect_token_budget() -> None:

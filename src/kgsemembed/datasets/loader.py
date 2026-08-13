@@ -12,6 +12,7 @@ suffix so ad-hoc Turtle files remain loadable outside the D1-D5 flow.
 from __future__ import annotations
 
 import logging
+import random
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -31,6 +32,8 @@ SplitFn = Callable[[list[EntityPair]], tuple[list[EntityPair], list[EntityPair],
 _ALIGNMENT_NS = "http://knowledgeweb.semanticweb.org/heterogeneity/alignment"
 _RDF_NS = "http://www.w3.org/1999/02/22-rdf-syntax-ns#"
 _EQUIVALENCE_RELATION = "="
+
+_SPLIT_SEED = 42
 
 _CLASS_TYPES = (OWL.Class, RDFS.Class, SKOS.Concept)
 _PREDICATE_TYPES = (OWL.ObjectProperty, OWL.DatatypeProperty, RDF.Property)
@@ -423,11 +426,33 @@ def _sorted_by_source(refs: list[EntityPair]) -> list[EntityPair]:
     return sorted(refs, key=lambda pair: (pair[0], pair[1]))
 
 
+def _shuffled_by_source(refs: list[EntityPair]) -> list[EntityPair]:
+    """
+    Sort references by source URI, then shuffle them under a fixed seed.
+
+    Sorting first removes any dependence on input order, so the seeded shuffle
+    yields the same representative permutation on every run.
+
+    Parameters
+    ----------
+    refs : list[EntityPair]
+        Reference pairs in any order.
+
+    Returns
+    -------
+    list[EntityPair]
+        Deterministically shuffled reference pairs.
+    """
+    ordered = _sorted_by_source(refs)
+    random.Random(_SPLIT_SEED).shuffle(ordered)
+    return ordered
+
+
 def _split_80_10_10(
     refs: list[EntityPair],
 ) -> tuple[list[EntityPair], list[EntityPair], list[EntityPair]]:
     """
-    Split references 80/10/10 by sorted source URI, with no shuffling.
+    Split references 80/10/10 after a deterministic seeded shuffle.
 
     Parameters
     ----------
@@ -439,7 +464,7 @@ def _split_80_10_10(
     tuple[list[EntityPair], list[EntityPair], list[EntityPair]]
         Train, validation, and test slices.
     """
-    ordered = _sorted_by_source(refs)
+    ordered = _shuffled_by_source(refs)
     count = len(ordered)
     n_train = int(count * 0.8)
     n_val = int(count * 0.1)
@@ -452,7 +477,8 @@ def _split_val_test_20_80(
     """
     Split references into an empty train slice, 20% validation, 80% test.
 
-    Used for D3 Conference pairs, which are too small for a 10% val slice.
+    Used for D1, D2, D3, and D4: threshold tuning needs only a small validation
+    slice, and no component of Phase 2 trains on reference pairs.
 
     Parameters
     ----------
@@ -464,7 +490,7 @@ def _split_val_test_20_80(
     tuple[list[EntityPair], list[EntityPair], list[EntityPair]]
         Empty train slice, validation, and test slices.
     """
-    ordered = _sorted_by_source(refs)
+    ordered = _shuffled_by_source(refs)
     n_val = max(1, int(len(ordered) * 0.2)) if ordered else 0
     return [], ordered[:n_val], ordered[n_val:]
 
@@ -618,7 +644,7 @@ def load_pair_from_dir(
     Returns
     -------
     AlignmentPair
-        Alignment pair split 80/10/10 by sorted source URI.
+        Alignment pair split 80/10/10 under a deterministic seeded shuffle.
     """
     return _load_rdf_pair(
         Path(pair_dir), pair_name, ids, dataset_id, entity_type, _split_80_10_10
@@ -634,7 +660,7 @@ def _load_d1(data_dir: Path) -> list[AlignmentPair]:
     pair_dir = data_dir / "d1_snomed_fma"
     return [
         _load_rdf_pair(
-            pair_dir, "d1_snomed_fma", ("snomed", "fma"), "D1", "class", _split_80_10_10
+            pair_dir, "d1_snomed_fma", ("snomed", "fma"), "D1", "class", _split_val_test_20_80
         )
     ]
 
@@ -643,7 +669,7 @@ def _load_d2(data_dir: Path) -> list[AlignmentPair]:
     pair_dir = data_dir / "d2_anatomy"
     return [
         _load_rdf_pair(
-            pair_dir, "d2_anatomy", ("mouse", "human"), "D2", "class", _split_80_10_10
+            pair_dir, "d2_anatomy", ("mouse", "human"), "D2", "class", _split_val_test_20_80
         )
     ]
 
@@ -695,11 +721,11 @@ def _load_d4(data_dir: Path) -> list[AlignmentPair]:
     return [
         _build_pair(
             "D4_schema", "memoryalpha-stexpanded-schema", graphs, ids, "mixed",
-            _split_80_10_10(schema_refs),
+            _split_val_test_20_80(schema_refs),
         ),
         _build_pair(
             "D4_instance", "memoryalpha-stexpanded-instance", graphs, ids, "instance",
-            _split_80_10_10(instance_refs),
+            _split_val_test_20_80(instance_refs),
         ),
     ]
 

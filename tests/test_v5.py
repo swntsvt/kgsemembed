@@ -53,6 +53,21 @@ def _chain(*labels: str) -> tuple[Graph, list[URIRef]]:
     return g, nodes
 
 
+def _fanout_graph() -> Graph:
+    """Build a branching graph where ``Heart`` and ``Hub`` share four neighbours."""
+    g = Graph()
+    rel = _u("rel")
+    _label(g, rel, "rel")
+    for hub in (_HEART, _u("Hub")):
+        _label(g, hub, str(hub).rsplit("#", 1)[-1])
+    for name in ("A", "B", "C", "D"):
+        _label(g, _u(name), name)
+        for hub in (_HEART, _u("Hub")):
+            g.add((hub, rel, _u(name)))
+            g.add((_u(name), rel, hub))
+    return g
+
+
 # ---------------------------------------------------------------------------
 # Constants -- part of the experimental protocol
 # ---------------------------------------------------------------------------
@@ -93,19 +108,52 @@ def test_determinism_independent_of_prior_random_state() -> None:
     assert _v().verbalise(g, _HEART, "instance") == baseline
 
 
-def test_seed_called_exactly_once_per_call() -> None:
+def test_global_random_state_is_never_seeded() -> None:
     g, _ = _chain("Heart", "Lung")
-    with patch.object(v5_module.random, "seed", wraps=v5_module.random.seed) as spy:
+    with patch.object(v5_module.random, "seed") as spy:
         _v().verbalise(g, _HEART, "instance")
-    spy.assert_called_once_with(RANDOM_SEED)
+    spy.assert_not_called()
 
 
-def test_seed_called_once_even_for_empty_neighbourhood() -> None:
-    g = Graph()
-    _label(g, _HEART, "Heart")
-    with patch.object(v5_module.random, "seed", wraps=v5_module.random.seed) as spy:
-        _v().verbalise(g, _HEART, "instance")
-    spy.assert_called_once_with(RANDOM_SEED)
+def test_global_random_state_is_unchanged_by_verbalisation() -> None:
+    import random
+
+    g = _fanout_graph()
+    random.seed(999)
+    expected = [random.random() for _ in range(3)]
+
+    random.seed(999)
+    _v().verbalise(g, _HEART, "instance")
+    assert [random.random() for _ in range(3)] == expected
+
+
+def test_entity_rng_is_deterministic_for_same_uri() -> None:
+    first = _v()._entity_rng(_HEART)
+    second = _v()._entity_rng(_HEART)
+    assert [first.random() for _ in range(5)] == [second.random() for _ in range(5)]
+
+
+def test_entity_rng_differs_between_entities() -> None:
+    heart = _v()._entity_rng(_HEART)
+    lung = _v()._entity_rng(_u("Lung"))
+    assert [heart.random() for _ in range(5)] != [lung.random() for _ in range(5)]
+
+
+def test_entity_rng_seed_derives_from_random_seed_and_uri() -> None:
+    import random
+    import zlib
+
+    digest = zlib.crc32(str(_HEART).encode("utf-8"))
+    expected = random.Random(RANDOM_SEED + digest % (2**32))
+    actual = _v()._entity_rng(_HEART)
+    assert [actual.random() for _ in range(5)] == [expected.random() for _ in range(5)]
+
+
+def test_distinct_entities_produce_distinct_walk_sequences() -> None:
+    g = _fanout_graph()
+    heart_walks = _v("M3").verbalise(g, _HEART, "instance")
+    other_walks = _v("M3").verbalise(g, _u("Hub"), "instance")
+    assert heart_walks != other_walks
 
 
 # ---------------------------------------------------------------------------
@@ -122,13 +170,13 @@ def test_generates_fixed_number_of_walks() -> None:
 def test_walk_respects_maximum_depth() -> None:
     labels = ["N0", "N1", "N2", "N3", "N4", "N5", "N6"]
     g, nodes = _chain(*labels)
-    walk = _v()._single_walk(g, nodes[0], set())
+    walk = _v()._single_walk(g, nodes[0], set(), _v()._entity_rng(nodes[0]))
     assert len(walk) == WALK_DEPTH
 
 
 def test_walk_terminates_before_maximum_depth() -> None:
     g, nodes = _chain("Heart", "Lung")
-    walk = _v()._single_walk(g, nodes[0], set())
+    walk = _v()._single_walk(g, nodes[0], set(), _v()._entity_rng(nodes[0]))
     assert len(walk) == 1
 
 
@@ -383,7 +431,7 @@ def test_cyclic_graph_is_depth_bounded() -> None:
     g.add((_u("Lung"), _u("rel"), _HEART))
     _label(g, _u("rel"), "rel")
 
-    walk = _v()._single_walk(g, _HEART, set())
+    walk = _v()._single_walk(g, _HEART, set(), _v()._entity_rng(_HEART))
     assert len(walk) == WALK_DEPTH
 
 

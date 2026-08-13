@@ -35,7 +35,13 @@ from kgsemembed.candidates import build_candidate_table, generate_candidates, lo
 from kgsemembed.datasets import AlignmentPair, load_dataset, load_oaei_dataset
 from kgsemembed.datasets.loader import _resolve_entity_type
 from kgsemembed.embeddings import EmbeddingEncoder, MODEL_REGISTRY, load_sentence_transformer
-from kgsemembed.evaluation import RankedList, compute_all_metrics, tune_threshold
+from kgsemembed.evaluation import (
+    EntityPair,
+    RankedList,
+    ScoredPair,
+    compute_all_metrics,
+    tune_threshold,
+)
 from kgsemembed.pipeline.conditions import (
     EXPERIMENT_CONDITIONS,
     ExperimentCondition,
@@ -52,6 +58,8 @@ _CONFIG_DIR = Path(__file__).resolve().parents[3] / "configs"
 _LOGGER = logging.getLogger("kgsemembed.pipeline.runner")
 
 _MIXED_ENTITY_TYPE = "mixed"
+_DEFAULT_THRESHOLD = 0.5
+_RANDOM_SEED = 42
 _METRIC_KEYS = (
     "f1",
     "precision",
@@ -232,6 +240,59 @@ def _unique_candidate_uris(
     )
 
 
+def _validation_scored_pairs(
+    scored_pairs: List[ScoredPair], val_refs: List[EntityPair]
+) -> List[ScoredPair]:
+    """
+    Restrict scored pairs to sources that appear in the validation references.
+
+    Threshold tuning must never observe a test-source entity, so pairs are
+    filtered by validation source URI before the grid search runs.
+
+    Parameters
+    ----------
+    scored_pairs : List[ScoredPair]
+        Flattened ``(source, target, score)`` triples for every ranked source.
+    val_refs : List[EntityPair]
+        Validation ``(source, target)`` reference pairs.
+
+    Returns
+    -------
+    List[ScoredPair]
+        Scored pairs whose source URI occurs in ``val_refs``.
+    """
+    val_sources = {source for source, _ in val_refs}
+    return [triple for triple in scored_pairs if triple[0] in val_sources]
+
+
+def _resolve_threshold(
+    scored_pairs: List[ScoredPair], val_refs: List[EntityPair]
+) -> float:
+    """
+    Tune the decision threshold on validation sources only.
+
+    Parameters
+    ----------
+    scored_pairs : List[ScoredPair]
+        Flattened ``(source, target, score)`` triples for every ranked source.
+    val_refs : List[EntityPair]
+        Validation ``(source, target)`` reference pairs.
+
+    Returns
+    -------
+    float
+        Tuned threshold, or ``0.5`` when there are no validation references.
+    """
+    if not val_refs:
+        _LOGGER.warning(
+            "Empty validation references; using default threshold %.2f",
+            _DEFAULT_THRESHOLD,
+        )
+        return _DEFAULT_THRESHOLD
+    val_pairs = _validation_scored_pairs(scored_pairs, val_refs)
+    return tune_threshold(val_pairs, val_refs)["best_threshold"]
+
+
 def _process_pair(
     pair: AlignmentPair,
     condition: ExperimentCondition,
@@ -263,7 +324,7 @@ def _process_pair(
         pair, source_embeddings, candidates, candidate_index, candidate_embeddings
     )
     scored_pairs = [pair_triple for ranked in ranked_lists for pair_triple in ranked]
-    threshold = tune_threshold(scored_pairs, pair.val_refs)["best_threshold"]
+    threshold = _resolve_threshold(scored_pairs, pair.val_refs)
     return compute_all_metrics(ranked_lists, pair.test_refs, threshold=threshold)
 
 
@@ -419,6 +480,18 @@ def _select_datasets(
     return [dataset_id for dataset_id in condition.datasets if dataset_id in requested]
 
 
+def _seed_random_state() -> None:
+    """
+    Reset the Python and NumPy global generators to the fixed experiment seed.
+
+    Called once per condition rather than once per process so that a condition
+    produces the same results whether it is run alone or after other conditions
+    in the same interpreter.
+    """
+    random.seed(_RANDOM_SEED)
+    np.random.seed(_RANDOM_SEED)
+
+
 def _run_condition_with_encoder(
     condition: ExperimentCondition,
     encoder: EmbeddingEncoder,
@@ -428,6 +501,7 @@ def _run_condition_with_encoder(
     force_recompute: bool,
 ) -> Dict[str, Dict[str, float]]:
     results: Dict[str, Dict[str, float]] = {}
+    _seed_random_state()
     _log_ppas_configuration(condition)
     for dataset_id in _select_datasets(condition, dataset_ids):
         try:
@@ -493,6 +567,7 @@ def run_condition(
     KeyError
         If ``condition_id`` is not registered.
     """
+    _seed_random_state()
     condition = get_condition(condition_id)
     model, _ = load_sentence_transformer(condition.model_key)
     try:
@@ -603,8 +678,7 @@ def _build_arg_parser() -> argparse.ArgumentParser:
 
 def cli_main(argv: Optional[List[str]] = None) -> None:
     """Parse command-line arguments and run the requested conditions."""
-    random.seed(42)
-    np.random.seed(42)
+    _seed_random_state()
     args = _build_arg_parser().parse_args(argv)
     run_all_conditions(
         condition_ids=args.conditions,

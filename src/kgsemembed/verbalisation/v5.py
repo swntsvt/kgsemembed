@@ -8,13 +8,16 @@ embedding models::
     Heart [part of] Cardiovascular system [contains] Blood vessel
 
 Walks traverse only ``URIRef`` neighbours reached through eligible predicates;
-literal-valued and blank-node edges are never followed.  A fixed random seed is
-applied once per call so repeated verbalisation of the same entity is fully
-reproducible.  Concatenated walks are capped to the model token budget (models
-without a budget, e.g. ``"M3"``, retain every walk).
+literal-valued and blank-node edges are never followed.  Each entity draws from
+a local RNG seeded from ``RANDOM_SEED`` and its own URI, so repeated
+verbalisation of the same entity is fully reproducible while different entities
+follow distinct walk sequences, and global random state is never modified.
+Concatenated walks are capped to the model token budget (models without a
+budget, e.g. ``"M3"``, retain every walk).
 """
 
 import random
+import zlib
 
 from rdflib import Graph, URIRef
 from rdflib.namespace import OWL, RDF
@@ -72,17 +75,29 @@ class NeighbourhoodWalkVerbaliser(VerbaliserBase):
             Budget-capped walks joined with `` | ``, or the entity's readable
             label when it has no eligible outgoing relationships.
         """
-        random.seed(RANDOM_SEED)
         skipped = self._skipped_predicates(entity_type)
         if not self._get_outgoing_triples(graph, entity_uri, skipped):
             return self.get_label_or_local(graph, entity_uri)
 
+        rng = self._entity_rng(entity_uri)
         walks = [
-            self._single_walk(graph, entity_uri, skipped)
+            self._single_walk(graph, entity_uri, skipped, rng)
             for _ in range(WALKS_PER_ENTITY)
         ]
         texts = [self._render_walk(graph, entity_uri, walk) for walk in walks]
         return self._apply_budget(texts)
+
+    @staticmethod
+    def _entity_rng(entity_uri: URIRef) -> random.Random:
+        """Return a local RNG seeded from ``RANDOM_SEED`` and *entity_uri*.
+
+        ``zlib.crc32`` is used rather than the built-in ``hash`` because string
+        hashing is salted per interpreter process, which would make the derived
+        seed differ between runs.  Each entity therefore gets a distinct but
+        stable random sequence, and no global random state is touched.
+        """
+        digest = zlib.crc32(str(entity_uri).encode("utf-8"))
+        return random.Random(RANDOM_SEED + digest % (2**32))
 
     @staticmethod
     def _skipped_predicates(entity_type: str) -> set[str]:
@@ -109,13 +124,13 @@ class NeighbourhoodWalkVerbaliser(VerbaliserBase):
         return sorted(steps, key=lambda step: (str(step[0]), str(step[1])))
 
     def _single_walk(
-        self, graph: Graph, start: URIRef, skipped: set[str]
+        self, graph: Graph, start: URIRef, skipped: set[str], rng: random.Random
     ) -> list[tuple[URIRef, URIRef]]:
         """Perform one random walk of at most ``WALK_DEPTH`` hops from *start*.
 
         At each step one eligible outgoing triple is chosen uniformly at random
-        and its ``URIRef`` object becomes the next node.  The walk terminates
-        early when the current node has no eligible outgoing triples.
+        from *rng* and its ``URIRef`` object becomes the next node.  The walk
+        terminates early when the current node has no eligible outgoing triples.
         """
         steps: list[tuple[URIRef, URIRef]] = []
         current = start
@@ -123,7 +138,7 @@ class NeighbourhoodWalkVerbaliser(VerbaliserBase):
             eligible = self._get_outgoing_triples(graph, current, skipped)
             if not eligible:
                 break
-            pred, obj = random.choice(eligible)
+            pred, obj = rng.choice(eligible)
             steps.append((pred, obj))
             current = obj
         return steps
