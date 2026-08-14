@@ -21,7 +21,7 @@ from kgsemembed.evaluation import (
     run_group_comparisons,
     wilcoxon_comparison,
 )
-from kgsemembed.evaluation.stats import _GROUP_COMPARISONS
+from kgsemembed.evaluation.stats import _GROUP_COMPARISONS, _MIN_PAIRED_OBSERVATIONS
 from kgsemembed.utils.errors import DataError
 
 
@@ -270,9 +270,108 @@ def test_wilcoxon_return_keys(tmp_path: Path) -> None:
         "mean_f1_a",
         "mean_f1_b",
         "delta_f1",
+        "effect_size_r",
         "wilcoxon_warning",
     }
     assert result["n_pairs"] == 6
+
+
+# ---------------------------------------------------------------------------
+# Rank-biserial effect size
+# ---------------------------------------------------------------------------
+def _compare_with_statistic(tmp_path: Path, statistic: float) -> dict:
+    """Compare six-pair conditions with a fixed Wilcoxon statistic."""
+    _write_condition(tmp_path, "C1", "D1", _pairs("D1", 6, 0.30))
+    _write_condition(tmp_path, "C2", "D1", _pairs("D1", 6, 0.50))
+    with mock.patch("kgsemembed.evaluation.stats.wilcoxon") as mocked:
+        mocked.return_value = mock.Mock(statistic=statistic, pvalue=0.5)
+        return wilcoxon_comparison("C1", "C2", ["D1"], str(tmp_path))
+
+
+def test_effect_size_follows_rank_biserial_formula(tmp_path: Path) -> None:
+    # n = 6 pairs and W = 3 give r = 1 - (2 * 3) / (6 * 7) = 0.857142...
+    result = _compare_with_statistic(tmp_path, 3.0)
+    assert result["effect_size_r"] == pytest.approx(1.0 - 6.0 / 42.0)
+
+
+def test_effect_size_derives_from_returned_statistic_and_n(tmp_path: Path) -> None:
+    result = _compare_with_statistic(tmp_path, 7.0)
+    statistic, n_pairs = result["statistic"], result["n_pairs"]
+    assert result["effect_size_r"] == pytest.approx(
+        1.0 - (2.0 * statistic) / (n_pairs * (n_pairs + 1))
+    )
+
+
+def test_effect_size_is_one_when_statistic_is_zero(tmp_path: Path) -> None:
+    result = _compare_with_statistic(tmp_path, 0.0)
+    assert result["effect_size_r"] == pytest.approx(1.0)
+
+
+def test_effect_size_is_zero_at_the_full_rank_sum(tmp_path: Path) -> None:
+    # W = n(n + 1) / 2 = 21 is the formula's lower bound for six pairs; a
+    # two-sided test never returns it, so the statistic is injected directly.
+    result = _compare_with_statistic(tmp_path, 21.0)
+    assert result["effect_size_r"] == pytest.approx(0.0)
+
+
+def test_effect_size_falls_as_the_statistic_rises(tmp_path: Path) -> None:
+    small = _compare_with_statistic(tmp_path / "small", 2.0)
+    large = _compare_with_statistic(tmp_path / "large", 8.0)
+    assert small["effect_size_r"] > large["effect_size_r"]
+
+
+def test_effect_size_present_on_group_comparisons(tmp_path: Path) -> None:
+    _seed_group(tmp_path, "D")
+    for result in run_group_comparisons("D", str(tmp_path)):
+        assert isinstance(result["effect_size_r"], float)
+
+
+def _write_diverging_conditions(results_dir: Path, count: int) -> None:
+    """Write two conditions whose paired F1 values differ in both directions."""
+    scores_a = {f"p{index}": 0.10 + index * 0.10 for index in range(count)}
+    scores_b = {"p0": 0.15, "p1": 0.18, "p2": 0.42, "p3": 0.44, "p4": 0.49, "p5": 0.75}
+    _write_condition(results_dir, "C1", "D1", scores_a)
+    _write_condition(results_dir, "C2", "D1", {name: scores_b[name] for name in scores_a})
+
+
+def test_effect_size_matches_unmocked_scipy_statistic(tmp_path: Path) -> None:
+    _write_diverging_conditions(tmp_path, 6)
+    result = wilcoxon_comparison("C1", "C2", ["D1"], str(tmp_path))
+    statistic, n_pairs = result["statistic"], result["n_pairs"]
+    assert result["effect_size_r"] == pytest.approx(
+        1.0 - (2.0 * statistic) / (n_pairs * (n_pairs + 1))
+    )
+    assert 0.5 <= result["effect_size_r"] <= 1.0
+
+
+def test_effect_size_uses_pair_count_not_dataset_count(tmp_path: Path) -> None:
+    # Six pairs spread over two datasets: n must be 6, never 2.
+    _write_condition(tmp_path, "C1", "D1", {"x0": 0.10, "x1": 0.20, "x2": 0.30})
+    _write_condition(tmp_path, "C1", "D2", {"y0": 0.40, "y1": 0.50, "y2": 0.60})
+    _write_condition(tmp_path, "C2", "D1", {"x0": 0.15, "x1": 0.18, "x2": 0.42})
+    _write_condition(tmp_path, "C2", "D2", {"y0": 0.44, "y1": 0.49, "y2": 0.75})
+    result = wilcoxon_comparison("C1", "C2", ["D1", "D2"], str(tmp_path))
+    statistic = result["statistic"]
+    assert result["n_pairs"] == 6
+    assert result["effect_size_r"] == pytest.approx(1.0 - (2.0 * statistic) / 42.0)
+    assert result["effect_size_r"] != pytest.approx(1.0 - (2.0 * statistic) / 6.0)
+
+
+def test_effect_size_at_minimum_paired_observations(tmp_path: Path) -> None:
+    _write_diverging_conditions(tmp_path, _MIN_PAIRED_OBSERVATIONS)
+    result = wilcoxon_comparison("C1", "C2", ["D1"], str(tmp_path))
+    assert result["n_pairs"] == 5
+    assert result["effect_size_r"] == pytest.approx(
+        1.0 - (2.0 * result["statistic"]) / 30.0
+    )
+
+
+def test_effect_size_does_not_alter_existing_fields(tmp_path: Path) -> None:
+    result = _compare_with_statistic(tmp_path, 3.0)
+    assert result["statistic"] == pytest.approx(3.0)
+    assert result["p_value"] == pytest.approx(0.5)
+    assert result["significant"] is False
+    assert result["delta_f1"] == pytest.approx(0.20)
 
 
 # ---------------------------------------------------------------------------
@@ -494,6 +593,7 @@ def _example_results() -> List[dict]:
             "mean_f1_a": 0.40,
             "mean_f1_b": 0.42,
             "delta_f1": 0.02,
+            "effect_size_r": 0.8,
             "wilcoxon_warning": None,
         }
     ]
@@ -510,16 +610,24 @@ def test_export_header_matches_schema(tmp_path: Path) -> None:
     export_stats_table(_example_results(), str(output))
     content = output.read_text(encoding="utf-8")
     header = (
-        "Condition A | Condition B | n | p-value | Corrected sig. | delta-F1 | Warning"
+        "Condition A | Condition B | n | p-value | Corrected sig. | delta-F1 "
+        "| effect_size_r | Warning"
     )
     assert header in content
+
+
+def test_export_has_dedicated_effect_size_column(tmp_path: Path) -> None:
+    output = tmp_path / "stats.md"
+    export_stats_table(_example_results(), str(output))
+    header = output.read_text(encoding="utf-8").splitlines()[0]
+    assert header.split(" | ").index("effect_size_r") == 6
 
 
 def test_export_row_maps_values_to_columns(tmp_path: Path) -> None:
     output = tmp_path / "stats.md"
     export_stats_table(_example_results(), str(output))
     lines = output.read_text(encoding="utf-8").strip().splitlines()
-    assert lines[-1] == "| C1 | C2 | 5 | 0.0625 | False | 0.0200 | - |"
+    assert lines[-1] == "| C1 | C2 | 5 | 0.0625 | False | 0.0200 | 0.8000 | - |"
 
 
 def test_export_one_row_per_comparison(tmp_path: Path) -> None:
@@ -530,7 +638,7 @@ def test_export_one_row_per_comparison(tmp_path: Path) -> None:
     assert len(lines) == 2 + 3
 
 
-def _results_with_warning(message: Optional[str]) -> List[dict]:
+def _results_with_warning(message: object) -> List[dict]:
     results = _example_results()
     results[0]["wilcoxon_warning"] = message
     return results
@@ -570,6 +678,24 @@ def test_export_keeps_warning_inside_one_cell(tmp_path: Path) -> None:
     header, _, row = output.read_text(encoding="utf-8").strip().splitlines()
     assert _cell_count(row) == _cell_count(header)
     assert row.endswith("| ties \\| and zeros |")
+
+
+def test_export_keeps_warning_object_inside_one_cell(tmp_path: Path) -> None:
+    output = tmp_path / "stats.md"
+    export_stats_table(_results_with_warning(RuntimeWarning("ties | here")), str(output))
+    header, _, row = output.read_text(encoding="utf-8").strip().splitlines()
+    assert _cell_count(row) == _cell_count(header)
+    assert row.endswith("| ties \\| here |")
+
+
+@pytest.mark.parametrize("effect_size", [0.0, 0.5, 1.0, -0.25])
+def test_export_renders_effect_size_verbatim(tmp_path: Path, effect_size: float) -> None:
+    output = tmp_path / "stats.md"
+    results = _example_results()
+    results[0]["effect_size_r"] = effect_size
+    export_stats_table(results, str(output))
+    row = output.read_text(encoding="utf-8").strip().splitlines()[-1]
+    assert row.split(" | ")[6] == f"{effect_size:.4f}"
 
 
 def test_export_is_deterministic(tmp_path: Path) -> None:

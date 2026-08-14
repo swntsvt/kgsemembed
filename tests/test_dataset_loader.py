@@ -8,13 +8,14 @@ downloads still runs the rest of the suite.
 from pathlib import Path
 
 import pytest
-from rdflib import Graph
+from rdflib import Graph, Literal, URIRef
 
 from kgsemembed.datasets.loader import (
     _parse_alignment_refs,
     _resolve_entity_type,
     _split_80_10_10,
     _split_val_test_20_80,
+    _triple_object,
     extract_entity_uris,
     load_dataset,
     load_graph,
@@ -413,6 +414,56 @@ def test_extract_entity_uris_rejects_unknown_type() -> None:
 def test_load_dataset_rejects_unknown_dataset() -> None:
     with pytest.raises(DataError):
         load_dataset("D9", "data/")
+
+
+# ---------------------------------------------------------------------------
+# Triple object parsing
+# ---------------------------------------------------------------------------
+
+
+def test_triple_object_parses_valid_http_uri_as_uriref() -> None:
+    parsed = _triple_object("http://dbpedia.org/resource/Berlin")
+
+    assert isinstance(parsed, URIRef)
+    assert str(parsed) == "http://dbpedia.org/resource/Berlin"
+
+
+def test_triple_object_parses_malformed_uri_ending_with_bracket_as_literal() -> None:
+    parsed = _triple_object("http://dbpedia.org/resource/Berlin>")
+
+    assert isinstance(parsed, Literal)
+    assert not isinstance(parsed, URIRef)
+    assert str(parsed) == "http://dbpedia.org/resource/Berlin>"
+
+
+def test_triple_object_parses_uri_containing_a_space_as_literal() -> None:
+    parsed = _triple_object("http://dbpedia.org/resource/New Berlin")
+
+    assert isinstance(parsed, Literal)
+    assert not isinstance(parsed, URIRef)
+    assert str(parsed) == "http://dbpedia.org/resource/New Berlin"
+
+
+def test_triple_object_parses_plain_string_as_literal() -> None:
+    parsed = _triple_object("Berlin is the capital of Germany")
+
+    assert isinstance(parsed, Literal)
+    assert not isinstance(parsed, URIRef)
+    assert str(parsed) == "Berlin is the capital of Germany"
+
+
+def test_triple_object_parses_empty_string_as_literal() -> None:
+    parsed = _triple_object("")
+
+    assert isinstance(parsed, Literal)
+    assert str(parsed) == ""
+
+
+def test_triple_object_keeps_https_uris_as_uriref() -> None:
+    parsed = _triple_object("https://dbpedia.org/resource/Berlin")
+
+    assert isinstance(parsed, URIRef)
+    assert str(parsed) == "https://dbpedia.org/resource/Berlin"
 
 
 # ---------------------------------------------------------------------------
