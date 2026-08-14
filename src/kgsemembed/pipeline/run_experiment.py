@@ -60,6 +60,7 @@ _LOGGER = logging.getLogger("kgsemembed.pipeline.runner")
 _MIXED_ENTITY_TYPE = "mixed"
 _DEFAULT_THRESHOLD = 0.5
 _RANDOM_SEED = 42
+_FAILURE_KEY = "n_failed_pairs"
 _METRIC_KEYS = (
     "f1",
     "precision",
@@ -329,7 +330,23 @@ def _process_pair(
 
 
 def _candidate_count(candidates: Dict[str, List[str]]) -> int:
-    return len(next(iter(candidates.values()))) if candidates else 0
+    """
+    Return the largest candidate-list length across all source entities.
+
+    Candidate lists are truncated per source entity, so the count of an
+    arbitrary source under-reports the retrieval breadth of the pair.
+
+    Parameters
+    ----------
+    candidates : Dict[str, List[str]]
+        Mapping from source URI to its ranked candidate target URIs.
+
+    Returns
+    -------
+    int
+        Maximum candidate-list length, or ``0`` for an empty mapping.
+    """
+    return max(len(uris) for uris in candidates.values()) if candidates else 0
 
 
 def _effective_ppas(model_key: str) -> bool:
@@ -454,6 +471,35 @@ def _run_pair(
         return None
 
 
+def _report_failures(dataset_id: str, n_pairs: int, n_successes: int) -> int:
+    """
+    Log how many alignment pairs of a dataset failed and return that count.
+
+    The printed summary is only reached by ``run_all_conditions``, so the count
+    is also logged to keep failures visible to a single-condition run.
+
+    Parameters
+    ----------
+    dataset_id : str
+        Dataset identifier, e.g. ``"D3"``.
+    n_pairs : int
+        Number of alignment pairs the dataset holds.
+    n_successes : int
+        Number of pairs that produced metrics.
+
+    Returns
+    -------
+    int
+        Number of pairs that failed.
+    """
+    failures = n_pairs - n_successes
+    if failures:
+        _LOGGER.warning(
+            "Dataset %s: %d of %d alignment pairs failed", dataset_id, failures, n_pairs
+        )
+    return failures
+
+
 def _run_dataset(
     condition: ExperimentCondition,
     dataset_id: str,
@@ -462,12 +508,47 @@ def _run_dataset(
     results_dir: str | Path,
     force_recompute: bool,
 ) -> Optional[Dict[str, float]]:
-    pairs = load_dataset(dataset_id, data_dir)
-    dataset_metrics: Optional[Dict[str, float]] = None
-    for pair in pairs:
-        metrics = _run_pair(condition, pair, encoder, data_dir, results_dir, force_recompute)
-        if metrics is not None:
-            dataset_metrics = metrics
+    """
+    Run every alignment pair of a dataset and retain the failed outcomes.
+
+    Metrics of the last successful pair are returned, extended with the number
+    of pairs that failed, so a partially failed dataset is distinguishable from
+    a clean one.  A dataset whose pairs all failed reports the failure count
+    without metrics.  A pair read back from an existing result file counts as a
+    success, matching the fact that it was not executed and did not fail.
+
+    Parameters
+    ----------
+    condition : ExperimentCondition
+        Condition being executed.
+    dataset_id : str
+        Dataset identifier, e.g. ``"D3"``.
+    encoder : EmbeddingEncoder
+        Encoder shared across every pair of the dataset.
+    data_dir : str | Path
+        Dataset and candidate root directory.
+    results_dir : str | Path
+        Output directory for result JSON files.
+    force_recompute : bool
+        Recompute and overwrite existing result files when ``True``.
+
+    Returns
+    -------
+    Optional[Dict[str, float]]
+        Metrics carrying a ``"n_failed_pairs"`` entry, or ``None`` when the
+        dataset holds no alignment pairs.
+    """
+    outcomes = [
+        _run_pair(condition, pair, encoder, data_dir, results_dir, force_recompute)
+        for pair in load_dataset(dataset_id, data_dir)
+    ]
+    if not outcomes:
+        return None
+    successes = [metrics for metrics in outcomes if metrics is not None]
+    dataset_metrics = dict(successes[-1]) if successes else {}
+    dataset_metrics[_FAILURE_KEY] = _report_failures(
+        dataset_id, len(outcomes), len(successes)
+    )
     return dataset_metrics
 
 
@@ -560,7 +641,8 @@ def run_condition(
         Mapping from dataset identifier to its computed metrics dictionary.
         When a dataset holds several alignment pairs, the value is the metrics
         of the last successfully processed pair; every pair is always written to
-        its own result JSON regardless.
+        its own result JSON regardless.  Each entry additionally carries
+        ``"n_failed_pairs"``, the number of alignment pairs that failed.
 
     Raises
     ------
@@ -600,14 +682,32 @@ def _group_by_model(
     return grouped
 
 
+def _summary_metric(metrics: Dict[str, float], key: str) -> str:
+    """Format a metric for the summary, reading ``'n/a'`` when no pair succeeded."""
+    value = metrics.get(key)
+    return "n/a" if value is None else f"{value:.4f}"
+
+
+def _failure_cell(metrics: Dict[str, float]) -> str:
+    """Render the failure count so a failed dataset reads as ``'7 failed'``."""
+    failures = int(metrics.get(_FAILURE_KEY, 0))
+    return f"{failures} failed" if failures else "0"
+
+
 def _print_summary(summary: Dict[str, Dict[str, Dict[str, float]]]) -> None:
     print("\nExperiment summary")
-    print(f"{'condition':<12}{'dataset':<10}{'f1':>8}{'precision':>11}{'recall':>9}")
+    print(
+        f"{'condition':<12}{'dataset':<10}{'f1':>8}{'precision':>11}"
+        f"{'recall':>9}{'failures':>12}"
+    )
     for condition_id, dataset_metrics in summary.items():
         for dataset_id, metrics in dataset_metrics.items():
             print(
                 f"{condition_id:<12}{dataset_id:<10}"
-                f"{metrics['f1']:>8.4f}{metrics['precision']:>11.4f}{metrics['recall']:>9.4f}"
+                f"{_summary_metric(metrics, 'f1'):>8}"
+                f"{_summary_metric(metrics, 'precision'):>11}"
+                f"{_summary_metric(metrics, 'recall'):>9}"
+                f"{_failure_cell(metrics):>12}"
             )
 
 

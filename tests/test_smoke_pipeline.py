@@ -8,6 +8,7 @@ synthetic doubles.
 
 import dataclasses
 import json
+import logging
 import platform
 from pathlib import Path
 
@@ -90,6 +91,20 @@ def fakes(monkeypatch):
     monkeypatch.setattr(runner, "load_candidates", fake_load_candidates)
     monkeypatch.setattr(runner, "build_verbaliser", lambda _s, _m: _FakeVerbaliser())
     return calls
+
+
+@pytest.fixture
+def runner_logs(monkeypatch, caplog):
+    """
+    Capture runner warnings regardless of earlier ``init_logging`` calls.
+
+    ``init_logging`` disables propagation on the ``kgsemembed`` logger, which
+    would otherwise keep every record away from the root handler ``caplog``
+    installs once any test in the session has initialised logging.
+    """
+    monkeypatch.setattr(logging.getLogger("kgsemembed"), "propagate", True)
+    with caplog.at_level(logging.WARNING, logger=runner._LOGGER.name):
+        yield caplog
 
 
 # ---------------------------------------------------------------------------
@@ -295,6 +310,192 @@ def test_failing_pair_does_not_stop_other_pairs(fakes, monkeypatch, tmp_path):
     assert "D2" in results
     assert (tmp_path / "results" / "C1" / "D2" / "good_pair_results.json").exists()
     assert not (tmp_path / "results" / "C1" / "D2" / "bad_pair_results.json").exists()
+
+
+def test_failed_pairs_are_counted_for_the_dataset(fakes, monkeypatch, tmp_path):
+    pairs = [_make_pair(dataset_id="D2", pair_name=f"pair_{index}") for index in range(3)]
+    monkeypatch.setattr(runner, "load_dataset", lambda _d, _dir: pairs)
+
+    def selective_candidates(_dataset_id, pair_name, _data_dir):
+        if pair_name in {"pair_0", "pair_2"}:
+            raise DataError("missing candidates")
+        return dict(_CANDIDATES)
+
+    monkeypatch.setattr(runner, "load_candidates", selective_candidates)
+
+    results = runner.run_condition(
+        "C1", dataset_ids=["D2"], data_dir=tmp_path, results_dir=tmp_path / "results"
+    )
+    assert results["D2"]["n_failed_pairs"] == 2
+
+
+def test_successful_metrics_survive_a_failing_pair(fakes, monkeypatch, tmp_path):
+    good = _make_pair(dataset_id="D2", pair_name="good_pair")
+    bad = _make_pair(dataset_id="D2", pair_name="bad_pair")
+    monkeypatch.setattr(runner, "load_dataset", lambda _d, _dir: [good, bad])
+
+    def selective_candidates(_dataset_id, pair_name, _data_dir):
+        if pair_name == "bad_pair":
+            raise DataError("missing candidates")
+        return dict(_CANDIDATES)
+
+    monkeypatch.setattr(runner, "load_candidates", selective_candidates)
+
+    results = runner.run_condition(
+        "C1", dataset_ids=["D2"], data_dir=tmp_path, results_dir=tmp_path / "results"
+    )
+    assert results["D2"]["recall_at_1"] == 1.0
+    assert results["D2"]["n_failed_pairs"] == 1
+
+
+def test_clean_dataset_reports_zero_failures(fakes, tmp_path):
+    results = runner.run_condition(
+        "C1", dataset_ids=["D2"], data_dir=tmp_path, results_dir=tmp_path / "results"
+    )
+    assert results["D2"]["n_failed_pairs"] == 0
+
+
+def test_fully_failed_dataset_is_still_reported(fakes, monkeypatch, tmp_path):
+    monkeypatch.setattr(
+        runner, "load_dataset", lambda _d, _dir: [_make_pair(pair_name="only_pair")]
+    )
+
+    def failing_candidates(_dataset_id, _pair_name, _data_dir):
+        raise DataError("missing candidates")
+
+    monkeypatch.setattr(runner, "load_candidates", failing_candidates)
+
+    results = runner.run_condition(
+        "C1", dataset_ids=["D2"], data_dir=tmp_path, results_dir=tmp_path / "results"
+    )
+    assert results["D2"] == {"n_failed_pairs": 1}
+
+
+def test_dataset_without_pairs_is_absent_from_results(fakes, monkeypatch, tmp_path):
+    monkeypatch.setattr(runner, "load_dataset", lambda _d, _dir: [])
+    results = runner.run_condition(
+        "C1", dataset_ids=["D2"], data_dir=tmp_path, results_dir=tmp_path / "results"
+    )
+    assert results == {}
+
+
+def test_skipped_existing_results_are_not_counted_as_failures(fakes, tmp_path):
+    results_dir = tmp_path / "results"
+    runner.run_condition("C1", dataset_ids=["D2"], data_dir=tmp_path, results_dir=results_dir)
+
+    results = runner.run_condition(
+        "C1", dataset_ids=["D2"], data_dir=tmp_path, results_dir=results_dir
+    )
+    assert results["D2"]["n_failed_pairs"] == 0
+
+
+def test_failure_counts_are_tracked_per_dataset(fakes, monkeypatch, tmp_path):
+    def two_pairs(dataset_id, _data_dir):
+        return [
+            _make_pair(dataset_id=dataset_id, pair_name=f"{dataset_id}_p{index}")
+            for index in range(2)
+        ]
+
+    def selective_candidates(_dataset_id, pair_name, _data_dir):
+        if pair_name.startswith("D1"):
+            raise DataError("missing candidates")
+        return dict(_CANDIDATES)
+
+    monkeypatch.setattr(runner, "load_dataset", two_pairs)
+    monkeypatch.setattr(runner, "load_candidates", selective_candidates)
+
+    results = runner.run_condition(
+        "C6",
+        dataset_ids=["D1", "D2"],
+        data_dir=tmp_path,
+        results_dir=tmp_path / "results",
+    )
+    assert results["D1"]["n_failed_pairs"] == 2
+    assert results["D2"]["n_failed_pairs"] == 0
+
+
+def test_dataset_failures_are_logged(fakes, monkeypatch, tmp_path, runner_logs):
+    pairs = [_make_pair(dataset_id="D2", pair_name=f"pair_{index}") for index in range(3)]
+    monkeypatch.setattr(runner, "load_dataset", lambda _d, _dir: pairs)
+
+    def selective_candidates(_dataset_id, pair_name, _data_dir):
+        if pair_name != "pair_1":
+            raise DataError("missing candidates")
+        return dict(_CANDIDATES)
+
+    monkeypatch.setattr(runner, "load_candidates", selective_candidates)
+
+    runner.run_condition(
+        "C1", dataset_ids=["D2"], data_dir=tmp_path, results_dir=tmp_path / "results"
+    )
+    assert "Dataset D2: 2 of 3 alignment pairs failed" in runner_logs.text
+
+
+def test_clean_dataset_logs_no_failure_warning(fakes, tmp_path, runner_logs):
+    runner.run_condition(
+        "C1", dataset_ids=["D2"], data_dir=tmp_path, results_dir=tmp_path / "results"
+    )
+    assert "alignment pairs failed" not in runner_logs.text
+
+
+def test_summary_shows_failure_count_prominently(capsys):
+    summary = {"C1": {"D3": {"f1": 0.5, "precision": 0.5, "recall": 0.5, "n_failed_pairs": 7}}}
+    runner._print_summary(summary)
+    output = capsys.readouterr().out
+    assert "failures" in output
+    assert "7 failed" in output
+
+
+def test_summary_shows_zero_failures_for_clean_dataset(capsys):
+    summary = {"C1": {"D3": {"f1": 0.5, "precision": 0.5, "recall": 0.5, "n_failed_pairs": 0}}}
+    runner._print_summary(summary)
+    lines = capsys.readouterr().out.strip().splitlines()
+    assert "failed" not in lines[-1]
+    assert lines[-1].split()[-1] == "0"
+
+
+def test_summary_marks_metrics_of_a_fully_failed_dataset(capsys):
+    runner._print_summary({"C1": {"D3": {"n_failed_pairs": 21}}})
+    output = capsys.readouterr().out
+    assert "n/a" in output
+    assert "21 failed" in output
+
+
+def test_summary_distinguishes_failed_from_clean_dataset(capsys):
+    metrics = {"f1": 0.5, "precision": 0.5, "recall": 0.5}
+    runner._print_summary(
+        {
+            "C1": {
+                "D3": {**metrics, "n_failed_pairs": 7},
+                "D4": {**metrics, "n_failed_pairs": 0},
+            }
+        }
+    )
+    failed_row, clean_row = capsys.readouterr().out.strip().splitlines()[-2:]
+    assert failed_row != clean_row
+    assert "7 failed" in failed_row
+    assert "failed" not in clean_row
+
+
+def test_partially_failed_dataset_reported_end_to_end(fakes, monkeypatch, tmp_path, capsys):
+    pairs = [_make_pair(dataset_id="D2", pair_name=f"pair_{index}") for index in range(21)]
+    monkeypatch.setattr(runner, "load_dataset", lambda _d, _dir: pairs)
+
+    def selective_candidates(_dataset_id, pair_name, _data_dir):
+        if int(pair_name.removeprefix("pair_")) < 7:
+            raise DataError("missing candidates")
+        return dict(_CANDIDATES)
+
+    monkeypatch.setattr(runner, "load_candidates", selective_candidates)
+
+    summary = runner.run_all_conditions(
+        condition_ids=["C1"],
+        dataset_ids=["D2"],
+        data_dir=tmp_path,
+        results_dir=tmp_path / "results",
+    )
+    assert summary["C1"]["D2"]["n_failed_pairs"] == 7
+    assert "7 failed" in capsys.readouterr().out
 
 
 def test_corrupt_existing_result_is_isolated_per_pair(fakes, monkeypatch, tmp_path):
@@ -508,6 +709,57 @@ def test_pipeline_package_exports_runner():
 
     assert "run_condition" in pipeline.__all__
     assert "run_all_conditions" in pipeline.__all__
+
+
+# ---------------------------------------------------------------------------
+# Candidate count reporting
+# ---------------------------------------------------------------------------
+
+
+def test_candidate_count_is_the_maximum_across_sources():
+    candidates = {"s1": ["t1"], "s2": ["t1", "t2", "t3"], "s3": ["t1", "t2"]}
+    assert runner._candidate_count(candidates) == 3
+
+
+def test_candidate_count_ignores_first_source_length():
+    candidates = {"s1": [], "s2": ["t1", "t2"]}
+    assert runner._candidate_count(candidates) == 2
+
+
+def test_candidate_count_of_empty_mapping_is_zero():
+    assert runner._candidate_count({}) == 0
+
+
+def test_candidate_count_of_single_source():
+    assert runner._candidate_count({"s1": ["t1", "t2", "t3"]}) == 3
+
+
+def test_candidate_count_of_uniform_lists():
+    assert runner._candidate_count({"s1": ["t1", "t2"], "s2": ["t3", "t4"]}) == 2
+
+
+def test_candidate_count_of_empty_lists_is_zero():
+    assert runner._candidate_count({"s1": [], "s2": []}) == 0
+
+
+def test_candidate_count_reports_the_widest_source():
+    candidates = {"a": ["t"] * 20, "b": ["t"] * 18, "c": ["t"] * 25}
+    assert runner._candidate_count(candidates) == 25
+
+
+def test_result_json_records_maximum_candidate_count(fakes, monkeypatch, tmp_path):
+    monkeypatch.setattr(
+        runner,
+        "load_candidates",
+        lambda _d, _p, _dir: {"s1": ["t1"], "s2": ["t1", "t2"]},
+    )
+    runner.run_condition(
+        "C1", dataset_ids=["D2"], data_dir=tmp_path, results_dir=tmp_path / "results"
+    )
+    payload = json.loads(
+        (tmp_path / "results" / "C1" / "D2" / "d2_pair_results.json").read_text()
+    )
+    assert payload["n_candidates_per_entity"] == 2
 
 
 # ---------------------------------------------------------------------------
