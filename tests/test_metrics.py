@@ -369,6 +369,12 @@ def test_condition_run_is_isolated_from_preceding_conditions(monkeypatch) -> Non
 
     condition = get_condition("C1")
     runs: list[list[float]] = []
+    model_info = {
+        "model_id": "test",
+        "model_key": "M1",
+        "device": "cpu",
+        "hf_revision": "abc123",
+    }
 
     def _record(*args, **kwargs):
         runs[-1].append(random.random())
@@ -379,7 +385,7 @@ def test_condition_run_is_isolated_from_preceding_conditions(monkeypatch) -> Non
         random.seed(hostile_seed)  # state a preceding condition would leave behind
         runs.append([])
         runner._run_condition_with_encoder(
-            condition, object(), None, "data/", "results/", False
+            condition, object(), None, "data/", "results/", False, model_info
         )
 
     assert runs[0] and runs[0] == runs[1]

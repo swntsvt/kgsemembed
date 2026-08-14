@@ -666,16 +666,15 @@ def _run_condition_with_encoder(
     data_dir: str | Path,
     results_dir: str | Path,
     force_recompute: bool,
-    model_info: Optional[Dict[str, str]] = None,
+    model_info: Optional[Dict[str, str]],
 ) -> Dict[str, Dict[str, float]]:
     """
     Run the selected datasets of a condition against an already-loaded encoder.
 
     ``model_info`` is the provenance metadata of the model backing ``encoder``
-    and is recorded in every result written by this call.  It defaults to
-    ``None`` only so that callers exercising seeding behaviour can omit it; the
-    two production entry points always supply it, and every function further
-    down the call chain requires it explicitly.
+    and is recorded in every result written by this call.  It is required at
+    every level of the call chain so that provenance cannot be dropped by
+    omission, which is how the loaded revision went unrecorded before.
     """
     results: Dict[str, Dict[str, float]] = {}
     _seed_random_state()
