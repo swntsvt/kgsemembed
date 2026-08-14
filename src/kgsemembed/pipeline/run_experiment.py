@@ -20,7 +20,9 @@ import json
 import logging
 import platform
 import random
+import sys
 import time
+from datetime import datetime, timezone
 from importlib import metadata
 from pathlib import Path
 from typing import Dict, List, Optional
@@ -389,6 +391,9 @@ _PROVENANCE_DISTRIBUTIONS = {
     "sentence_transformers": "sentence-transformers",
 }
 
+_PACKAGE_DISTRIBUTION = "kgsemembed"
+_UNKNOWN_VERSION = "unknown"
+
 
 def _library_versions() -> Dict[str, str]:
     """
@@ -408,8 +413,75 @@ def _library_versions() -> Dict[str, str]:
         try:
             versions[name] = metadata.version(distribution)
         except metadata.PackageNotFoundError:
-            versions[name] = "unknown"
+            versions[name] = _UNKNOWN_VERSION
     return versions
+
+
+def _package_version() -> str:
+    """
+    Report the installed ``kgsemembed`` version.
+
+    Returns
+    -------
+    str
+        The distribution version, or ``"unknown"`` when the package is not
+        installed as a distribution, e.g. when run straight from a source tree.
+    """
+    try:
+        return metadata.version(_PACKAGE_DISTRIBUTION)
+    except metadata.PackageNotFoundError:
+        return _UNKNOWN_VERSION
+
+
+def _model_revision(model_info: Optional[Dict[str, str]]) -> str:
+    """
+    Report the Hugging Face revision of the model that produced a result.
+
+    Parameters
+    ----------
+    model_info : Optional[Dict[str, str]]
+        Provenance metadata returned by the model-loading layer.
+
+    Returns
+    -------
+    str
+        The loaded revision, or ``"unknown"`` when the loader supplied none.
+    """
+    if not model_info:
+        return _UNKNOWN_VERSION
+    return model_info.get("hf_revision", _UNKNOWN_VERSION)
+
+
+def _utc_timestamp() -> str:
+    """Return the current UTC time as an ISO-8601 string ending in ``Z``."""
+    return datetime.now(timezone.utc).replace(tzinfo=None).isoformat() + "Z"
+
+
+def _provenance(model_info: Optional[Dict[str, str]]) -> Dict[str, object]:
+    """
+    Assemble the model, library, runtime, and execution provenance of a result.
+
+    ``python_version`` intentionally duplicates ``versions["python"]``: the
+    top-level field carries the full interpreter string for auditing a single
+    result file, while the nested value stays available for aggregation.
+
+    Parameters
+    ----------
+    model_info : Optional[Dict[str, str]]
+        Provenance metadata returned by the model-loading layer.
+
+    Returns
+    -------
+    Dict[str, object]
+        Provenance fields to merge into a result payload.
+    """
+    return {
+        "hf_revision": _model_revision(model_info),
+        "kgsemembed_version": _package_version(),
+        "python_version": sys.version,
+        "run_timestamp": _utc_timestamp(),
+        "versions": _library_versions(),
+    }
 
 
 def _write_result(
@@ -418,6 +490,7 @@ def _write_result(
     pair: AlignmentPair,
     metrics: Dict[str, float],
     n_candidates: int,
+    model_info: Optional[Dict[str, str]],
 ) -> None:
     path = _result_path(results_dir, condition.condition_id, pair.dataset_id, pair.pair_name)
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -433,7 +506,7 @@ def _write_result(
         "metrics": {key: metrics[key] for key in _METRIC_KEYS},
         "n_source_entities": len(pair.source_entities),
         "n_candidates_per_entity": n_candidates,
-        "versions": _library_versions(),
+        **_provenance(model_info),
     }
     path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
 
@@ -450,6 +523,7 @@ def _run_pair(
     data_dir: str | Path,
     results_dir: str | Path,
     force_recompute: bool,
+    model_info: Optional[Dict[str, str]],
 ) -> Optional[Dict[str, float]]:
     path = _result_path(results_dir, condition.condition_id, pair.dataset_id, pair.pair_name)
     try:
@@ -458,7 +532,14 @@ def _run_pair(
             return _read_metrics(path)
         candidates = load_candidates(pair.dataset_id, pair.pair_name, data_dir)
         metrics = _process_pair(pair, condition, encoder, candidates)
-        _write_result(results_dir, condition, pair, metrics, _candidate_count(candidates))
+        _write_result(
+            results_dir,
+            condition,
+            pair,
+            metrics,
+            _candidate_count(candidates),
+            model_info,
+        )
         return metrics
     except Exception as exc:
         _LOGGER.error(
@@ -507,6 +588,7 @@ def _run_dataset(
     data_dir: str | Path,
     results_dir: str | Path,
     force_recompute: bool,
+    model_info: Optional[Dict[str, str]],
 ) -> Optional[Dict[str, float]]:
     """
     Run every alignment pair of a dataset and retain the failed outcomes.
@@ -531,6 +613,8 @@ def _run_dataset(
         Output directory for result JSON files.
     force_recompute : bool
         Recompute and overwrite existing result files when ``True``.
+    model_info : Optional[Dict[str, str]]
+        Provenance metadata of the loaded model, recorded in each result.
 
     Returns
     -------
@@ -539,7 +623,9 @@ def _run_dataset(
         dataset holds no alignment pairs.
     """
     outcomes = [
-        _run_pair(condition, pair, encoder, data_dir, results_dir, force_recompute)
+        _run_pair(
+            condition, pair, encoder, data_dir, results_dir, force_recompute, model_info
+        )
         for pair in load_dataset(dataset_id, data_dir)
     ]
     if not outcomes:
@@ -580,14 +666,29 @@ def _run_condition_with_encoder(
     data_dir: str | Path,
     results_dir: str | Path,
     force_recompute: bool,
+    model_info: Optional[Dict[str, str]],
 ) -> Dict[str, Dict[str, float]]:
+    """
+    Run the selected datasets of a condition against an already-loaded encoder.
+
+    ``model_info`` is the provenance metadata of the model backing ``encoder``
+    and is recorded in every result written by this call.  It is required at
+    every level of the call chain so that provenance cannot be dropped by
+    omission, which is how the loaded revision went unrecorded before.
+    """
     results: Dict[str, Dict[str, float]] = {}
     _seed_random_state()
     _log_ppas_configuration(condition)
     for dataset_id in _select_datasets(condition, dataset_ids):
         try:
             metrics = _run_dataset(
-                condition, dataset_id, encoder, data_dir, results_dir, force_recompute
+                condition,
+                dataset_id,
+                encoder,
+                data_dir,
+                results_dir,
+                force_recompute,
+                model_info,
             )
         except Exception as exc:
             _LOGGER.error(
@@ -651,11 +752,17 @@ def run_condition(
     """
     _seed_random_state()
     condition = get_condition(condition_id)
-    model, _ = load_sentence_transformer(condition.model_key)
+    model, model_info = load_sentence_transformer(condition.model_key)
     try:
         encoder = EmbeddingEncoder(condition.model_key, model)
         return _run_condition_with_encoder(
-            condition, encoder, dataset_ids, data_dir, results_dir, force_recompute
+            condition,
+            encoder,
+            dataset_ids,
+            data_dir,
+            results_dir,
+            force_recompute,
+            model_info,
         )
     finally:
         _release_model(model)
@@ -746,13 +853,19 @@ def run_all_conditions(
     conditions = _select_conditions(condition_ids)
     summary: Dict[str, Dict[str, Dict[str, float]]] = {}
     for model_key, group in _group_by_model(conditions).items():
-        model, _ = load_sentence_transformer(model_key)
+        model, model_info = load_sentence_transformer(model_key)
         try:
             encoder = EmbeddingEncoder(model_key, model)
             for condition in group:
                 try:
                     summary[condition.condition_id] = _run_condition_with_encoder(
-                        condition, encoder, dataset_ids, data_dir, results_dir, force_recompute
+                        condition,
+                        encoder,
+                        dataset_ids,
+                        data_dir,
+                        results_dir,
+                        force_recompute,
+                        model_info,
                     )
                 except Exception as exc:
                     _LOGGER.error("Failed condition %s: %s", condition.condition_id, exc)

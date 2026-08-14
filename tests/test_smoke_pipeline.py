@@ -10,6 +10,8 @@ import dataclasses
 import json
 import logging
 import platform
+import sys
+from datetime import datetime, timezone
 from pathlib import Path
 
 import numpy as np
@@ -70,7 +72,7 @@ def fakes(monkeypatch):
             "model_key": model_key,
             "model_id": f"fake/{model_key}",
             "device": "cpu",
-            "hf_revision": "unknown",
+            "hf_revision": f"revision-{model_key}",
         }
 
     def fake_encoder(model_key, model):
@@ -146,6 +148,10 @@ def test_result_json_matches_required_schema(fakes, tmp_path):
         "metrics",
         "n_source_entities",
         "n_candidates_per_entity",
+        "hf_revision",
+        "kgsemembed_version",
+        "python_version",
+        "run_timestamp",
         "versions",
     }
     assert payload["apply_ppas"] is True
@@ -189,6 +195,133 @@ def test_library_versions_marks_missing_distribution_unknown(monkeypatch):
     assert versions["transformers"] == "unknown"
     assert versions["sentence_transformers"] == "unknown"
     assert versions["python"] == platform.python_version()
+
+
+# ---------------------------------------------------------------------------
+# Result provenance
+# ---------------------------------------------------------------------------
+
+
+def _run_and_read_payload(tmp_path):
+    """Run C1 over D2 with the installed doubles and return the result payload."""
+    runner.run_condition(
+        "C1", dataset_ids=["D2"], data_dir=tmp_path, results_dir=tmp_path / "results"
+    )
+    return json.loads(
+        (tmp_path / "results" / "C1" / "D2" / "d2_pair_results.json").read_text()
+    )
+
+
+def test_hf_revision_comes_from_the_loaded_model(fakes, tmp_path):
+    payload = _run_and_read_payload(tmp_path)
+    assert payload["hf_revision"] == "revision-M1"
+
+
+def test_hf_revision_is_unknown_when_the_loader_reports_none(fakes, monkeypatch, tmp_path):
+    monkeypatch.setattr(
+        runner, "load_sentence_transformer", lambda _key: (object(), {"device": "cpu"})
+    )
+    payload = _run_and_read_payload(tmp_path)
+    assert payload["hf_revision"] == "unknown"
+
+
+def test_package_version_queries_the_kgsemembed_distribution(monkeypatch):
+    requested = []
+
+    def record_name(name):
+        requested.append(name)
+        return "9.9.9"
+
+    monkeypatch.setattr(runner.metadata, "version", record_name)
+    assert runner._package_version() == "9.9.9"
+    assert requested == ["kgsemembed"]
+
+
+def test_package_version_reports_the_installed_distribution():
+    try:
+        installed = runner.metadata.version("kgsemembed")
+    except runner.metadata.PackageNotFoundError:
+        pytest.skip("kgsemembed is not installed as a distribution")
+    assert runner._package_version() == installed
+
+
+def test_package_version_falls_back_to_unknown(monkeypatch):
+    def raise_not_found(_name):
+        raise runner.metadata.PackageNotFoundError
+
+    monkeypatch.setattr(runner.metadata, "version", raise_not_found)
+    assert runner._package_version() == "unknown"
+
+
+def test_result_records_package_and_runtime_versions(fakes, tmp_path):
+    payload = _run_and_read_payload(tmp_path)
+    assert payload["kgsemembed_version"] == runner._package_version()
+    assert payload["python_version"] == sys.version
+    assert payload["versions"]["python"] == platform.python_version()
+    assert payload["versions"]["python"] in payload["python_version"]
+
+
+def test_run_timestamp_is_utc_iso8601(fakes, tmp_path):
+    """
+    Bound the timestamp on both sides to reject a local clock labelled ``Z``.
+
+    A one-sided check passes on any machine whose local time runs ahead of UTC,
+    so the written instant must fall inside the UTC window spanning the run.
+    """
+    before = datetime.now(timezone.utc).replace(tzinfo=None)
+    payload = _run_and_read_payload(tmp_path)
+    after = datetime.now(timezone.utc).replace(tzinfo=None)
+
+    timestamp = payload["run_timestamp"]
+    assert timestamp.endswith("Z")
+    assert before <= datetime.fromisoformat(timestamp.removesuffix("Z")) <= after
+
+
+def test_provenance_is_internally_consistent(fakes, tmp_path):
+    payload = _run_and_read_payload(tmp_path)
+    assert payload["model_key"] == "M1"
+    assert payload["model_id"] == MODEL_REGISTRY["M1"].model_id
+    assert payload["hf_revision"] == "revision-M1"
+
+
+def test_each_model_group_records_its_own_revision(fakes, tmp_path):
+    """Grouped execution must not attribute one model's revision to another."""
+    results_dir = tmp_path / "results"
+    runner.run_all_conditions(
+        condition_ids=["C1", "C17"],
+        dataset_ids=["D2"],
+        data_dir=tmp_path,
+        results_dir=results_dir,
+    )
+
+    assert fakes["models"] == ["M1", "M4"]
+    revisions = {
+        condition_id: json.loads(
+            (results_dir / condition_id / "D2" / "d2_pair_results.json").read_text()
+        )["hf_revision"]
+        for condition_id in ("C1", "C17")
+    }
+    assert revisions == {"C1": "revision-M1", "C17": "revision-M4"}
+
+
+def test_run_timestamp_is_regenerated_on_recompute(fakes, monkeypatch, tmp_path):
+    results_dir = tmp_path / "results"
+    first = _run_and_read_payload(tmp_path)["run_timestamp"]
+
+    recomputed = "2030-01-01T00:00:00Z"
+    monkeypatch.setattr(runner, "_utc_timestamp", lambda: recomputed)
+    runner.run_condition(
+        "C1",
+        dataset_ids=["D2"],
+        data_dir=tmp_path,
+        results_dir=results_dir,
+        force_recompute=True,
+    )
+
+    payload = json.loads(
+        (results_dir / "C1" / "D2" / "d2_pair_results.json").read_text()
+    )
+    assert payload["run_timestamp"] == recomputed != first
 
 
 def test_dataset_filter_restricts_execution(fakes, tmp_path):
@@ -676,7 +809,7 @@ def test_run_condition_over_sample_pair_with_mocked_encoder(monkeypatch, tmp_pat
     monkeypatch.setattr(
         runner,
         "load_sentence_transformer",
-        lambda _key: (object(), {"device": "cpu"}),
+        lambda _key: (object(), {"device": "cpu", "hf_revision": "sample-revision"}),
     )
     monkeypatch.setattr(runner, "EmbeddingEncoder", _SampleEncoder)
     monkeypatch.setattr(runner, "load_dataset", lambda _d, _dir: [pair])
