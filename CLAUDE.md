@@ -43,7 +43,7 @@ fix: <description> (#n)
 ```
 
 The final commit before raising a PR does not need `Closes #n` — put that in
-the PR description instead (see below).
+the PR description instead (see "Raising a Pull Request" below).
 
 Never reference a coding agent, AI assistant, or any automated tool in commit
 messages. Write commit messages as if a human authored them.
@@ -54,9 +54,25 @@ Never use `Co-Authored-By` trailers in commit messages.
 - Open as a **draft PR** immediately when the branch is created, so the
   Issue→Branch→PR chain is visible on GitHub from the start.
 - Target branch: `develop` (never `main`).
-- PR description must contain `Closes #n` to auto-close the Issue on merge.
+- PR description must contain `Closes #n` to link the PR to the Issue.
 - Merge strategy: **squash merge** to keep `develop` log clean — one
   meaningful commit per issue.
+- **Close the Issue manually after merging** — see below.
+
+### Closing the Issue
+
+`Closes #n` does **not** close the Issue when the PR is squash-merged into
+`develop`. GitHub only honours closing keywords for PRs merged into the
+repository's default branch, which is `main`. Because every PR here targets
+`develop`, closing is a manual step:
+
+```bash
+gh issue close n --comment "Merged into develop via #<pr> as <squash-sha>."
+```
+
+Keep `Closes #n` in the PR description regardless — it creates the
+Issue→PR link on GitHub and closes the Issue automatically once `develop`
+reaches `main` at the next milestone merge.
 
 ### Merging to Main
 Merge `develop` → `main` only at stable milestones. Tag the merge commit:
