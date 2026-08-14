@@ -23,6 +23,10 @@ from typing import List, Optional
 
 import pandas as pd
 
+from kgsemembed.evaluation.stats import (
+    _TABLE_COLUMNS as _STATS_COLUMNS,
+    _sanitise_warning,
+)
 from kgsemembed.pipeline.conditions import get_condition, get_conditions_for_group
 
 _LOGGER = logging.getLogger("kgsemembed.evaluation.aggregator")
@@ -71,14 +75,7 @@ _ENTITY_TYPE_KEYWORDS = (
 )
 _ABLATION_GROUPS = ("A", "B", "C", "D")
 _PPAS_COMPARISONS = (("C5", "C14", "D5"), ("C10", "C15", "D1"))
-_STATS_COLUMNS = (
-    "Condition A",
-    "Condition B",
-    "n",
-    "p-value",
-    "Corrected sig.",
-    "delta-F1",
-)
+_NO_WARNING_CELL = ""
 
 
 def _empty_results_frame() -> pd.DataFrame:
@@ -394,6 +391,34 @@ def _ablation_group_section(summary: pd.DataFrame) -> str:
     return _section("Ablation Group Analysis", "\n\n".join(blocks))
 
 
+def _effect_size_cell(result: dict) -> Optional[float]:
+    """Return a comparison's rank-biserial effect size, or ``None`` when absent."""
+    value = result.get("effect_size_r")
+    return None if value is None else round(float(value), 4)
+
+
+def _warning_cell(result: dict) -> str:
+    """
+    Render a Wilcoxon warning as one footnote cell.
+
+    The cell is left blank when SciPy raised nothing, where the exported stats
+    table prints a dash; escaping is shared so warning text renders identically
+    in both outputs.
+
+    Parameters
+    ----------
+    result : dict
+        A Wilcoxon comparison result, which need not carry a warning.
+
+    Returns
+    -------
+    str
+        The escaped warning text, or an empty cell.
+    """
+    message = result.get("wilcoxon_warning")
+    return _sanitise_warning(message) if message else _NO_WARNING_CELL
+
+
 def _stats_row(result: dict) -> dict:
     """Project a Wilcoxon comparison result onto the report's stats columns."""
     return {
@@ -403,11 +428,30 @@ def _stats_row(result: dict) -> dict:
         "p-value": round(float(result["p_value"]), 4),
         "Corrected sig.": bool(result.get("corrected_significant", False)),
         "delta-F1": round(float(result["delta_f1"]), 4),
+        "effect_size_r": _effect_size_cell(result),
+        "Warning": _warning_cell(result),
     }
 
 
 def _statistical_section(stats_results: List[dict]) -> str:
-    """Build the statistical-significance section from Wilcoxon comparison results."""
+    """
+    Build the statistical-significance section from Wilcoxon comparison results.
+
+    The columns are the ones :func:`kgsemembed.evaluation.export_stats_table`
+    writes, so the aggregated report and the exported stats table always expose
+    the same statistical fields, including ``effect_size_r`` and the trailing
+    warning footnote.
+
+    Parameters
+    ----------
+    stats_results : List[dict]
+        Wilcoxon comparison results; an empty list yields a placeholder note.
+
+    Returns
+    -------
+    str
+        The rendered Markdown section.
+    """
     if not stats_results:
         return _section("Statistical Significance", "_No statistical comparison results available._")
     frame = pd.DataFrame.from_records(

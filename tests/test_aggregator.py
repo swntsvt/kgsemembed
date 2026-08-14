@@ -6,6 +6,7 @@ no real experiment outputs, embedding models, or repository datasets are used.
 
 import json
 import logging
+import re
 import sys
 from pathlib import Path
 from typing import Dict, List, Optional
@@ -18,10 +19,13 @@ if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
 import kgsemembed.evaluation as evaluation
+from kgsemembed.evaluation import export_stats_table
 from kgsemembed.evaluation.aggregator import (
     _RESULT_COLUMNS,
+    _STATS_COLUMNS,
     _SUMMARY_COLUMNS,
     _classify_entity_type,
+    _stats_row,
     build_condition_summary_table,
     build_dataset_breakdown_table,
     generate_markdown_report,
@@ -144,7 +148,10 @@ def full_results_dir(tmp_path: Path) -> Path:
     return results_dir
 
 
-def _synthetic_stats() -> List[dict]:
+def _synthetic_stats(
+    effect_size_r: Optional[float] = 0.7333,
+    wilcoxon_warning: Optional[str] = None,
+) -> List[dict]:
     return [
         {
             "condition_a": "C1",
@@ -153,6 +160,8 @@ def _synthetic_stats() -> List[dict]:
             "p_value": 0.0321,
             "delta_f1": 0.0187,
             "corrected_significant": True,
+            "effect_size_r": effect_size_r,
+            "wilcoxon_warning": wilcoxon_warning,
         }
     ]
 
@@ -495,6 +504,112 @@ def test_report_ppas_values_from_results(tmp_path: Path) -> None:
     text = output.read_text(encoding="utf-8")
     assert "| C5 vs C14 | D5 | 0.4000 | 0.5500 | 0.1500 |" in text
     assert "| C10 vs C15 | D1 | N/A | N/A | N/A |" in text
+
+
+# ---------------------------------------------------------------------------
+# Statistical section
+# ---------------------------------------------------------------------------
+def _stats_table_lines(text: str) -> List[str]:
+    """Return the table rows of the report's Statistical Significance section."""
+    body = text.split("# Statistical Significance", 1)[1].split("\n# ", 1)[0]
+    return [line for line in body.splitlines() if line.startswith("|")]
+
+
+def _cell_count(row: str) -> int:
+    """Count table cells, ignoring pipes escaped for Markdown."""
+    return len(re.split(r"(?<!\\)\|", row)) - 2
+
+
+def _report_with_stats(tmp_path: Path, stats: List[dict]) -> List[str]:
+    """Render a report over empty results and return its statistical table rows."""
+    output = tmp_path / "report.md"
+    empty = pd.DataFrame(columns=list(_RESULT_COLUMNS))
+    generate_markdown_report(empty, stats, str(output))
+    return _stats_table_lines(output.read_text(encoding="utf-8"))
+
+
+def test_stats_columns_include_effect_size_and_warning() -> None:
+    assert "effect_size_r" in _STATS_COLUMNS
+    assert _STATS_COLUMNS[-1] == "Warning"
+
+
+def test_stats_row_populates_every_declared_column() -> None:
+    # Guards against a column being declared but never filled, which pandas
+    # would silently render as an empty N/A column rather than failing.
+    assert list(_stats_row(_synthetic_stats()[0])) == list(_STATS_COLUMNS)
+
+
+def test_stats_columns_match_export_stats_table(tmp_path: Path) -> None:
+    exported = tmp_path / "stats.md"
+    export_stats_table(_synthetic_stats(), str(exported))
+    export_header = exported.read_text(encoding="utf-8").splitlines()[0]
+    report_header = _report_with_stats(tmp_path, _synthetic_stats())[0]
+    assert report_header == export_header
+
+
+def test_report_stats_row_carries_effect_size(tmp_path: Path) -> None:
+    rows = _report_with_stats(tmp_path, _synthetic_stats(effect_size_r=0.7333))
+    assert rows[-1] == "| C1 | C2 | 5 | 0.0321 | True | 0.0187 | 0.7333 |  |"
+
+
+def test_report_stats_warning_is_displayed(tmp_path: Path) -> None:
+    rows = _report_with_stats(
+        tmp_path, _synthetic_stats(wilcoxon_warning="zero differences detected")
+    )
+    assert rows[-1].endswith("| zero differences detected |")
+
+
+def test_report_stats_warning_is_empty_when_absent(tmp_path: Path) -> None:
+    rows = _report_with_stats(tmp_path, _synthetic_stats(wilcoxon_warning=None))
+    assert rows[-1].endswith("|  |")
+
+
+def test_report_stats_warning_stays_in_one_cell(tmp_path: Path) -> None:
+    rows = _report_with_stats(
+        tmp_path, _synthetic_stats(wilcoxon_warning="ties |\nand zeros")
+    )
+    assert rows[-1].endswith("| ties \\| and zeros |")
+    assert _cell_count(rows[-1]) == _cell_count(rows[0])
+
+
+def test_report_stats_warning_object_does_not_leak(tmp_path: Path) -> None:
+    rows = _report_with_stats(
+        tmp_path, _synthetic_stats(wilcoxon_warning=RuntimeWarning("zero differences"))
+    )
+    assert rows[-1].endswith("| zero differences |")
+    assert "RuntimeWarning" not in rows[-1]
+
+
+def test_report_stats_absent_warning_is_not_rendered_as_none(tmp_path: Path) -> None:
+    rows = _report_with_stats(tmp_path, _synthetic_stats(wilcoxon_warning=None))
+    assert "None" not in rows[-1]
+    assert "N/A" not in rows[-1]
+
+
+def test_report_stats_long_warning_collapses_to_one_line(tmp_path: Path) -> None:
+    message = ("exact distribution unavailable; " * 12).strip()
+    rows = _report_with_stats(tmp_path, _synthetic_stats(wilcoxon_warning=message))
+    assert len(rows) == 3
+    assert rows[-1].endswith(f"| {message} |")
+
+
+@pytest.mark.parametrize("effect_size", [0.0, 0.5, 1.0, -0.25])
+def test_report_stats_renders_effect_size_values(tmp_path: Path, effect_size: float) -> None:
+    rows = _report_with_stats(tmp_path, _synthetic_stats(effect_size_r=effect_size))
+    assert rows[-1].split(" | ")[6] == f"{effect_size:.4f}"
+
+
+def test_report_stats_tolerates_missing_effect_size(tmp_path: Path) -> None:
+    stats = _synthetic_stats()
+    del stats[0]["effect_size_r"]
+    rows = _report_with_stats(tmp_path, stats)
+    assert rows[-1] == "| C1 | C2 | 5 | 0.0321 | True | 0.0187 | N/A |  |"
+
+
+def test_report_stats_preserves_existing_columns(tmp_path: Path) -> None:
+    header = _report_with_stats(tmp_path, _synthetic_stats())[0]
+    for column in ("Condition A", "Condition B", "n", "p-value", "Corrected sig.", "delta-F1"):
+        assert column in header
 
 
 # ---------------------------------------------------------------------------

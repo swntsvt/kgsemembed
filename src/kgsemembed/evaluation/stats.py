@@ -33,6 +33,7 @@ _TABLE_COLUMNS: Tuple[str, ...] = (
     "p-value",
     "Corrected sig.",
     "delta-F1",
+    "effect_size_r",
     "Warning",
 )
 _TABLE_HEADER = "| " + " | ".join(_TABLE_COLUMNS) + " |"
@@ -337,6 +338,30 @@ def _paired_wilcoxon(
     return float(result.statistic), float(result.pvalue), _reliability_message(caught)
 
 
+def _rank_biserial_effect_size(statistic: float, n_pairs: int) -> float:
+    """
+    Convert a Wilcoxon statistic into a rank-biserial effect size.
+
+    The magnitude of the rank difference is reported, not its direction: the
+    two-sided test returns the smaller signed-rank sum, so the value falls in
+    ``[0.5, 1]`` and rises as the conditions diverge.  ``delta_f1`` carries the
+    direction of the difference.
+
+    Parameters
+    ----------
+    statistic : float
+        Wilcoxon's W as returned by the signed-rank test.
+    n_pairs : int
+        Number of paired observations the test consumed.
+
+    Returns
+    -------
+    float
+        ``1 - (2 * statistic) / (n_pairs * (n_pairs + 1))``.
+    """
+    return 1.0 - (2.0 * statistic) / (n_pairs * (n_pairs + 1))
+
+
 def wilcoxon_comparison(
     condition_a_id: str,
     condition_b_id: str,
@@ -365,8 +390,10 @@ def wilcoxon_comparison(
     dict
         Comparison summary with ``condition_a``, ``condition_b``, ``n_pairs``,
         ``statistic``, ``p_value``, ``significant``, ``mean_f1_a``,
-        ``mean_f1_b``, ``delta_f1`` (``mean_f1_b - mean_f1_a``), and
-        ``wilcoxon_warning`` holding any warning SciPy raised, else ``None``.
+        ``mean_f1_b``, ``delta_f1`` (``mean_f1_b - mean_f1_a``),
+        ``effect_size_r`` holding the rank-biserial effect size derived from
+        ``statistic`` and ``n_pairs``, and ``wilcoxon_warning`` holding any
+        warning SciPy raised, else ``None``.
 
     Raises
     ------
@@ -398,6 +425,7 @@ def wilcoxon_comparison(
         "mean_f1_a": mean_a,
         "mean_f1_b": mean_b,
         "delta_f1": mean_b - mean_a,
+        "effect_size_r": _rank_biserial_effect_size(statistic, len(pair_names)),
         "wilcoxon_warning": wilcoxon_warning,
     }
 
@@ -460,12 +488,33 @@ def run_group_comparisons(
     return results
 
 
+def _sanitise_warning(message: object) -> str:
+    """
+    Collapse a warning into text that occupies exactly one Markdown table cell.
+
+    Shared with :mod:`kgsemembed.evaluation.aggregator` so both statistical
+    outputs escape warnings identically; only the placeholder for an absent
+    warning differs between them.
+
+    Parameters
+    ----------
+    message : object
+        Warning text captured from SciPy, or any object carrying it.
+
+    Returns
+    -------
+    str
+        The message on a single line, with cell-splitting pipes escaped.
+    """
+    return " ".join(str(message).split()).replace("|", "\\|")
+
+
 def _warning_cell(result: dict) -> str:
     """Render a captured Wilcoxon warning as a single Markdown table cell."""
     message = result.get("wilcoxon_warning")
     if not message:
         return _NO_WARNING_CELL
-    return " ".join(message.split()).replace("|", "\\|")
+    return _sanitise_warning(message)
 
 
 def _format_row(result: dict) -> str:
@@ -477,6 +526,7 @@ def _format_row(result: dict) -> str:
         f"{result['p_value']:.4f}",
         str(result["corrected_significant"]),
         f"{result['delta_f1']:.4f}",
+        f"{result['effect_size_r']:.4f}",
         _warning_cell(result),
     )
     return "| " + " | ".join(cells) + " |"
@@ -493,8 +543,9 @@ def export_stats_table(
     ----------
     comparison_results : List[dict]
         Results produced by :func:`run_group_comparisons`; each must carry a
-        ``corrected_significant`` flag.  Any ``wilcoxon_warning`` is rendered in
-        a dedicated warning column, which reads ``"-"`` when SciPy was silent.
+        ``corrected_significant`` flag and an ``effect_size_r`` value, which is
+        rendered in its own column.  Any ``wilcoxon_warning`` is rendered in a
+        dedicated warning column, which reads ``"-"`` when SciPy was silent.
     output_path : str
         Destination Markdown file; parent directories are created as needed.
     """
