@@ -225,8 +225,24 @@ def test_hf_revision_is_unknown_when_the_loader_reports_none(fakes, monkeypatch,
     assert payload["hf_revision"] == "unknown"
 
 
+def test_package_version_queries_the_kgsemembed_distribution(monkeypatch):
+    requested = []
+
+    def record_name(name):
+        requested.append(name)
+        return "9.9.9"
+
+    monkeypatch.setattr(runner.metadata, "version", record_name)
+    assert runner._package_version() == "9.9.9"
+    assert requested == ["kgsemembed"]
+
+
 def test_package_version_reports_the_installed_distribution():
-    assert runner._package_version() == runner.metadata.version("kgsemembed")
+    try:
+        installed = runner.metadata.version("kgsemembed")
+    except runner.metadata.PackageNotFoundError:
+        pytest.skip("kgsemembed is not installed as a distribution")
+    assert runner._package_version() == installed
 
 
 def test_package_version_falls_back_to_unknown(monkeypatch):
@@ -246,12 +262,46 @@ def test_result_records_package_and_runtime_versions(fakes, tmp_path):
 
 
 def test_run_timestamp_is_utc_iso8601(fakes, tmp_path):
-    before = datetime.now(timezone.utc).replace(tzinfo=None, microsecond=0)
+    """
+    Bound the timestamp on both sides to reject a local clock labelled ``Z``.
+
+    A one-sided check passes on any machine whose local time runs ahead of UTC,
+    so the written instant must fall inside the UTC window spanning the run.
+    """
+    before = datetime.now(timezone.utc).replace(tzinfo=None)
     payload = _run_and_read_payload(tmp_path)
+    after = datetime.now(timezone.utc).replace(tzinfo=None)
 
     timestamp = payload["run_timestamp"]
     assert timestamp.endswith("Z")
-    assert datetime.fromisoformat(timestamp.removesuffix("Z")) >= before
+    assert before <= datetime.fromisoformat(timestamp.removesuffix("Z")) <= after
+
+
+def test_provenance_is_internally_consistent(fakes, tmp_path):
+    payload = _run_and_read_payload(tmp_path)
+    assert payload["model_key"] == "M1"
+    assert payload["model_id"] == MODEL_REGISTRY["M1"].model_id
+    assert payload["hf_revision"] == "revision-M1"
+
+
+def test_each_model_group_records_its_own_revision(fakes, tmp_path):
+    """Grouped execution must not attribute one model's revision to another."""
+    results_dir = tmp_path / "results"
+    runner.run_all_conditions(
+        condition_ids=["C1", "C17"],
+        dataset_ids=["D2"],
+        data_dir=tmp_path,
+        results_dir=results_dir,
+    )
+
+    assert fakes["models"] == ["M1", "M4"]
+    revisions = {
+        condition_id: json.loads(
+            (results_dir / condition_id / "D2" / "d2_pair_results.json").read_text()
+        )["hf_revision"]
+        for condition_id in ("C1", "C17")
+    }
+    assert revisions == {"C1": "revision-M1", "C17": "revision-M4"}
 
 
 def test_run_timestamp_is_regenerated_on_recompute(fakes, monkeypatch, tmp_path):

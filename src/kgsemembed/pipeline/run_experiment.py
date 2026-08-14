@@ -490,7 +490,7 @@ def _write_result(
     pair: AlignmentPair,
     metrics: Dict[str, float],
     n_candidates: int,
-    model_info: Optional[Dict[str, str]] = None,
+    model_info: Optional[Dict[str, str]],
 ) -> None:
     path = _result_path(results_dir, condition.condition_id, pair.dataset_id, pair.pair_name)
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -523,7 +523,7 @@ def _run_pair(
     data_dir: str | Path,
     results_dir: str | Path,
     force_recompute: bool,
-    model_info: Optional[Dict[str, str]] = None,
+    model_info: Optional[Dict[str, str]],
 ) -> Optional[Dict[str, float]]:
     path = _result_path(results_dir, condition.condition_id, pair.dataset_id, pair.pair_name)
     try:
@@ -588,7 +588,7 @@ def _run_dataset(
     data_dir: str | Path,
     results_dir: str | Path,
     force_recompute: bool,
-    model_info: Optional[Dict[str, str]] = None,
+    model_info: Optional[Dict[str, str]],
 ) -> Optional[Dict[str, float]]:
     """
     Run every alignment pair of a dataset and retain the failed outcomes.
@@ -668,6 +668,15 @@ def _run_condition_with_encoder(
     force_recompute: bool,
     model_info: Optional[Dict[str, str]] = None,
 ) -> Dict[str, Dict[str, float]]:
+    """
+    Run the selected datasets of a condition against an already-loaded encoder.
+
+    ``model_info`` is the provenance metadata of the model backing ``encoder``
+    and is recorded in every result written by this call.  It defaults to
+    ``None`` only so that callers exercising seeding behaviour can omit it; the
+    two production entry points always supply it, and every function further
+    down the call chain requires it explicitly.
+    """
     results: Dict[str, Dict[str, float]] = {}
     _seed_random_state()
     _log_ppas_configuration(condition)
