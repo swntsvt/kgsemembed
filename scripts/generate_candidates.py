@@ -24,14 +24,14 @@ from pathlib import Path
 from typing import Dict, List
 
 import numpy as np
-from rdflib import Graph, Literal, URIRef
-from rdflib.namespace import RDFS, SKOS
+from rdflib import Graph
 
 from kgsemembed.candidates.ngram import (
     NgramConfig,
     build_ngram_index,
     dump_candidates,
     generate_candidates_for_pair,
+    get_entity_label,
 )
 from kgsemembed.datasets import (
     AlignmentPair,
@@ -44,7 +44,6 @@ from kgsemembed.utils.errors import DataError
 
 _LOGGER = logging.getLogger("kgsemembed.scripts.generate_candidates")
 _ALL_DATASETS = ("D1", "D2", "D3", "D4", "D5")
-_LABEL_PREDICATES = (RDFS.label, SKOS.prefLabel)
 
 
 def _extract_class_uris(graph: Graph) -> List[str]:
@@ -96,22 +95,9 @@ def extract_entity_uris(graph: Graph, entity_type: str) -> List[str]:
     raise DataError(f"Unknown entity type: {entity_type!r}.")
 
 
-def _local_name(uri: str) -> str:
-    tail = uri.rsplit("#", 1)[-1] if "#" in uri else uri.rstrip("/").rsplit("/", 1)[-1]
-    return tail.replace("_", " ")
-
-
-def _first_label(graph: Graph, uri: str) -> str | None:
-    for predicate in _LABEL_PREDICATES:
-        for obj in graph.objects(URIRef(uri), predicate):
-            if isinstance(obj, Literal) and (obj.language or "en").lower() == "en":
-                return str(obj)
-    return None
-
-
 def _entity_labels(graph: Graph, uris: List[str]) -> Dict[str, str]:
     """Return a label for every URI, falling back to its local name."""
-    return {uri: _first_label(graph, uri) or _local_name(uri) for uri in uris}
+    return {uri: get_entity_label(graph, uri) for uri in uris}
 
 
 def _candidate_map(pair: AlignmentPair, config: NgramConfig) -> Dict[str, List[str]]:

@@ -3,13 +3,20 @@ from pathlib import Path
 import pandas as pd
 import pytest
 from hydra import compose, initialize_config_dir
+from rdflib import Graph, Literal, URIRef
+from rdflib.namespace import RDFS
 
 from kgsemembed.candidates.generator import (
     _char_ngrams,
     build_candidate_table,
     generate_candidates,
 )
-from kgsemembed.candidates.ngram import dump_candidates, load_candidates
+from kgsemembed.candidates.ngram import (
+    dump_candidates,
+    get_entity_label,
+    get_entity_text_from_attributes,
+    load_candidates,
+)
 from kgsemembed.pipeline.run_experiment import run_experiment
 from kgsemembed.utils.errors import ConfigurationError, DataError
 
@@ -105,6 +112,93 @@ def test_load_candidates_rejects_file_without_candidates_key(tmp_path: Path) -> 
 
     with pytest.raises(DataError):
         load_candidates("D3", "bad", tmp_path)
+
+
+def _openea_graph() -> Graph:
+    """Graph mimicking the D5 loader: values arrive as plain untyped Literals."""
+    graph = Graph()
+    entity = URIRef("http://dbpedia.org/resource/E291085")
+    graph.add((entity, URIRef("http://dbpedia.org/ontology/birthName"), Literal("Ada Lovelace")))
+    graph.add((entity, URIRef("http://dbpedia.org/ontology/alias"), Literal("Ada Byron")))
+    return graph
+
+
+def test_attribute_text_concatenates_qualifying_literals() -> None:
+    text = get_entity_text_from_attributes(
+        _openea_graph(), "http://dbpedia.org/resource/E291085"
+    )
+
+    assert text == "Ada Byron Ada Lovelace"
+
+
+def test_attribute_text_strips_openea_inlined_datatype_suffix() -> None:
+    """The datatype URI must never reach the index as shared n-gram boilerplate."""
+    graph = Graph()
+    entity = URIRef("http://dbpedia.org/resource/E1")
+    graph.add((entity, URIRef("http://dbpedia.org/ontology/birthDate"),
+               Literal('"1955-03-02"^^<http://www.w3.org/2001/XMLSchema#date>')))
+    graph.add((entity, URIRef("http://dbpedia.org/ontology/title"),
+               Literal('"The Hoodlum Saint"^^<http://www.w3.org/2001/XMLSchema#string>')))
+
+    text = get_entity_text_from_attributes(graph, "http://dbpedia.org/resource/E1")
+
+    assert "XMLSchema" not in text
+    assert text == "The Hoodlum Saint"
+
+
+def test_attribute_text_drops_numeric_and_out_of_range_values() -> None:
+    graph = Graph()
+    entity = URIRef("http://dbpedia.org/resource/E2")
+    graph.add((entity, URIRef("http://dbpedia.org/ontology/runtime"), Literal("6480.0")))
+    graph.add((entity, URIRef("http://dbpedia.org/ontology/code"), Literal("ab")))
+    graph.add((entity, URIRef("http://dbpedia.org/ontology/abstract"), Literal("x" * 201)))
+    graph.add((entity, URIRef("http://dbpedia.org/ontology/rel"), URIRef("http://example.org/o")))
+
+    assert get_entity_text_from_attributes(graph, "http://dbpedia.org/resource/E2") == ""
+
+
+def test_attribute_text_respects_max_values() -> None:
+    graph = Graph()
+    entity = URIRef("http://dbpedia.org/resource/E3")
+    for index in range(5):
+        graph.add((entity, URIRef(f"http://dbpedia.org/ontology/p{index}"), Literal(f"name{index}")))
+
+    text = get_entity_text_from_attributes(graph, "http://dbpedia.org/resource/E3", max_values=2)
+
+    assert text == "name0 name1"
+
+
+def test_attribute_text_returns_empty_string_for_none_graph() -> None:
+    assert get_entity_text_from_attributes(None, "http://dbpedia.org/resource/E1") == ""
+
+
+def test_entity_label_uses_attribute_text_for_opaque_ids() -> None:
+    label = get_entity_label(_openea_graph(), "http://dbpedia.org/resource/E291085")
+
+    assert label == "Ada Byron Ada Lovelace"
+
+
+def test_entity_label_falls_back_to_local_name_when_no_attributes_qualify() -> None:
+    graph = Graph()
+    graph.add((URIRef("http://www.wikidata.org/entity/Q7"),
+               URIRef("http://www.wikidata.org/entity/P2047"), Literal("99")))
+
+    assert get_entity_label(graph, "http://www.wikidata.org/entity/Q7") == "Q7"
+
+
+def test_entity_label_prefers_rdfs_label_over_attribute_text() -> None:
+    graph = _openea_graph()
+    graph.add((URIRef("http://dbpedia.org/resource/E291085"), RDFS.label, Literal("Countess")))
+
+    assert get_entity_label(graph, "http://dbpedia.org/resource/E291085") == "Countess"
+
+
+def test_entity_label_leaves_bare_numeric_local_names_untouched() -> None:
+    graph = Graph()
+    entity = URIRef("http://dbkwik.webdatacommons.org/memory-alpha.wikia.com/resource/9")
+    graph.add((entity, URIRef("http://dbkwik.org/ontology/name"), Literal("Fiat XI/9")))
+
+    assert get_entity_label(graph, str(entity)) == "9"
 
 
 def test_pipeline_persists_candidate_csv_with_expected_schema(tmp_path: Path) -> None:
