@@ -227,19 +227,23 @@ kgsemembed/                      # repo root
 
 Registered in `src/kgsemembed/embeddings/models.py` as `MODEL_REGISTRY`.
 
-| Key | Model ID | `max_tokens` | `ppas_budget` | `batch_size` | `trust_remote_code` |
-|-----|----------|--------------|---------------|--------------|---------------------|
-| M1 | `sentence-transformers/all-MiniLM-L6-v2` | 256 | 200 | 64 | `False` |
-| M2 | `BAAI/bge-large-en-v1.5` | 512 | 420 | 32 | `False` |
-| M2_uncapped | `BAAI/bge-large-en-v1.5` | 512 | `None` | 64 | `False` |
-| M3 | `BAAI/bge-m3` | 8192 | `None` | 16 | `False` |
-| M4 | `FremyCompany/BioLORD-2023` | 512 | 420 | 32 | `False` |
-| M5 | `dunzhang/stella_en_1.5B_v5` | 512 | 420 | 8 | `False` |
+| Key | Model ID | `max_tokens` | `ppas_budget` | `batch_size` |
+|-----|----------|--------------|---------------|--------------|
+| M1 | `sentence-transformers/all-MiniLM-L6-v2` | 256 | 200 | 64 |
+| M2 | `BAAI/bge-large-en-v1.5` | 512 | 420 | 32 |
+| M2_uncapped | `BAAI/bge-large-en-v1.5` | 512 | `None` | 64 |
+| M3 | `BAAI/bge-m3` | 8192 | `None` | 16 |
+| M4 | `FremyCompany/BioLORD-2023` | 512 | 420 | 32 |
+| M5 | `dunzhang/stella_en_1.5B_v5` | 512 | 420 | 8 |
 
+- Every registered model is a stock `transformers` architecture, so
+  `SentenceTransformer()` is called with `model_id` and `device` only. No
+  model executes custom modelling code at load time. Adding a model that
+  would need to is a design decision, not a config change.
 - M3 replaces `Alibaba-NLP/gte-large-en-v1.5` and
   `jinaai/jina-embeddings-v2-base-en`, both incompatible with transformers 5.x
   due to custom remote code. `bge-m3` is a stock XLM-RoBERTa architecture and
-  needs no `trust_remote_code`.
+  reaches its 8192-token context without any.
 - **M2_uncapped**: same weights as M2, `ppas_budget=None`. Used only for the
   controlled PPAS ablation (C19). V2+V8 does not invoke PPAS under any model,
   so C19 is bit-for-bit identical to C10.

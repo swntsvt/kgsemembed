@@ -36,10 +36,6 @@ class ModelConfig:
         Instruction prepended to document text, or ``None`` when unused.
     batch_size : int
         Recommended encoding batch size for this model.
-    trust_remote_code : bool
-        Whether loading executes custom modelling code published in the model
-        repository. Enabled only for models whose architecture is not part of
-        ``transformers``.
     """
 
     model_key: str
@@ -49,7 +45,6 @@ class ModelConfig:
     query_prefix: Optional[str]
     doc_prefix: Optional[str]
     batch_size: int
-    trust_remote_code: bool = False
 
 
 MODEL_REGISTRY: Dict[str, ModelConfig] = {
@@ -95,9 +90,6 @@ MODEL_REGISTRY: Dict[str, ModelConfig] = {
         query_prefix=None,
         doc_prefix=None,
         batch_size=16,
-        # BGE-M3 is a stock XLM-RoBERTa architecture, so the long context is
-        # available without executing modelling code from the repository.
-        trust_remote_code=False,
     ),
     "M4": ModelConfig(
         model_key="M4",
@@ -220,9 +212,7 @@ def load_sentence_transformer(
     config = get_model_config(model_key)
     device = _select_device()
     print(f"Loading model {config.model_id} on device {device}")
-    model = SentenceTransformer(
-        config.model_id, device=device, trust_remote_code=config.trust_remote_code
-    )
+    model = SentenceTransformer(config.model_id, device=device)
     model_info = {
         "model_key": model_key,
         "model_id": config.model_id,
