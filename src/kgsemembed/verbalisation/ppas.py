@@ -8,11 +8,12 @@ import math
 from typing import Callable, Dict, List, Optional, Tuple
 
 # ---------------------------------------------------------------------------
-# Token budgets keyed by model key (M1-M5)
+# Token budgets keyed by model key; every key of MODEL_REGISTRY must appear here
 # ---------------------------------------------------------------------------
 PPAS_BUDGETS: Dict[str, Optional[int]] = {
     "M1": 200,
     "M2": 420,
+    "M2_uncapped": None,  # No cap -- controlled PPAS ablation twin of M2
     "M3": None,  # No cap -- long-context ablation model (bge-m3)
     "M4": 420,
     "M5": 420,

@@ -18,6 +18,7 @@ from __future__ import annotations
 import json
 import logging
 import math
+from dataclasses import dataclass
 from pathlib import Path
 from typing import List, Optional
 
@@ -73,7 +74,49 @@ _SUMMARY_FLOAT_FIELDS = (
 _SUMMARY_COLUMNS = ("condition_id", "strategy", "model_key", *_SUMMARY_FLOAT_FIELDS, "n_pairs")
 
 _ABLATION_GROUPS = ("A", "B", "C", "D")
-_PPAS_COMPARISONS = (("C5", "C14", "D5"), ("C10", "C15", "D1"))
+
+_CONTROLLED_ABLATION = "Controlled ablation (same model)"
+_CONFOUNDED_ABLATION = "Confounded (different models)"
+
+_PPAS_VARIED = "Yes — V4+V6 invokes PPAS via should_apply_ppas()"
+_PPAS_UNVARIED = "No — V2+V8 does not invoke PPAS"
+_PPAS_UNVARIED_CONFOUNDED = (
+    "No — V2+V8 does not invoke PPAS (confounded by model change)"
+)
+
+
+@dataclass(frozen=True)
+class _PpasComparison:
+    """
+    One row of the PPAS ablation table.
+
+    Attributes
+    ----------
+    condition_a : str
+        Condition rendered in the ``Mean F1 (A)`` column.
+    condition_b : str
+        Condition rendered in the ``Mean F1 (B)`` column.
+    dataset_id : str
+        Dataset the two conditions are compared on.
+    ablation_type : str
+        Whether the pair holds the embedding model fixed.
+    ppas_variable : str
+        Whether PPAS is genuinely the variable under test, which it is only
+        when the compared strategies consult a token budget at all.
+    """
+
+    condition_a: str
+    condition_b: str
+    dataset_id: str
+    ablation_type: str
+    ppas_variable: str
+
+
+_PPAS_COMPARISONS = (
+    _PpasComparison("C5", "C14", "D5", _CONFOUNDED_ABLATION, _PPAS_VARIED),
+    _PpasComparison("C10", "C15", "D1", _CONFOUNDED_ABLATION, _PPAS_UNVARIED_CONFOUNDED),
+    _PpasComparison("C10", "C19", "D1", _CONTROLLED_ABLATION, _PPAS_UNVARIED),
+)
 _NO_WARNING_CELL = ""
 
 
@@ -562,14 +605,30 @@ def _mean_metric(df: pd.DataFrame, condition_id: str, dataset_id: str) -> Option
     return round(float(subset["f1"].mean()), 4)
 
 
-def _ppas_row(df: pd.DataFrame, condition_a: str, condition_b: str, dataset_id: str) -> dict:
-    """Build one PPAS comparison row from the loaded results."""
-    mean_a = _mean_metric(df, condition_a, dataset_id)
-    mean_b = _mean_metric(df, condition_b, dataset_id)
+def _ppas_row(df: pd.DataFrame, comparison: _PpasComparison) -> dict:
+    """
+    Build one PPAS comparison row from the loaded results.
+
+    Parameters
+    ----------
+    df : pd.DataFrame
+        Results as returned by :func:`load_all_results`.
+    comparison : _PpasComparison
+        The comparison definition to render.
+
+    Returns
+    -------
+    dict
+        A row over the PPAS ablation table's columns.
+    """
+    mean_a = _mean_metric(df, comparison.condition_a, comparison.dataset_id)
+    mean_b = _mean_metric(df, comparison.condition_b, comparison.dataset_id)
     delta = round(mean_b - mean_a, 4) if mean_a is not None and mean_b is not None else None
     return {
-        "Comparison": f"{condition_a} vs {condition_b}",
-        "Dataset": dataset_id,
+        "Comparison": f"{comparison.condition_a} vs {comparison.condition_b}",
+        "Dataset": comparison.dataset_id,
+        "Ablation Type": comparison.ablation_type,
+        "PPAS Variable?": comparison.ppas_variable,
         "Mean F1 (A)": mean_a,
         "Mean F1 (B)": mean_b,
         "Delta F1": delta,
@@ -578,7 +637,7 @@ def _ppas_row(df: pd.DataFrame, condition_a: str, condition_b: str, dataset_id: 
 
 def _ppas_section(df: pd.DataFrame) -> str:
     """Build the PPAS ablation section from the loaded results."""
-    rows = [_ppas_row(df, a, b, dataset_id) for a, b, dataset_id in _PPAS_COMPARISONS]
+    rows = [_ppas_row(df, comparison) for comparison in _PPAS_COMPARISONS]
     return _section("PPAS Ablation", _render_dataframe(pd.DataFrame.from_records(rows)))
 
 

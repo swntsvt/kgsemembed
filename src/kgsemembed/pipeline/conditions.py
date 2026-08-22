@@ -16,8 +16,8 @@ from typing import List
 from kgsemembed.embeddings.models import MODEL_REGISTRY
 from kgsemembed.verbalisation.registry import VALID_STRATEGY_NAMES
 
-_EXPECTED_CONDITION_COUNT = 18
-_NON_PPAS_CONDITIONS = frozenset({"C14", "C15"})
+_EXPECTED_CONDITION_COUNT = 19
+_NON_PPAS_CONDITIONS = frozenset({"C14", "C15", "C19"})
 
 
 @dataclass(frozen=True)
@@ -213,6 +213,20 @@ EXPERIMENT_CONDITIONS: List[ExperimentCondition] = [
         datasets=["D1"],
         apply_ppas=False,
         description="Annotation with relational signature on GTE without PPAS.",
+        ablation_group="D",
+    ),
+    # Note: V2+V8 does not invoke PPAS under any model (V2 and V8 are
+    # annotation/relational verbalisers with no budget logic). C19 isolates the
+    # model effect of M2 with ppas_budget=None and should reproduce C10 metrics.
+    # A genuine PPAS ablation for V2+V8 is not possible without redesigning the
+    # strategy.
+    ExperimentCondition(
+        condition_id="C19",
+        strategy_name="V2+V8",
+        model_key="M2_uncapped",
+        datasets=["D1"],
+        apply_ppas=False,
+        description="PPAS ablation: V2+V8 on bge-large without token budget cap",
         ablation_group="D",
     ),
 ]

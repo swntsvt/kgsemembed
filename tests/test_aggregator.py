@@ -471,7 +471,7 @@ def test_condition_summary_row_count(full_results_dir: Path) -> None:
     df = load_all_results(str(full_results_dir))
     summary = build_condition_summary_table(df)
     assert list(summary.columns) == _EXPECTED_SUMMARY_COLUMNS
-    assert len(summary) == len(EXPERIMENT_CONDITIONS) == 18
+    assert len(summary) == len(EXPERIMENT_CONDITIONS) == 19
 
 
 def test_condition_summary_sorted_descending(full_results_dir: Path) -> None:
@@ -778,8 +778,47 @@ def test_report_ppas_values_from_results(tmp_path: Path) -> None:
     output = tmp_path / "report.md"
     generate_markdown_report(df, None, str(output))
     text = output.read_text(encoding="utf-8")
-    assert "| C5 vs C14 | D5 | 0.4000 | 0.5500 | 0.1500 |" in text
-    assert "| C10 vs C15 | D1 | N/A | N/A | N/A |" in text
+    confounded = "Confounded (different models)"
+    controlled = "Controlled ablation (same model)"
+    varied = "Yes — V4+V6 invokes PPAS via should_apply_ppas()"
+    unvaried = "No — V2+V8 does not invoke PPAS"
+    unvaried_confounded = f"{unvaried} (confounded by model change)"
+    assert (
+        f"| C5 vs C14 | D5 | {confounded} | {varied} | 0.4000 | 0.5500 | 0.1500 |"
+    ) in text
+    assert (
+        f"| C10 vs C15 | D1 | {confounded} | {unvaried_confounded} | N/A | N/A | N/A |"
+    ) in text
+    assert (
+        f"| C10 vs C19 | D1 | {controlled} | {unvaried} | N/A | N/A | N/A |"
+    ) in text
+
+
+def test_report_ppas_controlled_ablation_row(tmp_path: Path) -> None:
+    results_dir = tmp_path / "results"
+    for pair_index in range(6):
+        _write_result(results_dir, "C10", "D1", f"D1_p{pair_index}", 0.09)
+        _write_result(results_dir, "C19", "D1", f"D1_p{pair_index}", 0.15)
+    df = load_all_results(str(results_dir))
+    output = tmp_path / "report.md"
+    generate_markdown_report(df, None, str(output))
+    text = output.read_text(encoding="utf-8")
+    assert (
+        "| C10 vs C19 | D1 | Controlled ablation (same model) | "
+        "No — V2+V8 does not invoke PPAS | 0.0900 | 0.1500 | 0.0600 |" in text
+    )
+
+
+def test_report_ppas_marks_only_the_v4_comparison_as_varying_ppas(
+    tmp_path: Path,
+) -> None:
+    """Only the V4+V6 pair consults a token budget, so only it varies PPAS."""
+    output = tmp_path / "report.md"
+    generate_markdown_report(load_all_results(str(tmp_path)), None, str(output))
+    section = output.read_text(encoding="utf-8").split("# PPAS Ablation", 1)[1]
+    rows = [line for line in section.splitlines() if " vs " in line]
+    assert [row.count("| Yes —") for row in rows] == [1, 0, 0]
+    assert [row.count("| No —") for row in rows] == [0, 1, 1]
 
 
 # ---------------------------------------------------------------------------
