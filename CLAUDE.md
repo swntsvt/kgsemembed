@@ -11,10 +11,11 @@ benchmark datasets.
 - **Phase 2** (active): Dense embeddings via `sentence-transformers` with RDF
   verbalisation strategies. BERTMapLt is the primary baseline.
 - **Phase 3** (planned): GraphRAG integration as an ablation study over Phase 2
-  verbalisation, using a custom `rdflib` + `leidenalg` + `sentence-transformers`
-  stack.
+  verbalisation, using Ollama for local generation.
 
-OAEI tracks: anatomy, conference, biodiv, commonkg, largebio (34 datasets total).
+Phase 2 datasets: D1 (SNOMED-FMA Body), D2 (Anatomy MA-NCI), D3 (Conference,
+21 pairs), D4 (memoryalpha-stexpanded, schema and instance), D5
+(DBpedia-Wikidata 15K EN, OpenEA). Five datasets total.
 
 **Current focus**: <!-- Update this line when switching issues, e.g. "Issue #12 — verbalisation strategy ablation (Phase 2)" -->
 
@@ -95,17 +96,32 @@ venv/bin/pip install -e .                    # editable install
 
 ### Running Experiments
 ```bash
-# Base run
-venv/bin/python3.12 -m kgsemembed.pipeline.run_experiment
+# Run specific conditions and datasets
+python -m kgsemembed.pipeline.run_experiment \
+    --conditions C1 C10 --datasets D1 D2 \
+    --data_dir data/ --results_dir data/results/
 
-# With Hydra overrides
-venv/bin/python3.12 -m kgsemembed.pipeline.run_experiment \
-  model=all-minilm-l6-v2 dataset=sample verbalisation=v1
+# Re-run a condition, overwriting existing results
+python -m kgsemembed.pipeline.run_experiment \
+    --conditions C1 --datasets D2 \
+    --data_dir data/ --results_dir data/results/ \
+    --force_recompute
 
-# Override candidate settings
-venv/bin/python3.12 -m kgsemembed.pipeline.run_experiment \
-  candidates.n=2 candidates.metric=jaccard candidates.top_k=25
+# Generate candidate files
+python scripts/generate_candidates.py --datasets D1 D2 D3 D4 D5 \
+    --data_dir data/
+
+# Generate the results report
+python scripts/generate_report.py \
+    --results_dir data/results/ --output data/results/report.md
+
+# Check dataset presence
+python scripts/download_datasets.py --data_dir data/ --check
 ```
+
+Omitting `--conditions` runs every registered condition; omitting `--datasets`
+runs every dataset configured for each condition. Conditions are grouped by
+`model_key` so each `SentenceTransformer` is loaded once per group.
 
 ### Testing
 ```bash
@@ -128,7 +144,7 @@ Always run `venv/bin/pytest tests/ -x -q` after changes to any module under
 - Do NOT refactor unrelated code. Do NOT rename existing functions unless required.
 - Fixed random seed: `np.random.seed(42)` and `random.seed(42)` at the top of
   each evaluation script's `main()` entry point.
-- All OAEI results written to `results/<track>/<model>_results.csv`.
+- Results written to `data/results/{condition_id}/{dataset_id}/{pair_name}_results.json`.
 - New modules go under `kgsemembed/` following the existing package structure.
 
 ### NumPy Docstring Example
@@ -165,55 +181,200 @@ Data Loading → Candidate Generation → Embedding & Verbalisation → Evaluati
 ```
 kgsemembed/                      # repo root
 ├── src/kgsemembed/              # main source package
-│   ├── pipeline/                # experiment entry point (run_experiment.py)
-│   ├── datasets/                # KG dataset loading — RDF/XML and Turtle via rdflib
+│   ├── pipeline/                # experiment runner (run_experiment.py), conditions.py
+│   ├── datasets/                # KG dataset loading — RDF/XML and OpenEA triple files
 │   ├── candidates/              # candidate pair generation — char n-gram, cosine, jaccard
-│   ├── embeddings/              # dense retrieval and sentence-transformers embedding
-│   ├── verbalisation/           # entity-to-text conversion strategies (Phase 2 active)
-│   ├── evaluation/              # matching performance metrics
+│   ├── embeddings/              # model registry (models.py) and encoder (encoder.py)
+│   ├── verbalisation/           # entity-to-text strategies V1–V8, PPAS (Phase 2 active)
+│   ├── evaluation/              # matching performance metrics, threshold tuning
 │   └── utils/                   # logging and custom error types
-├── configs/                     # Hydra YAML configuration groups
+├── scripts/                     # generate_candidates, generate_report, download_datasets
+├── configs/                     # legacy Hydra YAML groups — see Configuration below
 │   └── local/
 │       └── runtime.yaml         # ⚠️ machine-specific — gitignored, DO NOT MODIFY
 ├── tests/                       # pytest suite
 ├── data/                        # OAEI KG datasets (do not regenerate or overwrite)
-├── results/                     # output CSVs — results/<track>/<model>_results.csv
+│   ├── candidates/              # generated candidate files
+│   └── results/                 # output JSON — data/results/<condition>/<dataset>/
 ├── logs/                        # experiment execution logs
 └── venv/                        # ⚠️ virtual environment — DO NOT MODIFY
 ```
 
 ### Key Technical Details
 
-- **Configuration**: Hydra for hierarchical config. Local paths and device
-  settings live in `configs/local/runtime.yaml` — never commit this file.
+- **Configuration**: Experiment conditions are defined as `ExperimentCondition`
+  dataclasses in `src/kgsemembed/pipeline/conditions.py`. There are currently
+  **19 conditions (C1–C19)**, validated at import time; the count is asserted
+  against `_EXPECTED_CONDITION_COUNT`. No external config file drives the
+  Phase 2 pipeline.
+- **Legacy Hydra scaffold**: `run_experiment.py` still holds a `@hydra.main`
+  `main()` entry point and a `run_experiment(cfg)` candidate-generation
+  scaffold, backed by `configs/`. It is *not* the Phase 2 pipeline —
+  `python -m kgsemembed.pipeline.run_experiment` dispatches to `cli_main()`
+  (argparse). Do not delete `configs/`, `hydra-core`, or `omegaconf`:
+  `run_experiment.py` imports `hydra` at module scope, and
+  `tests/test_configs.py`, `tests/test_candidates.py`, and
+  `test_smoke_pipeline.py::test_hydra_entrypoints_still_importable` all depend
+  on them.
 - **Language**: English-only datasets assumed throughout.
 - **Python**: 3.12+ required, always via `venv`.
-- **Key dependencies**: `rdflib`, `bm25s`, `sentence-transformers`, `scipy.stats`,
-  `pandas`, `numpy`. GraphRAG stack (Phase 3): `leidenalg`, `igraph`.
+- **Key dependencies**: `rdflib` (7.6.0 installed; unpinned in
+  `requirements.txt` / `pyproject.toml`), `sentence-transformers`,
+  `torch`, `transformers`, `scipy`, `pandas`, `numpy`, `orjson`, `tqdm`,
+  plus `hydra-core` and `omegaconf` for the legacy scaffold above.
 
 ### Embedding Models
 
 Registered in `src/kgsemembed/embeddings/models.py` as `MODEL_REGISTRY`.
 
-| Key | Model ID | `max_tokens` | `ppas_budget` | `batch_size` |
-|-----|----------|--------------|---------------|--------------|
-| M1 | `sentence-transformers/all-MiniLM-L6-v2` | 256 | 200 | 64 |
-| M2 | `BAAI/bge-large-en-v1.5` | 512 | 420 | 32 |
-| M3 | `BAAI/bge-m3` | 8192 | `None` | 16 |
-| M4 | `FremyCompany/BioLORD-2023` | 512 | 420 | 32 |
-| M5 | `dunzhang/stella_en_1.5B_v5` | 512 | 420 | 8 |
+| Key | Model ID | `max_tokens` | `ppas_budget` | `batch_size` | `trust_remote_code` |
+|-----|----------|--------------|---------------|--------------|---------------------|
+| M1 | `sentence-transformers/all-MiniLM-L6-v2` | 256 | 200 | 64 | `False` |
+| M2 | `BAAI/bge-large-en-v1.5` | 512 | 420 | 32 | `False` |
+| M2_uncapped | `BAAI/bge-large-en-v1.5` | 512 | `None` | 64 | `False` |
+| M3 | `BAAI/bge-m3` | 8192 | `None` | 16 | `False` |
+| M4 | `FremyCompany/BioLORD-2023` | 512 | 420 | 32 | `False` |
+| M5 | `dunzhang/stella_en_1.5B_v5` | 512 | 420 | 8 | `False` |
 
-M3 requires no `trust_remote_code`.
+- M3 replaces `Alibaba-NLP/gte-large-en-v1.5` and
+  `jinaai/jina-embeddings-v2-base-en`, both incompatible with transformers 5.x
+  due to custom remote code. `bge-m3` is a stock XLM-RoBERTa architecture and
+  needs no `trust_remote_code`.
+- **M2_uncapped**: same weights as M2, `ppas_budget=None`. Used only for the
+  controlled PPAS ablation (C19). V2+V8 does not invoke PPAS under any model,
+  so C19 is bit-for-bit identical to C10.
+- **M5 asymmetric**: source side gets the instruction prefix
+  (`query_prefix="Instruct: Retrieve semantically similar text.\nQuery: {}"`),
+  candidate side gets no prefix. Apply the prefix only via `encode_source()` /
+  `encode_batch(role="source")`, never via `encode_candidate()`. The encoder
+  applies it internally — never pre-prefix verbalised text yourself.
+- `load_sentence_transformer()` returns a `(model, model_info)` tuple.
+  `model_info` keys: `model_id`, `model_key`, `device`, `hf_revision`. Always
+  assert `device` starts with `"mps"` after loading.
 
-> Original spec named Alibaba-NLP/gte-large-en-v1.5 and Jina v2 — both use
-> custom remote code incompatible with transformers 5.x. bge-m3 uses standard
-> XLM-RoBERTa architecture with no remote code dependency.
+PPAS budgets are consulted independently by the verbalisers through
+`PPAS_BUDGETS` in `src/kgsemembed/verbalisation/ppas.py`, keyed by the same
+model keys. Registered verbalisation strategies (`VALID_STRATEGY_NAMES`):
+V1, V2, V3, V4, V5, V6, V7, V8, V2+V6, V2+V8, V2+V7, V2+V8+V7, V6+V3, V4+V6,
+V8+V6.
+
+## Datasets
+
+```
+D1  SNOMED-FMA Body (Bio-ML, OAEI)        Classes only
+    data/d1_snomed_fma/source.rdf, target.rdf, reference.rdf
+    Split: 0/20/80, seeded shuffle, EDOAL reference
+
+D2  Anatomy MA-NCI (OAEI Anatomy Track)    Classes only
+    data/d2_anatomy/source.rdf, target.rdf, reference.rdf
+    Split: 0/20/80, seeded shuffle, EDOAL reference
+
+D3  Conference (OAEI Conference Track)     Classes + Predicates (mixed)
+    data/d3_conference/{pair_name}/source.rdf, target.rdf, reference.rdf
+    21 pair subdirectories; entity_type="mixed"
+    Split: 0/20/80 per pair, seeded shuffle
+
+D4_schema  memoryalpha-stexpanded schema  Classes + Predicates (mixed)
+D4_instance memoryalpha-stexpanded instances  Instances only
+    data/d4_kgtrack/ontologies/memoryalpha.rdf + stexpanded.rdf
+    data/d4_kgtrack/references/memoryalpha-stexpanded.rdf (EDOAL)
+    Schema/instance split: inspect rdf:type of source URI in source_graph
+    D4_schema and D4_instance share the same Graph objects (identity, not copy)
+    Parse all .rdf files with format="xml"
+
+D5  DBpedia-Wikidata 15K EN (OpenEA)      Instances only
+    data/d5_openea/D_W_15K_V2/
+    Built from rel_triples_1/2 + attr_triples_1/2 via _graph_from_triple_files()
+    Do NOT use rdflib.Graph.parse() for D5
+    Val: 721_5fold/1/valid_links   Test: 721_5fold/1/test_links
+    CRITICAL: OpenEA deleted all entity labels. n-gram candidate recall on
+    D5 is ~0.15%. All D5 F1 results are ≈0.0001. This is a documented
+    limitation of lexical candidate generation on label-free KGs, not a
+    system defect.
+    WARNING: Do not use DBP2.0 — it is multilingual, has no attr_triples,
+    and uses a different folder structure.
+```
+
+`load_dataset()` is keyed `"D1"`–`"D5"`; the `"D4"` loader returns two pairs
+whose `dataset_id` values are `D4_schema` and `D4_instance`. Conditions
+therefore list `"D4"`, while results are written under both directories.
+
+## Result JSON schema
+
+Every file written by `run_experiment.py` contains:
+
+```
+{
+  "condition_id", "dataset_id", "pair_name",
+  "strategy", "model_key", "model_id",
+  "apply_ppas", "ppas_effective",
+  "metrics": {
+    "f1", "precision", "recall", "threshold",
+    "mrr", "recall_at_1", "recall_at_5", "recall_at_10"
+  },
+  "per_entity_type": {
+    "class":     {"f1", "precision", "recall", "threshold",
+                  "mrr", "recall_at_1", "recall_at_5", "recall_at_10",
+                  "n_refs"},
+    "predicate": {...}
+  },
+  "n_source_entities", "n_candidates_per_entity",
+  "hf_revision", "kgsemembed_version",
+  "python_version", "run_timestamp",
+  "versions": {"python", "torch", "transformers", "sentence_transformers"}
+}
+```
+
+`per_entity_type` is non-empty only for mixed-type pairs (D3, D4_schema).
+Old result files without `per_entity_type` are valid — the aggregator handles
+both. A bucket with fewer than three test references is dropped with a warning
+rather than reported.
+
+`ppas_effective` records what verbalisation actually did (`PPAS_BUDGETS[model]
+is not None`), independent of the condition's declared `apply_ppas`, so any
+divergence between configured intent and executed behaviour is visible in the
+result file.
+
+## Critical pitfalls
+
+```
+rdflib graph.triples() returns a generator.
+Collect to list before iterating more than once:
+  triples = list(graph.triples((entity_uri, None, None)))
+
+Never mutate module-level tier list constants (CLASS_TIER_LIST, etc).
+Deep-copy before extending:
+  tier = [list(t) for t in CLASS_TIER_LIST]
+
+Do not use pytest caplog for kgsemembed logger assertions.
+init_logging() sets propagate=False. Attach a handler directly
+to the specific logger and restore it in teardown.
+
+Dynamic batch size reduction: encode_batch() automatically reduces
+batch_size for long sequences to prevent MPS OOM (observed on C14/D5
+with bge-m3 at batch_size=16 and uncapped 8192-token texts).
+Do not override batch_size manually in encoding loops.
+
+V2+V8 does not invoke PPAS under any model. V2 (AnnotationVerbaliser)
+and V8 (RelationalSignatureVerbaliser) have no budget logic.
+apply_ppas=False on a V2+V8 condition has no effect on output.
+
+zlib.crc32, not hash(), for per-entity RNG seeds in V5.
+hash() is salted per process by PYTHONHASHSEED; crc32 is stable.
+
+float64 arithmetic throughout ngram.py scoring.
+float32 causes tie-breaking inconsistency on real data (observed on D3).
+
+Threshold is tuned on val-source pairs only.
+Never pass test-source scored pairs to tune_threshold().
+```
 
 ## Constraints
 
 - Always use `venv` for Python and pip — never the system Python.
 - Never commit directly to `main` or `develop`.
 - Do NOT modify `configs/local/runtime.yaml`.
-- Do NOT overwrite files under `data/` or `results/` unless explicitly asked.
+- Do NOT overwrite files under `data/` unless explicitly asked; existing result
+  files are skipped unless `--force_recompute` is passed.
 - Do NOT add dependencies outside the key dependencies listed above without
   confirming first.
