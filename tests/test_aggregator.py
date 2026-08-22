@@ -24,7 +24,6 @@ from kgsemembed.evaluation.aggregator import (
     _RESULT_COLUMNS,
     _STATS_COLUMNS,
     _SUMMARY_COLUMNS,
-    _classify_entity_type,
     _stats_row,
     build_condition_summary_table,
     build_dataset_breakdown_table,
@@ -120,10 +119,6 @@ def _write_result(
 
 
 def _pair_name(dataset_id: str, index: int) -> str:
-    if dataset_id == "D3":
-        return f"{dataset_id}_class_p{index}"
-    if dataset_id == "D4":
-        return f"{dataset_id}_instance_p{index}" if index % 2 else f"{dataset_id}_predicate_p{index}"
     return f"{dataset_id}_p{index}"
 
 
@@ -377,24 +372,6 @@ def test_dataset_breakdown_empty_frame_still_validates_metric() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Entity-type classification
-# ---------------------------------------------------------------------------
-@pytest.mark.parametrize(
-    "pair_name, expected",
-    [
-        ("d3_classes_align", "Classes"),
-        ("d4_predicate_map", "Predicates"),
-        ("d4_property_links", "Predicates"),
-        ("d4_relation_pairs", "Predicates"),
-        ("d4_instance_pairs", "Instances"),
-        ("d1_snomed_fma", None),
-    ],
-)
-def test_classify_entity_type(pair_name: str, expected: Optional[str]) -> None:
-    assert _classify_entity_type(pair_name) == expected
-
-
-# ---------------------------------------------------------------------------
 # Markdown report
 # ---------------------------------------------------------------------------
 def _headings(text: str) -> List[str]:
@@ -409,7 +386,7 @@ def test_report_created_with_parent_dirs(full_results_dir: Path, tmp_path: Path)
     assert "| condition_id |" in output.read_text(encoding="utf-8")
 
 
-def test_report_seven_sections_with_stats(full_results_dir: Path, tmp_path: Path) -> None:
+def test_report_six_sections_with_stats(full_results_dir: Path, tmp_path: Path) -> None:
     df = load_all_results(str(full_results_dir))
     output = tmp_path / "report.md"
     generate_markdown_report(df, _synthetic_stats(), str(output))
@@ -418,19 +395,18 @@ def test_report_seven_sections_with_stats(full_results_dir: Path, tmp_path: Path
         "# Executive Summary",
         "# Condition Summary Table",
         "# Per-Dataset Breakdown",
-        "# Entity-Type Analysis",
         "# Ablation Group Analysis",
         "# Statistical Significance",
         "# PPAS Ablation",
     ]
 
 
-def test_report_six_sections_without_stats(full_results_dir: Path, tmp_path: Path) -> None:
+def test_report_five_sections_without_stats(full_results_dir: Path, tmp_path: Path) -> None:
     df = load_all_results(str(full_results_dir))
     output = tmp_path / "report.md"
     generate_markdown_report(df, None, str(output))
     headings = _headings(output.read_text(encoding="utf-8"))
-    assert len(headings) == 6
+    assert len(headings) == 5
     assert "# Statistical Significance" not in headings
 
 
@@ -443,14 +419,11 @@ def test_report_is_deterministic(full_results_dir: Path, tmp_path: Path) -> None
     assert first.read_bytes() == second.read_bytes()
 
 
-def test_report_entity_type_labels(full_results_dir: Path, tmp_path: Path) -> None:
+def test_report_omits_entity_type_section(full_results_dir: Path, tmp_path: Path) -> None:
     df = load_all_results(str(full_results_dir))
     output = tmp_path / "report.md"
     generate_markdown_report(df, None, str(output))
-    text = output.read_text(encoding="utf-8")
-    assert "Classes" in text
-    assert "Predicates" in text
-    assert "Instances" in text
+    assert "Entity-Type Analysis" not in output.read_text(encoding="utf-8")
 
 
 def test_report_handles_empty_results(tmp_path: Path) -> None:
@@ -471,26 +444,151 @@ def test_report_empty_stats_list_includes_section(full_results_dir: Path, tmp_pa
     assert "_No statistical comparison results available._" in text
 
 
-def test_report_entity_type_missing_subtask_note(tmp_path: Path) -> None:
-    results_dir = tmp_path / "results"
-    for pair_index in range(6):
-        _write_result(results_dir, "C1", "D3", f"D3_generic_p{pair_index}", 0.5)
-    df = load_all_results(str(results_dir))
-    output = tmp_path / "report.md"
-    generate_markdown_report(df, None, str(output))
-    text = output.read_text(encoding="utf-8")
-    assert "_No entity-type sub-task data available for D3._" in text
+def _per_dataset_section(text: str) -> str:
+    """Return the body of the report's Per-Dataset Breakdown section."""
+    return text.split("# Per-Dataset Breakdown", 1)[1].split("\n# ", 1)[0]
 
 
-def test_report_per_dataset_missing_note(tmp_path: Path) -> None:
+def _sub_table(section: str, dataset_id: str) -> List[str]:
+    """Return the table rows rendered under a Per-Dataset Breakdown heading."""
+    body = section.split(f"## {dataset_id}\n", 1)[1].split("\n## ", 1)[0]
+    return [line for line in body.splitlines() if line.startswith("|")]
+
+
+def _headings_of(section: str) -> List[str]:
+    """Return the level-two headings of a report section."""
+    return [line for line in section.splitlines() if line.startswith("## ")]
+
+
+def _write_production_layout(results_dir: Path) -> None:
+    """Write results using the dataset IDs the pipeline actually emits."""
+    for dataset_id, f1 in (
+        ("D1", 0.10),
+        ("D2", 0.20),
+        ("D3", 0.30),
+        ("D4_schema", 0.40),
+        ("D4_instance", 0.50),
+        ("D5", 0.60),
+    ):
+        _write_result(results_dir, "C1", dataset_id, f"{dataset_id}_pair", f1)
+
+
+def test_report_per_dataset_lists_only_datasets_present(tmp_path: Path) -> None:
     results_dir = tmp_path / "results"
     for pair_index in range(6):
         _write_result(results_dir, "C1", "D1", f"D1_p{pair_index}", 0.5)
     df = load_all_results(str(results_dir))
     output = tmp_path / "report.md"
     generate_markdown_report(df, None, str(output))
+    section = _per_dataset_section(output.read_text(encoding="utf-8"))
+    assert _headings_of(section) == ["## D1"]
+    assert "_No results available for" not in section
+
+
+def test_report_per_dataset_production_dataset_layout(tmp_path: Path) -> None:
+    results_dir = tmp_path / "results"
+    _write_production_layout(results_dir)
+    df = load_all_results(str(results_dir))
+    output = tmp_path / "report.md"
+    generate_markdown_report(df, None, str(output))
+    section = _per_dataset_section(output.read_text(encoding="utf-8"))
+    assert _headings_of(section) == [
+        "## D1",
+        "## D2",
+        "## D3",
+        "## D4_instance",
+        "## D4_schema",
+        "## D5",
+    ]
+    assert _sub_table(section, "D1")[2:] == ["| C1 | 0.1000 |"]
+    assert _sub_table(section, "D2")[2:] == ["| C1 | 0.2000 |"]
+    assert _sub_table(section, "D3")[2:] == ["| C1 | 0.3000 |"]
+    assert _sub_table(section, "D4_schema")[2:] == ["| C1 | 0.4000 |"]
+    assert _sub_table(section, "D4_instance")[2:] == ["| C1 | 0.5000 |"]
+    assert _sub_table(section, "D5")[2:] == ["| C1 | 0.6000 |"]
+
+
+def test_executive_summary_covers_d4_sub_datasets(tmp_path: Path) -> None:
+    results_dir = tmp_path / "results"
+    _write_production_layout(results_dir)
+    df = load_all_results(str(results_dir))
+    output = tmp_path / "report.md"
+    generate_markdown_report(df, None, str(output))
     text = output.read_text(encoding="utf-8")
-    assert "_No results available for D5._" in text
+    body = text.split("# Executive Summary", 1)[1].split("\n# ", 1)[0]
+    rows = [line for line in body.splitlines() if line.startswith("|")]
+    datasets = [row.split(" | ")[0].lstrip("| ") for row in rows[2:]]
+    assert datasets == ["D1", "D2", "D3", "D4_instance", "D4_schema", "D5"]
+
+
+def test_report_per_dataset_renders_d4_sub_datasets(tmp_path: Path) -> None:
+    results_dir = tmp_path / "results"
+    for pair_index in range(6):
+        _write_result(results_dir, "C1", "D4_schema", f"D4_predicate_p{pair_index}", 0.6)
+        _write_result(results_dir, "C1", "D4_instance", f"D4_instance_p{pair_index}", 0.7)
+    df = load_all_results(str(results_dir))
+    output = tmp_path / "report.md"
+    generate_markdown_report(df, None, str(output))
+    section = _per_dataset_section(output.read_text(encoding="utf-8"))
+    assert "_No results available for D4._" not in section
+    assert _sub_table(section, "D4_schema")[2:] == ["| C1 | 0.6000 |"]
+    assert _sub_table(section, "D4_instance")[2:] == ["| C1 | 0.7000 |"]
+
+
+def test_report_per_dataset_headings_are_sorted(tmp_path: Path) -> None:
+    results_dir = tmp_path / "results"
+    for dataset_id in ("D5", "D4_schema", "D1", "D4_instance"):
+        _write_result(results_dir, "C1", dataset_id, f"{dataset_id}_p0", 0.5)
+    df = load_all_results(str(results_dir))
+    output = tmp_path / "report.md"
+    generate_markdown_report(df, None, str(output))
+    section = _per_dataset_section(output.read_text(encoding="utf-8"))
+    headings = [line for line in section.splitlines() if line.startswith("## ")]
+    assert headings == ["## D1", "## D4_instance", "## D4_schema", "## D5"]
+
+
+def test_report_per_dataset_rows_sorted_by_mean_f1(tmp_path: Path) -> None:
+    results_dir = tmp_path / "results"
+    for condition_id, f1 in (("C1", 0.30), ("C2", 0.90), ("C3", 0.30)):
+        _write_result(results_dir, condition_id, "D4_schema", "schema_pair", f1)
+    df = load_all_results(str(results_dir))
+    output = tmp_path / "report.md"
+    generate_markdown_report(df, None, str(output))
+    section = _per_dataset_section(output.read_text(encoding="utf-8"))
+    assert _sub_table(section, "D4_schema")[2:] == [
+        "| C2 | 0.9000 |",
+        "| C1 | 0.3000 |",
+        "| C3 | 0.3000 |",
+    ]
+
+
+def test_report_per_dataset_all_nan_metric_keeps_heading(tmp_path: Path) -> None:
+    results_dir = tmp_path / "results"
+    _write_result(results_dir, "C1", "D4_schema", "schema_pair", 0.5)
+    _write_result(
+        results_dir,
+        "C1",
+        "D4_instance",
+        "instance_pair",
+        0.5,
+        overrides={"metrics": {key: float("nan") for key in _METRIC_KEYS}},
+    )
+    df = load_all_results(str(results_dir))
+    output = tmp_path / "report.md"
+    generate_markdown_report(df, None, str(output))
+    section = _per_dataset_section(output.read_text(encoding="utf-8"))
+    assert _headings_of(section) == ["## D4_instance", "## D4_schema"]
+    assert "_No results available for D4_instance._" in section
+    assert _sub_table(section, "D4_schema")[2:] == ["| C1 | 0.5000 |"]
+
+
+def test_report_per_dataset_empty_results_note(tmp_path: Path) -> None:
+    df = load_all_results(str(tmp_path / "missing"))
+    output = tmp_path / "report.md"
+    generate_markdown_report(df, None, str(output))
+    section = _per_dataset_section(output.read_text(encoding="utf-8"))
+    assert "_No results available._" in section
+    assert _headings_of(section) == []
 
 
 def test_report_ppas_values_from_results(tmp_path: Path) -> None:
