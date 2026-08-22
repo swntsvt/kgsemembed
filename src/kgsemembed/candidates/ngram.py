@@ -20,6 +20,7 @@ back into the Phase 2 embedding pipeline by :func:`load_candidates`.
 from __future__ import annotations
 
 import json
+import re
 from collections import Counter
 from dataclasses import dataclass
 from itertools import islice
@@ -28,6 +29,8 @@ from typing import Dict, Iterator, List
 
 import numpy as np
 import orjson
+from rdflib import Graph, Literal, URIRef
+from rdflib.namespace import RDFS, SKOS
 from scipy import sparse
 
 from kgsemembed.candidates.generator import CandidatePair, _build_tokens
@@ -37,6 +40,10 @@ CandidateMap = Dict[str, List[str]]
 
 _CANDIDATE_ROOT = "candidates"
 _BLOCK_ROWS = 256
+
+_LABEL_PREDICATES = (RDFS.label, SKOS.prefLabel)
+_OPAQUE_ID_PATTERN = re.compile(r"^[EQ]\d+$")
+_TYPED_LITERAL_PATTERN = re.compile(r'^"(.*)"\^\^<[^>]*>$', re.DOTALL)
 
 
 @dataclass(frozen=True)
@@ -74,6 +81,114 @@ class NgramIndex:
     matrix: sparse.csr_matrix
     norms: np.ndarray
     distinct: np.ndarray
+
+
+def _literal_text(obj: Literal) -> str:
+    """Return a literal's lexical form, stripping any inlined datatype suffix.
+
+    OpenEA triple files store typed literals as ``"1955"^^<...#gYear>`` inside a
+    single tab-separated column, so :func:`_graph_from_triple_files` preserves
+    the datatype URI as part of the literal's own string.
+    """
+    match = _TYPED_LITERAL_PATTERN.match(str(obj).strip())
+    return (match.group(1) if match else str(obj)).strip()
+
+
+def _is_informative(text: str, min_length: int, max_length: int) -> bool:
+    """Return whether *text* is a usable length and not a bare quantity."""
+    if not min_length <= len(text) <= max_length:
+        return False
+    return not text.replace(".", "").replace("-", "").replace(" ", "").isnumeric()
+
+
+def get_entity_text_from_attributes(
+    graph: Graph | None,
+    entity_uri: str,
+    max_values: int = 10,
+    min_length: int = 3,
+    max_length: int = 200,
+) -> str:
+    """
+    Build a text representation of an entity from its Literal-valued triples.
+
+    Fallback for entities carrying no label, notably D5 OpenEA entities whose
+    ``rdfs:label`` triples were deliberately removed. Literal objects are taken
+    in ascending predicate then value order so the result does not depend on
+    graph store iteration order.
+
+    Parameters
+    ----------
+    graph : Graph | None
+        Graph supplying the entity's triples. ``None`` yields an empty string.
+    entity_uri : str
+        URI of the entity to describe.
+    max_values : int
+        Maximum number of literal values to concatenate.
+    min_length : int
+        Shortest accepted value, in characters.
+    max_length : int
+        Longest accepted value, in characters.
+
+    Returns
+    -------
+    str
+        Space-joined literal values, or ``""`` if none qualify.
+    """
+    if graph is None:
+        return ""
+    triples = list(graph.triples((URIRef(entity_uri), None, None)))
+    values = sorted(
+        (str(predicate), _literal_text(obj))
+        for _, predicate, obj in triples
+        if isinstance(obj, Literal)
+    )
+    kept = [text for _, text in values if _is_informative(text, min_length, max_length)]
+    return " ".join(kept[:max_values])
+
+
+def _local_name(uri: str) -> str:
+    """Return the trailing URI segment with underscores read as spaces."""
+    tail = uri.rsplit("#", 1)[-1] if "#" in uri else uri.rstrip("/").rsplit("/", 1)[-1]
+    return tail.replace("_", " ")
+
+
+def _first_label(graph: Graph, entity_uri: str) -> str | None:
+    """Return the first English ``rdfs:label`` or ``skos:prefLabel`` literal."""
+    for predicate in _LABEL_PREDICATES:
+        for obj in graph.objects(URIRef(entity_uri), predicate):
+            if isinstance(obj, Literal) and (obj.language or "en").lower() == "en":
+                return str(obj)
+    return None
+
+
+def get_entity_label(graph: Graph | None, entity_uri: str) -> str:
+    """
+    Resolve the text used to represent an entity in the n-gram index.
+
+    Prefers an English label. Failing that, falls back to the URI local name,
+    except where that local name is an opaque identifier such as a DBpedia
+    ``E291085`` or a Wikidata ``Q1108721``, which carries no lexical signal; in
+    that case attribute literals stand in when any qualify.
+
+    Parameters
+    ----------
+    graph : Graph | None
+        Graph supplying label and attribute triples for ``entity_uri``.
+    entity_uri : str
+        URI of the entity to describe.
+
+    Returns
+    -------
+    str
+        Label, attribute text, or URI local name, in that order of preference.
+    """
+    label = _first_label(graph, entity_uri) if graph is not None else None
+    if label:
+        return label
+    local_name = _local_name(str(entity_uri))
+    if _OPAQUE_ID_PATTERN.match(local_name):
+        return get_entity_text_from_attributes(graph, str(entity_uri)) or local_name
+    return local_name
 
 
 def _token_map(labels: Dict[str, str], config: NgramConfig) -> Dict[str, List[str]]:
