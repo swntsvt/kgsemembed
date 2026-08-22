@@ -373,6 +373,74 @@ def test_breakdown_ignores_a_malformed_per_entity_type(tmp_path: Path) -> None:
     assert list(df["entity_type"]) == ["overall"]
 
 
+def test_breakdown_skips_a_non_mapping_bucket(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    """One malformed bucket must not abort the whole load."""
+    _write_result(
+        tmp_path,
+        "C1",
+        "D3",
+        "cmt-edas",
+        0.17,
+        overrides={
+            "per_entity_type": {
+                "class": _entity_type_metrics(0.21, 18),
+                "predicate": "not-a-mapping",
+            }
+        },
+    )
+    with caplog.at_level(logging.WARNING):
+        df = load_all_results(str(tmp_path), include_entity_type_breakdown=True)
+
+    assert list(df["entity_type"]) == ["overall", "class"]
+    assert any("incomplete entity-type metrics" in message for message in caplog.messages)
+
+
+def test_breakdown_skips_a_bucket_missing_a_metric(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    _write_result(
+        tmp_path,
+        "C1",
+        "D3",
+        "cmt-edas",
+        0.17,
+        overrides={"per_entity_type": {"class": {"f1": 0.21, "n_refs": 18}}},
+    )
+    with caplog.at_level(logging.WARNING):
+        df = load_all_results(str(tmp_path), include_entity_type_breakdown=True)
+
+    assert list(df["entity_type"]) == ["overall"]
+    assert any("incomplete entity-type metrics" in message for message in caplog.messages)
+
+
+def test_breakdown_preserves_an_instance_bucket(tmp_path: Path) -> None:
+    """Entity types are read from the result, not from a fixed class/predicate pair."""
+    _write_result(
+        tmp_path,
+        "C1",
+        "D3",
+        "cmt-edas",
+        0.17,
+        overrides={"per_entity_type": {"instance": _entity_type_metrics(0.3, 7)}},
+    )
+    df = load_all_results(str(tmp_path), include_entity_type_breakdown=True)
+    assert list(df["entity_type"]) == ["overall", "instance"]
+    assert df.loc[1, "n_refs"] == 7
+
+
+def test_breakdown_does_not_disturb_the_overall_row(tmp_path: Path) -> None:
+    """The pair-level row must keep the top-level metrics, not a bucket's."""
+    _write_mixed_result(tmp_path)
+    df = load_all_results(str(tmp_path), include_entity_type_breakdown=True)
+
+    overall = df[df["entity_type"] == "overall"].iloc[0]
+    for metric in _METRIC_KEYS:
+        assert overall[metric] == pytest.approx(0.17)
+    assert overall["n_source_entities"] == 100
+
+
 def test_breakdown_of_an_empty_directory_returns_the_wide_schema(tmp_path: Path) -> None:
     empty = tmp_path / "results"
     empty.mkdir()

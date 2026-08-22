@@ -136,6 +136,39 @@ def _build_record(payload: dict, path: Path) -> Optional[dict]:
     return record
 
 
+def _is_complete_bucket(entity_type: str, metrics: object, record: dict) -> bool:
+    """
+    Report whether one entity-type bucket carries every metric a row needs.
+
+    A hand-edited or truncated result file can hold a bucket that is not a
+    mapping at all, or one missing a metric.  Either is skipped with a warning
+    rather than aborting the load or emitting a row of silent gaps, matching how
+    :func:`_build_record` treats an incomplete pair-level result.
+
+    Parameters
+    ----------
+    entity_type : str
+        Key of the bucket, used only for the warning message.
+    metrics : object
+        Value found under that key, which need not be a mapping.
+    record : dict
+        The pair-level row, used only to identify the result in the warning.
+
+    Returns
+    -------
+    bool
+        ``True`` when the bucket can be expanded into a row.
+    """
+    if isinstance(metrics, dict) and all(field in metrics for field in _METRIC_FIELDS):
+        return True
+    _LOGGER.warning(
+        "Skipping %s breakdown of %s; incomplete entity-type metrics.",
+        entity_type,
+        (record["condition_id"], record["dataset_id"], record["pair_name"]),
+    )
+    return False
+
+
 def _entity_type_records(payload: dict, record: dict) -> List[dict]:
     """
     Expand a result's per-entity-type metrics into one row per entity type.
@@ -162,8 +195,10 @@ def _entity_type_records(payload: dict, record: dict) -> List[dict]:
         return []
     rows: List[dict] = []
     for entity_type, metrics in breakdown.items():
+        if not _is_complete_bucket(entity_type, metrics, record):
+            continue
         row = dict(record)
-        row.update({field: metrics.get(field) for field in _METRIC_FIELDS})
+        row.update({field: metrics[field] for field in _METRIC_FIELDS})
         row[_ENTITY_TYPE_COLUMN] = entity_type
         row[_REF_COUNT_COLUMN] = metrics.get(_REF_COUNT_COLUMN)
         rows.append(row)
@@ -200,9 +235,9 @@ def _collect_records(root: Path, include_entity_type_breakdown: bool) -> List[di
             _LOGGER.warning("Duplicate result for %s; skipping %s.", key, path)
             continue
         seen.add(key)
+        record[_ENTITY_TYPE_COLUMN] = _OVERALL_ENTITY_TYPE
         records.append(record)
         if include_entity_type_breakdown:
-            record[_ENTITY_TYPE_COLUMN] = _OVERALL_ENTITY_TYPE
             records.extend(_entity_type_records(payload, record))
     return records
 

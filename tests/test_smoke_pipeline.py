@@ -537,6 +537,106 @@ def test_split_refs_by_entity_type_of_empty_input_is_empty():
     assert runner._split_refs_by_entity_type([], _mixed_graph()) == {}
 
 
+def _ranked(source_uri, target_uri, score=1.0):
+    return [(source_uri, target_uri, score)]
+
+
+def test_split_ranked_lists_by_entity_type_groups_by_source_type():
+    class_list = _ranked(_mixed_uri("c", 1), _mixed_uri("tc", 1))
+    predicate_list = _ranked(_mixed_uri("p", 1), _mixed_uri("tp", 1))
+
+    buckets = runner._split_ranked_lists_by_entity_type(
+        [class_list, predicate_list], _mixed_graph()
+    )
+    assert buckets == {"class": [class_list], "predicate": [predicate_list]}
+
+
+def test_split_ranked_lists_keeps_sources_carrying_no_reference():
+    """A ranked source without a gold target still belongs to its own bucket."""
+    lists = [_ranked(_mixed_uri("c", index), _mixed_uri("tc", index)) for index in (1, 2)]
+    buckets = runner._split_ranked_lists_by_entity_type(lists, _mixed_graph())
+
+    assert len(buckets["class"]) == 2
+    assert "predicate" not in buckets
+
+
+def test_split_ranked_lists_ignores_empty_ranked_lists():
+    assert runner._split_ranked_lists_by_entity_type([[]], _mixed_graph()) == {}
+
+
+def test_buckets_do_not_borrow_each_others_predictions():
+    """A predicate false positive must not be charged against class precision."""
+    ranked_lists = [
+        _ranked(_mixed_uri("c", index), _mixed_uri("tc", index)) for index in (1, 2, 3)
+    ] + [_ranked(_mixed_uri("p", index), _mixed_uri("tp", 9)) for index in (1, 2, 3)]
+    pair = dataclasses.replace(_mixed_pair(), val_refs=[])
+
+    breakdown = runner._per_entity_type_metrics(pair, ranked_lists, 0.5)
+
+    assert breakdown["class"]["precision"] == 1.0
+    assert breakdown["class"]["f1"] == 1.0
+    assert breakdown["predicate"]["precision"] == 0.0
+    assert breakdown["predicate"]["recall"] == 0.0
+
+
+def test_buckets_without_validation_refs_use_the_supplied_threshold():
+    pair = dataclasses.replace(_mixed_pair(), val_refs=[])
+    ranked_lists = [
+        _ranked(_mixed_uri("c", index), _mixed_uri("tc", index)) for index in (1, 2, 3)
+    ] + [_ranked(_mixed_uri("p", index), _mixed_uri("tp", index)) for index in (1, 2, 3)]
+
+    breakdown = runner._per_entity_type_metrics(pair, ranked_lists, 0.75)
+    assert [metrics["threshold"] for metrics in breakdown.values()] == [0.75, 0.75]
+
+
+def test_n_refs_counts_each_bucket_separately():
+    """Buckets of different sizes must each report their own reference count."""
+    test_refs = _mixed_refs("c", [1, 2, 3, 4]) + _mixed_refs("p", [1, 2, 3])
+    pair = dataclasses.replace(_mixed_pair(), val_refs=[], test_refs=test_refs)
+    ranked_lists = [
+        _ranked(_mixed_uri(prefix, index), _mixed_uri(f"t{prefix}", index))
+        for prefix in ("c", "p")
+        for index in _MIXED_INDICES
+    ]
+
+    breakdown = runner._per_entity_type_metrics(pair, ranked_lists, 0.5)
+    assert breakdown["class"]["n_refs"] == 4
+    assert breakdown["predicate"]["n_refs"] == 3
+    assert sum(metrics["n_refs"] for metrics in breakdown.values()) == len(test_refs)
+
+
+def test_buckets_decompose_the_pair_level_recall():
+    """Under one shared threshold the buckets must reconstruct the pair recall."""
+    pair = dataclasses.replace(_mixed_pair(), val_refs=[])
+    hits = [
+        _ranked(_mixed_uri(prefix, index), _mixed_uri(f"t{prefix}", index))
+        for prefix, indices in (("c", (1, 2)), ("p", (1,)))
+        for index in indices
+    ]
+    misses = [
+        _ranked(_mixed_uri(prefix, index), _mixed_uri(f"t{prefix}", 9))
+        for prefix, indices in (("c", (3,)), ("p", (2, 3)))
+        for index in indices
+    ]
+    ranked_lists = hits + misses
+
+    overall = runner.compute_all_metrics(ranked_lists, pair.test_refs, threshold=0.5)
+    breakdown = runner._per_entity_type_metrics(pair, ranked_lists, 0.5)
+
+    recovered = sum(
+        metrics["recall"] * metrics["n_refs"] for metrics in breakdown.values()
+    )
+    assert recovered == pytest.approx(overall["recall"] * len(pair.test_refs))
+    assert overall["recall"] == pytest.approx(0.5)
+
+
+def test_non_mixed_pair_is_never_split():
+    """A class-typed pair must not be split even when its graph is mixed."""
+    pair = dataclasses.replace(_mixed_pair(), entity_type="class")
+    ranked_lists = [_ranked(_mixed_uri("c", 1), _mixed_uri("tc", 1))]
+    assert runner._per_entity_type_metrics(pair, ranked_lists, 0.5) == {}
+
+
 def test_mixed_pair_records_metrics_per_entity_type(fakes, monkeypatch, tmp_path):
     payload = _run_mixed_pair(monkeypatch, tmp_path, _mixed_pair())
 
@@ -597,12 +697,44 @@ def test_entity_type_buckets_are_tuned_independently(fakes, monkeypatch, tmp_pat
     assert tuned[1:] == [[_mixed_uri("c", 4)], [_mixed_uri("p", 4)]]
 
 
+def test_tuning_never_observes_a_test_source(fakes, monkeypatch, tmp_path):
+    """No scored pair of a test source may reach the threshold grid search."""
+    scored_sources = set()
+
+    def recording_tune(scored_pairs, _references):
+        scored_sources.update(source for source, _, _ in scored_pairs)
+        return {"best_threshold": 0.1}
+
+    monkeypatch.setattr(runner, "tune_threshold", recording_tune)
+    pair = _mixed_pair()
+    _run_mixed_pair(monkeypatch, tmp_path, pair)
+
+    assert scored_sources == {source for source, _ in pair.val_refs}
+    assert scored_sources.isdisjoint({source for source, _ in pair.test_refs})
+
+
 def test_bucket_without_validation_refs_reuses_the_pair_threshold(fakes, monkeypatch, tmp_path):
     pair = dataclasses.replace(_mixed_pair(), val_refs=_mixed_refs("c", [4]))
     payload = _run_mixed_pair(monkeypatch, tmp_path, pair)
 
     overall = payload["metrics"]["threshold"]
     assert payload["per_entity_type"]["predicate"]["threshold"] == overall
+    assert overall != runner._DEFAULT_THRESHOLD
+
+
+def test_bucket_with_validation_refs_may_diverge_from_the_pair_threshold(
+    fakes, monkeypatch, tmp_path
+):
+    """A bucket tuning on its own refs is free to pick another threshold."""
+    thresholds = iter([0.2, 0.4, 0.6])
+    monkeypatch.setattr(
+        runner, "tune_threshold", lambda *_args: {"best_threshold": next(thresholds)}
+    )
+    payload = _run_mixed_pair(monkeypatch, tmp_path, _mixed_pair())
+
+    assert payload["metrics"]["threshold"] == 0.2
+    assert payload["per_entity_type"]["class"]["threshold"] == 0.4
+    assert payload["per_entity_type"]["predicate"]["threshold"] == 0.6
 
 
 def test_per_entity_type_is_absent_from_the_returned_summary(fakes, monkeypatch, tmp_path):
