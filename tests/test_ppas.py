@@ -392,7 +392,7 @@ def test_predicate_tier_list_structure() -> None:
 
 
 def test_ppas_budgets_contains_all_model_keys() -> None:
-    for key in ("M1", "M2", "M3", "M4", "M5"):
+    for key in ("M1", "M2", "M2_uncapped", "M3", "M4", "M5"):
         assert key in PPAS_BUDGETS
 
 

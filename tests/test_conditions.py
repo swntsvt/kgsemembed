@@ -13,7 +13,7 @@ from kgsemembed.pipeline import (
 from kgsemembed.pipeline.conditions import _validate_registry
 from kgsemembed.verbalisation.registry import VALID_STRATEGY_NAMES
 
-_NON_PPAS_IDS = {"C14", "C15"}
+_NON_PPAS_IDS = {"C14", "C15", "C19"}
 
 _ALL = ["D1", "D2", "D3", "D4", "D5"]
 
@@ -36,6 +36,7 @@ _CANONICAL_MATRIX = [
     ("C16", "V2+V8+V7", "M4", ["D1", "D2"], True, "C"),
     ("C14", "V4+V6", "M3", ["D5"], False, "D"),
     ("C15", "V2+V8", "M3", ["D1"], False, "D"),
+    ("C19", "V2+V8", "M2_uncapped", ["D1"], False, "D"),
 ]
 
 
@@ -53,8 +54,8 @@ def _make_condition(**overrides) -> ExperimentCondition:
     return ExperimentCondition(**defaults)
 
 
-def test_registry_holds_eighteen_conditions():
-    assert len(EXPERIMENT_CONDITIONS) == 18
+def test_registry_holds_nineteen_conditions():
+    assert len(EXPERIMENT_CONDITIONS) == 19
 
 
 def test_registry_matches_canonical_matrix_in_order():
@@ -92,7 +93,7 @@ def test_every_model_is_registered():
         assert condition.model_key in MODEL_REGISTRY
 
 
-def test_ppas_disabled_only_for_c14_and_c15():
+def test_ppas_disabled_only_for_the_non_ppas_conditions():
     disabled = {c.condition_id for c in EXPERIMENT_CONDITIONS if not c.apply_ppas}
     assert disabled == _NON_PPAS_IDS
 
@@ -116,7 +117,39 @@ def test_get_condition_strategy_lookup():
 def test_get_condition_ppas_flags():
     assert get_condition("C14").apply_ppas is False
     assert get_condition("C15").apply_ppas is False
+    assert get_condition("C19").apply_ppas is False
     assert get_condition("C1").apply_ppas is True
+
+
+def test_c19_uses_the_uncapped_twin_of_the_c10_model():
+    assert get_condition("C19").model_key == "M2_uncapped"
+    assert get_condition("C19").strategy_name == get_condition("C10").strategy_name
+    assert get_condition("C19").datasets == ["D1"]
+
+
+def test_c19_verbalises_identically_to_c10():
+    """
+    C19 is a null ablation by design: V2+V8 never consults a token budget, so
+    swapping M2 for its uncapped twin cannot change the verbalised text.  This
+    pins that fact, so making V2 or V8 budget-aware fails here rather than
+    silently turning C19 into a different experiment.
+    """
+    from rdflib import Graph, Literal, RDFS, URIRef
+
+    from kgsemembed.verbalisation.registry import build_verbaliser
+
+    graph = Graph()
+    entity = URIRef("http://example.org/e1")
+    graph.add((entity, RDFS.label, Literal("Heart", lang="en")))
+    for index in range(200):
+        graph.add((entity, URIRef(f"http://example.org/p{index}"), Literal(index)))
+
+    strategy = get_condition("C19").strategy_name
+    capped = build_verbaliser(strategy, get_condition("C10").model_key)
+    uncapped = build_verbaliser(strategy, get_condition("C19").model_key)
+    assert capped.verbalise(graph, entity, "class") == uncapped.verbalise(
+        graph, entity, "class"
+    )
 
 
 def test_get_condition_unknown_raises_key_error():
@@ -146,9 +179,9 @@ def test_get_conditions_for_dataset_unknown_returns_empty():
     assert get_conditions_for_dataset("D99") == []
 
 
-def test_get_conditions_for_group_d_is_c14_and_c15():
+def test_get_conditions_for_group_d_holds_every_non_ppas_condition():
     ids = [c.condition_id for c in get_conditions_for_group("D")]
-    assert ids == ["C14", "C15"]
+    assert ids == ["C14", "C15", "C19"]
 
 
 @pytest.mark.parametrize(
@@ -180,27 +213,27 @@ def test_validation_rejects_wrong_count():
 
 
 def test_validation_rejects_duplicate_ids():
-    conditions = [_make_condition() for _ in range(18)]
+    conditions = [_make_condition() for _ in range(19)]
     with pytest.raises(ValueError):
         _validate_registry(conditions)
 
 
 def test_validation_rejects_unknown_strategy():
-    conditions = [_make_condition(condition_id=f"C{i}") for i in range(18)]
+    conditions = [_make_condition(condition_id=f"C{i}") for i in range(19)]
     conditions[0] = _make_condition(condition_id="C0", strategy_name="V999")
     with pytest.raises(ValueError):
         _validate_registry(conditions)
 
 
 def test_validation_rejects_unknown_model():
-    conditions = [_make_condition(condition_id=f"C{i}") for i in range(18)]
+    conditions = [_make_condition(condition_id=f"C{i}") for i in range(19)]
     conditions[0] = _make_condition(condition_id="C0", model_key="M999")
     with pytest.raises(ValueError):
         _validate_registry(conditions)
 
 
 def test_validation_rejects_incorrect_ppas_assignment():
-    conditions = [_make_condition(condition_id=f"C{i}") for i in range(18)]
+    conditions = [_make_condition(condition_id=f"C{i}") for i in range(19)]
     conditions[0] = _make_condition(condition_id="C0", apply_ppas=False)
     with pytest.raises(ValueError):
         _validate_registry(conditions)

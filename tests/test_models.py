@@ -17,17 +17,25 @@ from kgsemembed.embeddings import (
 from kgsemembed.embeddings import models
 from kgsemembed.verbalisation.ppas import PPAS_BUDGETS
 
-EXPECTED_KEYS = {"M1", "M2", "M3", "M4", "M5"}
+EXPECTED_KEYS = {"M1", "M2", "M2_uncapped", "M3", "M4", "M5"}
 
 EXPECTED_MODEL_IDS = {
     "M1": "sentence-transformers/all-MiniLM-L6-v2",
     "M2": "BAAI/bge-large-en-v1.5",
+    "M2_uncapped": "BAAI/bge-large-en-v1.5",
     "M3": "BAAI/bge-m3",
     "M4": "FremyCompany/BioLORD-2023",
     "M5": "dunzhang/stella_en_1.5B_v5",
 }
 
-EXPECTED_MAX_TOKENS = {"M1": 256, "M2": 512, "M3": 8192, "M4": 512, "M5": 512}
+EXPECTED_MAX_TOKENS = {
+    "M1": 256,
+    "M2": 512,
+    "M2_uncapped": 512,
+    "M3": 8192,
+    "M4": 512,
+    "M5": 512,
+}
 
 
 # ---------------------------------------------------------------------------
@@ -108,6 +116,38 @@ def test_m2_ppas_budget() -> None:
 
 def test_m3_ppas_budget_is_none() -> None:
     assert get_model_config("M3").ppas_budget is None
+
+
+def test_m2_uncapped_ppas_budget_is_none() -> None:
+    assert get_model_config("M2_uncapped").ppas_budget is None
+
+
+def test_m2_uncapped_shares_the_m2_model_id() -> None:
+    assert get_model_config("M2_uncapped").model_id == "BAAI/bge-large-en-v1.5"
+    assert get_model_config("M2_uncapped").model_id == get_model_config("M2").model_id
+
+
+def test_m2_uncapped_batch_size() -> None:
+    assert get_model_config("M2_uncapped").batch_size == 64
+
+
+def test_m2_uncapped_differs_from_m2_only_in_budget_and_batch_size() -> None:
+    """The twin must not drift from M2 on any field that changes embeddings."""
+    m2 = get_model_config("M2")
+    uncapped = get_model_config("M2_uncapped")
+    for field in ("model_id", "max_tokens", "query_prefix", "doc_prefix"):
+        assert getattr(m2, field) == getattr(uncapped, field)
+    assert m2.trust_remote_code is uncapped.trust_remote_code is False
+    assert m2.ppas_budget == 420
+    assert uncapped.ppas_budget is None
+
+
+def test_m2_uncapped_query_prefix_is_none() -> None:
+    assert get_model_config("M2_uncapped").query_prefix is None
+
+
+def test_m2_uncapped_documents_are_encoded_without_prefix() -> None:
+    assert get_model_config("M2_uncapped").doc_prefix is None
 
 
 def test_m5_query_prefix_is_instruction() -> None:

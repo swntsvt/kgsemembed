@@ -75,6 +75,18 @@ MODEL_REGISTRY: Dict[str, ModelConfig] = {
         doc_prefix=None,
         batch_size=32,
     ),
+    "M2_uncapped": ModelConfig(
+        model_key="M2_uncapped",
+        model_id="BAAI/bge-large-en-v1.5",
+        max_tokens=512,
+        # The same model as M2 with the verbalisation budget removed, so a PPAS
+        # ablation can hold the model fixed instead of confounding the PPAS
+        # effect with a change of architecture.
+        ppas_budget=None,
+        query_prefix=None,
+        doc_prefix=None,
+        batch_size=64,
+    ),
     "M3": ModelConfig(
         model_key="M3",
         model_id="BAAI/bge-m3",
