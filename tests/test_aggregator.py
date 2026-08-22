@@ -287,6 +287,116 @@ def test_duplicate_combination_kept_once(
 
 
 # ---------------------------------------------------------------------------
+# Per-entity-type breakdown rows
+# ---------------------------------------------------------------------------
+def _entity_type_metrics(f1: float, n_refs: int) -> Dict[str, float]:
+    return {**_metrics(f1), "n_refs": n_refs}
+
+
+def _write_mixed_result(results_dir: Path, condition_id: str = "C1") -> Path:
+    return _write_result(
+        results_dir,
+        condition_id,
+        "D3",
+        "cmt-edas",
+        0.17,
+        overrides={
+            "per_entity_type": {
+                "class": _entity_type_metrics(0.21, 18),
+                "predicate": _entity_type_metrics(0.08, 6),
+            }
+        },
+    )
+
+
+def test_breakdown_disabled_by_default(tmp_path: Path) -> None:
+    _write_mixed_result(tmp_path)
+    df = load_all_results(str(tmp_path))
+    assert list(df.columns) == _EXPECTED_RESULT_COLUMNS
+    assert len(df) == 1
+    assert df.loc[0, "f1"] == pytest.approx(0.17)
+
+
+def test_breakdown_widens_the_schema(tmp_path: Path) -> None:
+    _write_mixed_result(tmp_path)
+    df = load_all_results(str(tmp_path), include_entity_type_breakdown=True)
+    assert list(df.columns) == _EXPECTED_RESULT_COLUMNS + ["entity_type", "n_refs"]
+
+
+def test_breakdown_adds_one_row_per_entity_type(tmp_path: Path) -> None:
+    _write_mixed_result(tmp_path)
+    df = load_all_results(str(tmp_path), include_entity_type_breakdown=True)
+
+    assert list(df["entity_type"]) == ["overall", "class", "predicate"]
+    assert list(df["f1"]) == pytest.approx([0.17, 0.21, 0.08])
+    assert list(df["n_refs"][1:]) == [18, 6]
+
+
+def test_breakdown_rows_inherit_pair_identity(tmp_path: Path) -> None:
+    _write_mixed_result(tmp_path)
+    df = load_all_results(str(tmp_path), include_entity_type_breakdown=True)
+
+    for column in ("condition_id", "dataset_id", "pair_name", "strategy", "ablation_group"):
+        assert set(df[column]) == {df.loc[0, column]}
+
+
+def test_breakdown_carries_every_metric(tmp_path: Path) -> None:
+    _write_mixed_result(tmp_path)
+    df = load_all_results(str(tmp_path), include_entity_type_breakdown=True)
+
+    class_row = df[df["entity_type"] == "class"].iloc[0]
+    for metric in _METRIC_KEYS:
+        assert class_row[metric] == pytest.approx(0.21)
+
+
+def test_breakdown_leaves_legacy_results_untouched(tmp_path: Path) -> None:
+    """Results written before the breakdown existed must still load."""
+    _write_result(tmp_path, "C1", "D1", "D1_p0", 0.5)
+    df = load_all_results(str(tmp_path), include_entity_type_breakdown=True)
+
+    assert len(df) == 1
+    assert df.loc[0, "entity_type"] == "overall"
+    assert pd.isna(df.loc[0, "n_refs"])
+
+
+def test_breakdown_ignores_an_empty_per_entity_type(tmp_path: Path) -> None:
+    _write_result(tmp_path, "C1", "D1", "D1_p0", 0.5, overrides={"per_entity_type": {}})
+    df = load_all_results(str(tmp_path), include_entity_type_breakdown=True)
+    assert list(df["entity_type"]) == ["overall"]
+
+
+def test_breakdown_ignores_a_malformed_per_entity_type(tmp_path: Path) -> None:
+    _write_result(
+        tmp_path, "C1", "D1", "D1_p0", 0.5, overrides={"per_entity_type": "class"}
+    )
+    df = load_all_results(str(tmp_path), include_entity_type_breakdown=True)
+    assert list(df["entity_type"]) == ["overall"]
+
+
+def test_breakdown_of_an_empty_directory_returns_the_wide_schema(tmp_path: Path) -> None:
+    empty = tmp_path / "results"
+    empty.mkdir()
+    df = load_all_results(str(empty), include_entity_type_breakdown=True)
+    assert df.empty
+    assert list(df.columns) == _EXPECTED_RESULT_COLUMNS + ["entity_type", "n_refs"]
+
+
+def test_breakdown_of_a_missing_directory_returns_the_wide_schema(tmp_path: Path) -> None:
+    df = load_all_results(
+        str(tmp_path / "does_not_exist"), include_entity_type_breakdown=True
+    )
+    assert df.empty
+    assert list(df.columns) == _EXPECTED_RESULT_COLUMNS + ["entity_type", "n_refs"]
+
+
+def test_breakdown_rows_do_not_reach_the_default_report_path(tmp_path: Path) -> None:
+    """The report loads without the flag, so summaries stay one row per pair."""
+    _write_mixed_result(tmp_path)
+    summary = build_condition_summary_table(load_all_results(str(tmp_path)))
+    assert list(summary["n_pairs"]) == [1]
+
+
+# ---------------------------------------------------------------------------
 # Condition summary
 # ---------------------------------------------------------------------------
 def test_condition_summary_row_count(full_results_dir: Path) -> None:

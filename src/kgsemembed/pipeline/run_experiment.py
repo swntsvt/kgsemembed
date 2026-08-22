@@ -60,9 +60,13 @@ _CONFIG_DIR = Path(__file__).resolve().parents[3] / "configs"
 _LOGGER = logging.getLogger("kgsemembed.pipeline.runner")
 
 _MIXED_ENTITY_TYPE = "mixed"
+_ENTITY_TYPES = ("class", "predicate", "instance")
 _DEFAULT_THRESHOLD = 0.5
 _RANDOM_SEED = 42
 _FAILURE_KEY = "n_failed_pairs"
+_PER_ENTITY_TYPE_KEY = "per_entity_type"
+_REF_COUNT_KEY = "n_refs"
+_MIN_BUCKET_REFS = 3
 _METRIC_KEYS = (
     "f1",
     "precision",
@@ -296,12 +300,177 @@ def _resolve_threshold(
     return tune_threshold(val_pairs, val_refs)["best_threshold"]
 
 
+def _split_refs_by_entity_type(
+    refs: List[EntityPair], graph: Graph
+) -> Dict[str, List[EntityPair]]:
+    """
+    Group reference pairs by the entity type of their source URI.
+
+    Parameters
+    ----------
+    refs : List[EntityPair]
+        Reference ``(source, target)`` pairs of a mixed-type alignment pair.
+    graph : Graph
+        Source graph supplying the ``rdf:type`` triples of each source URI.
+
+    Returns
+    -------
+    Dict[str, List[EntityPair]]
+        Mapping from ``"class"``, ``"predicate"``, or ``"instance"`` to the
+        references of that type, in that fixed order.  Empty buckets are
+        omitted, so a purely class-typed input yields a single key.
+    """
+    buckets: Dict[str, List[EntityPair]] = {}
+    for source_uri, target_uri in refs:
+        entity_type = _resolve_entity_type(graph, source_uri)
+        buckets.setdefault(entity_type, []).append((source_uri, target_uri))
+    return {key: buckets[key] for key in _ENTITY_TYPES if key in buckets}
+
+
+def _split_ranked_lists_by_entity_type(
+    ranked_lists: List[RankedList], graph: Graph
+) -> Dict[str, List[RankedList]]:
+    """
+    Group ranked candidate lists by the entity type of their source URI.
+
+    Every source that was ranked is assigned to a bucket, not only the ones
+    carrying a reference, so a bucket's precision is penalised by its own false
+    positives exactly as the pair-level metrics are.
+
+    Parameters
+    ----------
+    ranked_lists : List[RankedList]
+        One ranked candidate list per source entity.
+    graph : Graph
+        Source graph supplying the ``rdf:type`` triples of each source URI.
+
+    Returns
+    -------
+    Dict[str, List[RankedList]]
+        Mapping from entity type to the ranked lists of its source entities.
+    """
+    buckets: Dict[str, List[RankedList]] = {}
+    for ranked_list in ranked_lists:
+        if not ranked_list:
+            continue
+        entity_type = _resolve_entity_type(graph, ranked_list[0][0])
+        buckets.setdefault(entity_type, []).append(ranked_list)
+    return buckets
+
+
+def _has_enough_refs(entity_type: str, refs: List[EntityPair]) -> bool:
+    """
+    Report whether a bucket holds enough references to be evaluated.
+
+    A bucket of one or two references cannot support threshold tuning, so it is
+    dropped with a warning rather than reported as a near-random metric.
+
+    Parameters
+    ----------
+    entity_type : str
+        Entity type of the bucket, used only for the warning message.
+    refs : List[EntityPair]
+        Test references falling in the bucket.
+
+    Returns
+    -------
+    bool
+        ``True`` when the bucket carries at least three references.
+    """
+    if len(refs) >= _MIN_BUCKET_REFS:
+        return True
+    _LOGGER.warning(
+        "Skipping %s entity-type metrics: %d reference pairs, minimum is %d",
+        entity_type,
+        len(refs),
+        _MIN_BUCKET_REFS,
+    )
+    return False
+
+
+def _bucket_threshold(
+    ranked_lists: List[RankedList], val_refs: List[EntityPair], fallback: float
+) -> float:
+    """
+    Tune a bucket's threshold on its own validation references.
+
+    Parameters
+    ----------
+    ranked_lists : List[RankedList]
+        Ranked candidate lists of the bucket's source entities.
+    val_refs : List[EntityPair]
+        Validation references falling in the bucket.
+    fallback : float
+        Threshold tuned for the alignment pair as a whole, used when the bucket
+        holds no validation reference of its own.
+
+    Returns
+    -------
+    float
+        Threshold to evaluate the bucket with.
+    """
+    if not val_refs:
+        return fallback
+    scored_pairs = [triple for ranked in ranked_lists for triple in ranked]
+    return _resolve_threshold(scored_pairs, val_refs)
+
+
+def _bucket_metrics(
+    ranked_lists: List[RankedList], refs: List[EntityPair], threshold: float
+) -> Dict[str, float]:
+    """Evaluate one entity-type bucket and record how many references it held."""
+    metrics = compute_all_metrics(ranked_lists, refs, threshold=threshold)
+    metrics[_REF_COUNT_KEY] = len(refs)
+    return metrics
+
+
+def _per_entity_type_metrics(
+    pair: AlignmentPair, ranked_lists: List[RankedList], threshold: float
+) -> Dict[str, Dict[str, float]]:
+    """
+    Evaluate a mixed-type alignment pair separately per source entity type.
+
+    Only pairs declared ``"mixed"`` are split; every other pair already reports
+    a single entity type at the top level and yields an empty mapping.  Each
+    bucket is tuned on its own validation references so that a class threshold
+    cannot be imposed on predicates, and falls back to the pair-level threshold
+    when the bucket has no validation reference of its own.
+
+    Parameters
+    ----------
+    pair : AlignmentPair
+        Alignment pair being evaluated.
+    ranked_lists : List[RankedList]
+        Ranked candidate lists already computed for the pair.
+    threshold : float
+        Threshold tuned for the alignment pair as a whole.
+
+    Returns
+    -------
+    Dict[str, Dict[str, float]]
+        Mapping from entity type to its metrics extended with ``"n_refs"``.
+    """
+    if pair.entity_type != _MIXED_ENTITY_TYPE:
+        return {}
+    graph = pair.source_graph
+    val_buckets = _split_refs_by_entity_type(pair.val_refs, graph)
+    ranked_buckets = _split_ranked_lists_by_entity_type(ranked_lists, graph)
+    metrics: Dict[str, Dict[str, float]] = {}
+    for entity_type, refs in _split_refs_by_entity_type(pair.test_refs, graph).items():
+        if not _has_enough_refs(entity_type, refs):
+            continue
+        bucket = ranked_buckets.get(entity_type, [])
+        tuned = _bucket_threshold(bucket, val_buckets.get(entity_type, []), threshold)
+        metrics[entity_type] = _bucket_metrics(bucket, refs, tuned)
+    return metrics
+
+
 def _process_pair(
     pair: AlignmentPair,
     condition: ExperimentCondition,
     encoder: EmbeddingEncoder,
     candidates: Dict[str, List[str]],
-) -> Dict[str, float]:
+) -> Dict[str, object]:
     verbaliser = build_verbaliser(condition.strategy_name, condition.model_key)
     source_texts = _verbalise_uris(
         verbaliser,
@@ -328,7 +497,9 @@ def _process_pair(
     )
     scored_pairs = [pair_triple for ranked in ranked_lists for pair_triple in ranked]
     threshold = _resolve_threshold(scored_pairs, pair.val_refs)
-    return compute_all_metrics(ranked_lists, pair.test_refs, threshold=threshold)
+    metrics = compute_all_metrics(ranked_lists, pair.test_refs, threshold=threshold)
+    metrics[_PER_ENTITY_TYPE_KEY] = _per_entity_type_metrics(pair, ranked_lists, threshold)
+    return metrics
 
 
 def _candidate_count(candidates: Dict[str, List[str]]) -> int:
@@ -488,7 +659,7 @@ def _write_result(
     results_dir: str | Path,
     condition: ExperimentCondition,
     pair: AlignmentPair,
-    metrics: Dict[str, float],
+    metrics: Dict[str, object],
     n_candidates: int,
     model_info: Optional[Dict[str, str]],
 ) -> None:
@@ -504,6 +675,7 @@ def _write_result(
         "apply_ppas": condition.apply_ppas,
         "ppas_effective": _effective_ppas(condition.model_key),
         "metrics": {key: metrics[key] for key in _METRIC_KEYS},
+        "per_entity_type": metrics.get(_PER_ENTITY_TYPE_KEY, {}),
         "n_source_entities": len(pair.source_entities),
         "n_candidates_per_entity": n_candidates,
         **_provenance(model_info),
@@ -514,6 +686,29 @@ def _write_result(
 def _read_metrics(path: Path) -> Dict[str, float]:
     payload = json.loads(path.read_text(encoding="utf-8"))
     return payload["metrics"]
+
+
+def _summary_metrics(metrics: Dict[str, object]) -> Dict[str, float]:
+    """
+    Drop the nested per-entity-type block from a pair's computed metrics.
+
+    The breakdown is written to the result JSON only; the runner's in-memory
+    summary stays a flat mapping of scalar metrics, matching what a result file
+    read back from disk supplies.
+
+    Parameters
+    ----------
+    metrics : Dict[str, object]
+        Metrics as returned by :func:`_process_pair`.
+
+    Returns
+    -------
+    Dict[str, float]
+        The scalar metrics of the pair.
+    """
+    return {
+        key: value for key, value in metrics.items() if key != _PER_ENTITY_TYPE_KEY
+    }
 
 
 def _run_pair(
@@ -540,7 +735,7 @@ def _run_pair(
             _candidate_count(candidates),
             model_info,
         )
-        return metrics
+        return _summary_metrics(metrics)
     except Exception as exc:
         _LOGGER.error(
             "Failed alignment pair %s/%s/%s: %s",

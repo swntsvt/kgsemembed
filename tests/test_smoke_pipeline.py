@@ -16,7 +16,8 @@ from pathlib import Path
 
 import numpy as np
 import pytest
-from rdflib import Graph
+from rdflib import Graph, URIRef
+from rdflib.namespace import OWL, RDF
 
 import kgsemembed.pipeline.run_experiment as runner
 from kgsemembed.datasets import AlignmentPair, load_pair_from_dir
@@ -34,6 +35,45 @@ _CANDIDATES = {"s1": ["t1", "t2"], "s2": ["t1", "t2"]}
 _SAMPLE_SOURCE = "http://mouse.owl#MA_0002307"
 _SAMPLE_TARGET = "http://human.owl#NCI_C52928"
 
+# A synthetic mixed-type pair: four classes and four predicates, each source
+# sharing a one-hot direction with its gold target and one distractor.
+_MIXED_NS = "http://example.org/mixed#"
+_MIXED_WIDTH = 8
+_MIXED_INDICES = range(1, 5)
+
+
+def _mixed_uri(prefix: str, index: int) -> str:
+    return f"{_MIXED_NS}{prefix}{index}"
+
+
+def _one_hot(position: int) -> list:
+    vector = [0.0] * _MIXED_WIDTH
+    vector[position] = 1.0
+    return vector
+
+
+_MIXED_VECTORS = {
+    **{
+        _mixed_uri(prefix, index): _one_hot(index - 1)
+        for prefix in ("c", "tc")
+        for index in _MIXED_INDICES
+    },
+    **{
+        _mixed_uri(prefix, index): _one_hot(3 + index)
+        for prefix in ("p", "tp")
+        for index in _MIXED_INDICES
+    },
+}
+_MIXED_CANDIDATES = {
+    _mixed_uri(source, index): [
+        _mixed_uri(target, index),
+        _mixed_uri(target, index % 4 + 1),
+    ]
+    for source, target in (("c", "tc"), ("p", "tp"))
+    for index in _MIXED_INDICES
+}
+_ALL_VECTORS = {**_VECTORS, **_MIXED_VECTORS}
+
 
 class _FakeVerbaliser:
     def verbalise(self, _graph, entity_uri, _entity_type):
@@ -46,7 +86,7 @@ class _FakeEncoder:
         self.model = model
 
     def encode_batch(self, texts, role="candidate", show_progress=True):
-        return np.array([_VECTORS[text] for text in texts], dtype=np.float32)
+        return np.array([_ALL_VECTORS[text] for text in texts], dtype=np.float32)
 
 
 def _make_pair(dataset_id="D2", pair_name="d2_pair"):
@@ -58,6 +98,45 @@ def _make_pair(dataset_id="D2", pair_name="d2_pair"):
         source_entities=["s1", "s2"],
         val_refs=[("s1", "t1")],
         test_refs=[("s2", "t2")],
+    )
+
+
+def _mixed_graph():
+    """Type four sources as classes and four as predicates."""
+    graph = Graph()
+    for index in _MIXED_INDICES:
+        graph.add((URIRef(_mixed_uri("c", index)), RDF.type, OWL.Class))
+        graph.add((URIRef(_mixed_uri("p", index)), RDF.type, OWL.ObjectProperty))
+    return graph
+
+
+def _mixed_refs(prefix, indices):
+    return [(_mixed_uri(prefix, index), _mixed_uri(f"t{prefix}", index)) for index in indices]
+
+
+def _mixed_pair(test_refs=None, dataset_id="D3", pair_name="mixed_pair"):
+    """Build a mixed-type pair whose classes and predicates both hold refs."""
+    return AlignmentPair(
+        dataset_id=dataset_id,
+        pair_name=pair_name,
+        source_graph=_mixed_graph(),
+        target_graph=Graph(),
+        source_entities=sorted(_MIXED_CANDIDATES),
+        val_refs=_mixed_refs("c", [4]) + _mixed_refs("p", [4]),
+        test_refs=test_refs or _mixed_refs("c", [1, 2, 3]) + _mixed_refs("p", [1, 2, 3]),
+        entity_type="mixed",
+    )
+
+
+def _run_mixed_pair(monkeypatch, tmp_path, pair):
+    """Run C1 over a mixed pair and return its written result payload."""
+    monkeypatch.setattr(runner, "load_dataset", lambda _d, _dir: [pair])
+    monkeypatch.setattr(runner, "load_candidates", lambda _d, _p, _dir: dict(_MIXED_CANDIDATES))
+    runner.run_condition(
+        "C1", dataset_ids=["D3"], data_dir=tmp_path, results_dir=tmp_path / "results"
+    )
+    return json.loads(
+        (tmp_path / "results" / "C1" / "D3" / f"{pair.pair_name}_results.json").read_text()
     )
 
 
@@ -146,6 +225,7 @@ def test_result_json_matches_required_schema(fakes, tmp_path):
         "apply_ppas",
         "ppas_effective",
         "metrics",
+        "per_entity_type",
         "n_source_entities",
         "n_candidates_per_entity",
         "hf_revision",
@@ -166,6 +246,7 @@ def test_result_json_matches_required_schema(fakes, tmp_path):
         "recall_at_5",
         "recall_at_10",
     }
+    assert payload["per_entity_type"] == {}
     assert payload["condition_id"] == "C1"
     assert payload["model_id"] == MODEL_REGISTRY["M1"].model_id
     assert payload["n_candidates_per_entity"] == 2
@@ -418,6 +499,121 @@ def test_sources_and_candidates_encoded_with_correct_roles(fakes, monkeypatch, t
         "C1", dataset_ids=["D2"], data_dir=tmp_path, results_dir=tmp_path / "results"
     )
     assert roles == ["source", "candidate"]
+
+
+# ---------------------------------------------------------------------------
+# Per-entity-type metrics for mixed pairs
+# ---------------------------------------------------------------------------
+
+
+def test_split_refs_by_entity_type_separates_classes_and_predicates():
+    refs = _mixed_refs("c", [1, 2]) + _mixed_refs("p", [1])
+    buckets = runner._split_refs_by_entity_type(refs, _mixed_graph())
+
+    assert buckets == {
+        "class": _mixed_refs("c", [1, 2]),
+        "predicate": _mixed_refs("p", [1]),
+    }
+
+
+def test_split_refs_by_entity_type_omits_empty_buckets():
+    buckets = runner._split_refs_by_entity_type(_mixed_refs("c", [1]), _mixed_graph())
+    assert list(buckets) == ["class"]
+
+
+def test_split_refs_by_entity_type_orders_buckets_deterministically():
+    refs = _mixed_refs("p", [1]) + _mixed_refs("c", [1])
+    buckets = runner._split_refs_by_entity_type(refs, _mixed_graph())
+    assert list(buckets) == ["class", "predicate"]
+
+
+def test_split_refs_by_entity_type_treats_untyped_sources_as_instances():
+    refs = [("http://example.org/mixed#untyped", "http://example.org/mixed#t")]
+    buckets = runner._split_refs_by_entity_type(refs, _mixed_graph())
+    assert list(buckets) == ["instance"]
+
+
+def test_split_refs_by_entity_type_of_empty_input_is_empty():
+    assert runner._split_refs_by_entity_type([], _mixed_graph()) == {}
+
+
+def test_mixed_pair_records_metrics_per_entity_type(fakes, monkeypatch, tmp_path):
+    payload = _run_mixed_pair(monkeypatch, tmp_path, _mixed_pair())
+
+    breakdown = payload["per_entity_type"]
+    assert set(breakdown) == {"class", "predicate"}
+    for metrics in breakdown.values():
+        assert set(metrics) == {*runner._METRIC_KEYS, "n_refs"}
+        assert metrics["n_refs"] == 3
+        assert metrics["recall_at_1"] == 1.0
+
+
+def test_mixed_breakdown_leaves_top_level_metrics_unchanged(fakes, monkeypatch, tmp_path):
+    pair = _mixed_pair()
+    payload = _run_mixed_pair(monkeypatch, tmp_path, pair)
+
+    monkeypatch.setattr(runner, "_per_entity_type_metrics", lambda *_args: {})
+    baseline = _run_mixed_pair(
+        monkeypatch, tmp_path / "baseline", dataclasses.replace(pair)
+    )
+    assert payload["metrics"] == baseline["metrics"]
+    assert baseline["per_entity_type"] == {}
+
+
+def test_non_mixed_pair_records_an_empty_breakdown(fakes, tmp_path):
+    runner.run_condition(
+        "C1", dataset_ids=["D2"], data_dir=tmp_path, results_dir=tmp_path / "results"
+    )
+    payload = json.loads(
+        (tmp_path / "results" / "C1" / "D2" / "d2_pair_results.json").read_text()
+    )
+    assert payload["per_entity_type"] == {}
+
+
+def test_small_entity_type_bucket_is_skipped(fakes, monkeypatch, tmp_path):
+    pair = _mixed_pair(test_refs=_mixed_refs("c", [1, 2, 3]) + _mixed_refs("p", [1, 2]))
+    payload = _run_mixed_pair(monkeypatch, tmp_path, pair)
+    assert set(payload["per_entity_type"]) == {"class"}
+
+
+def test_small_entity_type_bucket_logs_a_warning(fakes, monkeypatch, tmp_path, runner_logs):
+    pair = _mixed_pair(test_refs=_mixed_refs("c", [1, 2, 3]) + _mixed_refs("p", [1, 2]))
+    _run_mixed_pair(monkeypatch, tmp_path, pair)
+    assert "Skipping predicate entity-type metrics: 2 reference pairs" in runner_logs.text
+
+
+def test_entity_type_buckets_are_tuned_independently(fakes, monkeypatch, tmp_path):
+    """Each bucket must tune on its own validation refs, not the pair's."""
+    tuned = []
+
+    def recording_tune(_scored_pairs, references):
+        tuned.append(sorted(source for source, _ in references))
+        return {"best_threshold": 0.1}
+
+    monkeypatch.setattr(runner, "tune_threshold", recording_tune)
+    _run_mixed_pair(monkeypatch, tmp_path, _mixed_pair())
+
+    assert tuned[0] == sorted([_mixed_uri("c", 4), _mixed_uri("p", 4)])
+    assert tuned[1:] == [[_mixed_uri("c", 4)], [_mixed_uri("p", 4)]]
+
+
+def test_bucket_without_validation_refs_reuses_the_pair_threshold(fakes, monkeypatch, tmp_path):
+    pair = dataclasses.replace(_mixed_pair(), val_refs=_mixed_refs("c", [4]))
+    payload = _run_mixed_pair(monkeypatch, tmp_path, pair)
+
+    overall = payload["metrics"]["threshold"]
+    assert payload["per_entity_type"]["predicate"]["threshold"] == overall
+
+
+def test_per_entity_type_is_absent_from_the_returned_summary(fakes, monkeypatch, tmp_path):
+    monkeypatch.setattr(runner, "load_dataset", lambda _d, _dir: [_mixed_pair()])
+    monkeypatch.setattr(runner, "load_candidates", lambda _d, _p, _dir: dict(_MIXED_CANDIDATES))
+
+    results = runner.run_condition(
+        "C1", dataset_ids=["D3"], data_dir=tmp_path, results_dir=tmp_path / "results"
+    )
+    assert "per_entity_type" not in results["D3"]
+    assert results["D3"]["recall_at_1"] == 1.0
 
 
 # ---------------------------------------------------------------------------
