@@ -291,10 +291,20 @@ D5  DBpedia-Wikidata 15K EN (OpenEA)      Instances only
     Built from rel_triples_1/2 + attr_triples_1/2 via _graph_from_triple_files()
     Do NOT use rdflib.Graph.parse() for D5
     Val: 721_5fold/1/valid_links   Test: 721_5fold/1/test_links
-    CRITICAL: OpenEA deleted all entity labels. n-gram candidate recall on
-    D5 is ~0.15%. All D5 F1 results are ≈0.0001. This is a documented
-    limitation of lexical candidate generation on label-free KGs, not a
-    system defect.
+    OpenEA deleted all entity labels, and both sides carry opaque local
+    names (DBpedia E291085, Wikidata Q1108721). Falling back to those names
+    gave candidate recall@20 of 0.0015 and pinned every D5 F1 at ≈0.0001.
+    get_entity_label() in candidates/ngram.py now substitutes attribute
+    text for opaque IDs, raising recall@20 to 0.1339 and best F1 to 0.0499.
+    D5 remains far weaker than D1-D4; the residual gap is a limitation of
+    lexical candidate generation on label-free KGs, not a system defect.
+    Attribute text is capped at 10 literal values, sorted by predicate then
+    value so the selection does not depend on store iteration order.
+    OpenEA inlines the datatype into the value column, so a D5 literal's
+    string form is "1955-03-02"^^<http://www.w3.org/2001/XMLSchema#date>.
+    Strip that suffix before using D5 literal text anywhere: left intact it
+    enters an n-gram index as boilerplate shared by nearly every entity on
+    both sides, inflating gold-pair similarity while carrying no signal.
     WARNING: Do not use DBP2.0 — it is multilingual, has no attr_triples,
     and uses a different folder structure.
 ```
