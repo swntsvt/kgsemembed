@@ -66,13 +66,6 @@ _SUMMARY_FLOAT_FIELDS = (
 )
 _SUMMARY_COLUMNS = ("condition_id", "strategy", "model_key", *_SUMMARY_FLOAT_FIELDS, "n_pairs")
 
-_DATASET_IDS = ("D1", "D2", "D3", "D4", "D5")
-_ENTITY_TYPE_DATASETS = ("D3", "D4")
-_ENTITY_TYPE_KEYWORDS = (
-    ("Classes", ("class",)),
-    ("Predicates", ("predicate", "property", "relation")),
-    ("Instances", ("instance",)),
-)
 _ABLATION_GROUPS = ("A", "B", "C", "D")
 _PPAS_COMPARISONS = (("C5", "C14", "D5"), ("C10", "C15", "D1"))
 _NO_WARNING_CELL = ""
@@ -313,10 +306,10 @@ def _condition_summary_section(summary: pd.DataFrame) -> str:
     return _section("Condition Summary Table", _render_dataframe(summary))
 
 
-def _per_dataset_block(breakdown: Optional[pd.DataFrame], dataset_id: str) -> str:
+def _per_dataset_block(breakdown: pd.DataFrame, dataset_id: str) -> str:
     """Build one per-dataset breakdown sub-table from the shared F1 pivot."""
     heading = f"## {dataset_id}"
-    if breakdown is None or dataset_id not in breakdown.columns:
+    if dataset_id not in breakdown.columns:
         return f"{heading}\n\n_No results available for {dataset_id}._"
     frame = breakdown[dataset_id].dropna().reset_index()
     if frame.empty:
@@ -328,51 +321,35 @@ def _per_dataset_block(breakdown: Optional[pd.DataFrame], dataset_id: str) -> st
     return f"{heading}\n\n{_render_dataframe(frame)}"
 
 
+def _present_dataset_ids(df: pd.DataFrame) -> List[str]:
+    """
+    List every dataset ID appearing in the results, in deterministic order.
+
+    Sub-datasets such as ``D4_schema`` and ``D4_instance`` are reported under
+    their own IDs rather than being folded into a parent dataset, so the
+    breakdown never looks for an ID the results do not carry.
+
+    Parameters
+    ----------
+    df : pd.DataFrame
+        Results as returned by :func:`load_all_results`.
+
+    Returns
+    -------
+    List[str]
+        The distinct ``dataset_id`` values, sorted lexicographically.
+    """
+    return sorted(df["dataset_id"].dropna().unique(), key=str)
+
+
 def _per_dataset_section(df: pd.DataFrame) -> str:
     """Build the per-dataset breakdown section reusing the shared F1 pivot."""
-    breakdown = build_dataset_breakdown_table(df, "f1") if not df.empty else None
-    blocks = [_per_dataset_block(breakdown, dataset_id) for dataset_id in _DATASET_IDS]
+    dataset_ids = _present_dataset_ids(df) if not df.empty else []
+    if not dataset_ids:
+        return _section("Per-Dataset Breakdown", "_No results available._")
+    breakdown = build_dataset_breakdown_table(df, "f1")
+    blocks = [_per_dataset_block(breakdown, dataset_id) for dataset_id in dataset_ids]
     return _section("Per-Dataset Breakdown", "\n\n".join(blocks))
-
-
-def _classify_entity_type(pair_name: str) -> Optional[str]:
-    """Infer the entity-type sub-task of a pair from its name, or ``None``."""
-    lowered = pair_name.lower()
-    for label, keywords in _ENTITY_TYPE_KEYWORDS:
-        if any(keyword in lowered for keyword in keywords):
-            return label
-    return None
-
-
-def _entity_type_frame(subset: pd.DataFrame) -> pd.DataFrame:
-    """Aggregate mean F1 and pair counts per entity-type label."""
-    order = [label for label, _ in _ENTITY_TYPE_KEYWORDS]
-    grouped = subset.groupby("entity_type").agg(
-        mean_f1=("f1", "mean"), n_pairs=("pair_name", "count")
-    )
-    grouped = grouped.reindex([label for label in order if label in grouped.index])
-    grouped["mean_f1"] = grouped["mean_f1"].round(4)
-    frame = grouped.reset_index()
-    frame.columns = ["entity_type", "mean_f1", "n_pairs"]
-    return frame
-
-
-def _entity_type_block(df: pd.DataFrame, dataset_id: str) -> str:
-    """Build one entity-type sub-table for a dataset, noting absent sub-tasks."""
-    heading = f"## {dataset_id}"
-    subset = df[df["dataset_id"] == dataset_id].copy()
-    if not subset.empty:
-        subset["entity_type"] = subset["pair_name"].map(_classify_entity_type)
-        subset = subset[subset["entity_type"].notna()]
-    if subset.empty:
-        return f"{heading}\n\n_No entity-type sub-task data available for {dataset_id}._"
-    return f"{heading}\n\n{_render_dataframe(_entity_type_frame(subset))}"
-
-
-def _entity_type_section(df: pd.DataFrame) -> str:
-    """Build the entity-type analysis section for D3 and D4."""
-    blocks = [_entity_type_block(df, dataset_id) for dataset_id in _ENTITY_TYPE_DATASETS]
-    return _section("Entity-Type Analysis", "\n\n".join(blocks))
 
 
 def _ablation_group_block(summary: pd.DataFrame, group: str) -> str:
@@ -497,9 +474,9 @@ def generate_markdown_report(
     Render the full Phase 2 experiment report to ``output_path``.
 
     Sections are emitted in a fixed order: executive summary, condition summary,
-    per-dataset breakdown, entity-type analysis, ablation-group analysis, an
-    optional statistical-significance section, and PPAS ablation.  The
-    statistical section is included only when ``stats_results`` is not ``None``.
+    per-dataset breakdown, ablation-group analysis, an optional
+    statistical-significance section, and PPAS ablation.  The statistical
+    section is included only when ``stats_results`` is not ``None``.
     Parent directories are created as needed and identical inputs always produce
     byte-for-byte identical output.
 
@@ -517,7 +494,6 @@ def generate_markdown_report(
         _executive_summary_section(df, summary),
         _condition_summary_section(summary),
         _per_dataset_section(df),
-        _entity_type_section(df),
         _ablation_group_section(summary),
     ]
     if stats_results is not None:
