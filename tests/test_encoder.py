@@ -11,6 +11,7 @@ import numpy as np
 import pytest
 
 from kgsemembed.embeddings import EmbeddingEncoder, get_model_config
+from kgsemembed.embeddings import encoder as encoder_module
 
 ALL_KEYS = ["M1", "M2", "M3", "M4", "M5"]
 PREFIX_FREE_KEYS = ["M1", "M2", "M3", "M4"]
@@ -194,6 +195,98 @@ def test_encode_empty_batch_does_not_raise() -> None:
     assert model.encode.call_args.args[0] == []
     assert result.dtype == np.float32
     assert result.shape == (0, 3)
+
+
+# ---------------------------------------------------------------------------
+# Dynamic batch sizing for long texts
+# ---------------------------------------------------------------------------
+def _batch_size_used(model_key: str, texts: list[str]) -> int:
+    """Return the batch size ``model.encode`` received for ``texts``."""
+    encoder, model = _make_encoder(model_key, dim=3)
+    model.encode.return_value = np.ones((len(texts), 3), dtype=np.float64)
+    encoder.encode_batch(texts, show_progress=False)
+    return model.encode.call_args.kwargs["batch_size"]
+
+
+def test_short_texts_keep_the_configured_batch_size() -> None:
+    assert _batch_size_used("M3", ["short text", "another"]) == 16
+
+
+def test_texts_below_threshold_keep_the_configured_batch_size() -> None:
+    assert _batch_size_used("M3", ["c" * 2047]) == 16
+
+
+def test_long_texts_reduce_the_batch_size() -> None:
+    assert _batch_size_used("M3", ["c" * 4096]) == 8
+
+
+def test_very_long_texts_reduce_the_batch_size_further() -> None:
+    assert _batch_size_used("M3", ["c" * 8192]) == 4
+
+
+def test_batch_size_never_falls_below_one() -> None:
+    assert _batch_size_used("M3", ["c" * 1_000_000]) == 1
+
+
+def test_longest_text_drives_the_reduction() -> None:
+    assert _batch_size_used("M3", ["short", "c" * 4096, "short"]) == 8
+
+
+def test_empty_batch_keeps_the_configured_batch_size() -> None:
+    assert _batch_size_used("M3", []) == 16
+
+
+@pytest.mark.parametrize("model_key", ["M1", "M2", "M4", "M5"])
+def test_short_context_models_never_reduce_the_batch_size(model_key: str) -> None:
+    """A model truncating at or below the threshold cannot exceed the budget."""
+    assert get_model_config(model_key).max_tokens <= 512
+    expected = get_model_config(model_key).batch_size
+    assert _batch_size_used(model_key, ["c" * 1_000_000]) == expected
+
+
+def test_estimate_is_capped_at_the_model_token_limit() -> None:
+    beyond_limit = encoder_module._estimate_batch_tokens(["c" * 1_000_000], 8192)
+    assert beyond_limit == 8192
+
+
+def test_reduction_saturates_at_the_token_limit() -> None:
+    assert _batch_size_used("M3", ["c" * 32_768]) == _batch_size_used(
+        "M3", ["c" * 1_000_000]
+    )
+
+
+def test_prefix_length_counts_towards_the_estimate() -> None:
+    encoder, _ = _make_encoder("M5")
+    text = "c" * 4090
+    raw = encoder_module._estimate_batch_tokens([text], 8192)
+    prefixed = encoder_module._estimate_batch_tokens(
+        [encoder._apply_prefix(text, "source")], 8192
+    )
+    assert prefixed > raw
+
+
+def _debug_logger(monkeypatch: pytest.MonkeyPatch) -> MagicMock:
+    """Replace the encoder module logger with a mock and return it."""
+    logger = MagicMock(name="logger")
+    monkeypatch.setattr(encoder_module, "_LOGGER", logger)
+    return logger
+
+
+def test_reduction_emits_a_debug_message(monkeypatch: pytest.MonkeyPatch) -> None:
+    encoder, _ = _make_encoder("M3")
+    logger = _debug_logger(monkeypatch)
+    encoder._effective_batch_size(["c" * 4096])
+    template, *arguments = logger.debug.call_args.args
+    assert template % tuple(arguments) == (
+        "Reducing batch size from 16 to 8 for 1 texts with estimated avg 1024 tokens"
+    )
+
+
+def test_no_debug_message_without_reduction(monkeypatch: pytest.MonkeyPatch) -> None:
+    encoder, _ = _make_encoder("M3")
+    logger = _debug_logger(monkeypatch)
+    encoder._effective_batch_size(["short text"])
+    logger.debug.assert_not_called()
 
 
 # ---------------------------------------------------------------------------
