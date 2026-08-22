@@ -16,7 +16,7 @@ dependencies = [
   "pandas",
   "numpy",
   "scipy",
-  "rdflib",
+  "rdflib==7.6.0",
   "hydra-core",
   "omegaconf",
   "tqdm",
