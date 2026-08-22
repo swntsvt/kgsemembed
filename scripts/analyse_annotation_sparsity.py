@@ -32,20 +32,24 @@ from rdflib.namespace import OWL, RDF, RDFS, SKOS
 from scipy.stats import spearmanr
 
 from kgsemembed.datasets.loader import AlignmentPair, load_dataset
-from kgsemembed.verbalisation.base import LABEL_PREDICATES
 
 _LOGGER = logging.getLogger("kgsemembed.scripts.analyse_annotation_sparsity")
 
 _DATASET_ID = "D3"
 _V8_CONDITION = "C10"
 _V6_CONDITION = "C3"
+_ALPHA = 0.05
 
-_ANNOTATION_PREDICATES: tuple[URIRef, ...] = tuple(LABEL_PREDICATES) + (
+_ANNOTATION_PREDICATES: tuple[URIRef, ...] = (
+    RDFS.label,
     RDFS.comment,
+    SKOS.prefLabel,
+    SKOS.altLabel,
     SKOS.definition,
     OWL.equivalentClass,
     OWL.equivalentProperty,
 )
+_MAX_DENSITY = len(_ANNOTATION_PREDICATES)
 _LABEL_PREDICATES: tuple[URIRef, ...] = (RDFS.label, SKOS.prefLabel)
 _ENTITY_TYPES: tuple[URIRef, ...] = (OWL.Class, OWL.ObjectProperty)
 _HIERARCHY_PREDICATES: tuple[URIRef, ...] = (RDFS.subClassOf, RDFS.subPropertyOf)
@@ -134,6 +138,10 @@ class SparsityCorrelation:
         Mean ``delta_f1`` over pairs below the median density.
     rich_mean_delta : float
         Mean ``delta_f1`` over pairs at or above the median density.
+    n_sparse : int
+        Number of pairs below the median density.
+    n_rich : int
+        Number of pairs at or above the median density.
     """
 
     n_pairs: int
@@ -142,6 +150,8 @@ class SparsityCorrelation:
     median_min_density: float
     sparse_mean_delta: float
     rich_mean_delta: float
+    n_sparse: int = 0
+    n_rich: int = 0
 
 
 def collect_ontology_graphs(pairs: list[AlignmentPair]) -> dict[str, Graph]:
@@ -211,7 +221,8 @@ def _annotation_count(graph: Graph, entity: URIRef) -> int:
     Returns
     -------
     int
-        Number of distinct annotation predicates present, in ``[0, 7]``.
+        Number of distinct annotation predicates present, in
+        ``[0, _MAX_DENSITY]``.
     """
     return sum(
         1
@@ -265,6 +276,30 @@ def compute_ontology_stats(ontology_id: str, graph: Graph) -> OntologyStats:
     return OntologyStats(ontology_id, len(entities), density, coverage)
 
 
+def _read_result_f1(path: Path) -> tuple[str, float] | None:
+    """
+    Read one result JSON into its pair name and test F1.
+
+    Parameters
+    ----------
+    path : Path
+        Path to a ``*_results.json`` file.
+
+    Returns
+    -------
+    tuple[str, float] | None
+        Pair name and F1, or None when the file is unreadable or carries no
+        ``metrics.f1`` entry.
+    """
+    pair_name = path.stem.removesuffix("_results")
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        return str(payload.get("pair_name", pair_name)), float(payload["metrics"]["f1"])
+    except (json.JSONDecodeError, KeyError, TypeError, ValueError) as exc:
+        _LOGGER.warning("Ignoring unusable result file %s: %s", path, exc)
+        return None
+
+
 def load_condition_f1(results_dir: Path, condition_id: str) -> dict[str, float]:
     """
     Read every D3 result JSON of one condition into per-pair F1 scores.
@@ -286,12 +321,8 @@ def load_condition_f1(results_dir: Path, condition_id: str) -> dict[str, float]:
         _LOGGER.warning("No %s results directory at %s", condition_id, condition_dir)
         return {}
 
-    scores: dict[str, float] = {}
-    for path in sorted(condition_dir.glob("*_results.json")):
-        payload = json.loads(path.read_text(encoding="utf-8"))
-        pair_name = payload.get("pair_name", path.stem.removesuffix("_results"))
-        scores[pair_name] = float(payload["metrics"]["f1"])
-    return scores
+    entries = (_read_result_f1(path) for path in sorted(condition_dir.glob("*_results.json")))
+    return dict(entry for entry in entries if entry is not None)
 
 
 def _pair_row(
@@ -391,6 +422,8 @@ def compute_correlation(rows: list[PairRow]) -> SparsityCorrelation:
         median_min_density=cut,
         sparse_mean_delta=fmean(sparse) if sparse else float("nan"),
         rich_mean_delta=fmean(rich) if rich else float("nan"),
+        n_sparse=len(sparse),
+        n_rich=len(rich),
     )
 
 
@@ -434,7 +467,8 @@ def _render_density_table(stats: dict[str, OntologyStats]) -> str:
         [item.ontology_id, str(item.n_entities), f"{item.density:.3f}", f"{item.label_coverage:.3f}"]
         for item in ordered
     ]
-    return _render_table(["Ontology", "N entities", "Density (0-7)", "Label coverage"], rows)
+    header = ["Ontology", "N entities", f"Density (0-{_MAX_DENSITY})", "Label coverage"]
+    return _render_table(header, rows)
 
 
 def _render_pair_table(rows: list[PairRow]) -> str:
@@ -466,6 +500,11 @@ def _render_pair_table(rows: list[PairRow]) -> str:
     return _render_table(header, cells)
 
 
+def _is_undefined(correlation: SparsityCorrelation) -> bool:
+    """Return True when the correlation could not be computed at all."""
+    return bool(np.isnan(correlation.rho) or np.isnan(correlation.p_value))
+
+
 def _interpretation(correlation: SparsityCorrelation) -> str:
     """
     Describe in one sentence what the observed correlation implies.
@@ -480,11 +519,14 @@ def _interpretation(correlation: SparsityCorrelation) -> str:
     str
         Interpretation sentence.
     """
-    if np.isnan(correlation.rho):
-        return "Too few pairs with both C10 and C3 results to test the hypothesis."
-    if correlation.p_value >= 0.05:
+    if _is_undefined(correlation):
         return (
-            "The correlation is not significant at alpha = 0.05, so annotation "
+            "The correlation is undefined: fewer than three pairs had both C10 and "
+            "C3 results, or min density showed no variation across them."
+        )
+    if correlation.p_value >= _ALPHA:
+        return (
+            f"The correlation is not significant at alpha = {_ALPHA}, so annotation "
             "sparsity does not reliably predict the V8 advantage on D3."
         )
     direction = "supports" if correlation.rho < 0 else "contradicts"
@@ -492,6 +534,26 @@ def _interpretation(correlation: SparsityCorrelation) -> str:
         f"The correlation is significant and {direction} the hypothesis that V8 "
         "gains most where annotation coverage is sparsest."
     )
+
+
+def _verdict(correlation: SparsityCorrelation) -> str:
+    """
+    Return the clause describing how the correlation bears on the hypothesis.
+
+    Parameters
+    ----------
+    correlation : SparsityCorrelation
+        Computed Spearman statistics.
+
+    Returns
+    -------
+    str
+        Verdict clause reflecting both the direction and the significance of
+        the correlation.
+    """
+    if correlation.p_value >= _ALPHA:
+        return "provides no significant support for"
+    return "supports" if correlation.rho < 0 else "runs counter to"
 
 
 def _render_correlation(correlation: SparsityCorrelation) -> str:
@@ -514,9 +576,10 @@ def _render_correlation(correlation: SparsityCorrelation) -> str:
             f"- Spearman r: {correlation.rho:.4f}",
             f"- p-value: {correlation.p_value:.4f}",
             f"- Median min density: {correlation.median_min_density:.3f}",
-            f"- Mean delta F1, sparse pairs (below median): {correlation.sparse_mean_delta:+.4f}",
-            f"- Mean delta F1, annotation-rich pairs (at or above median): "
-            f"{correlation.rich_mean_delta:+.4f}",
+            f"- Mean delta F1, sparse pairs (below median, n = {correlation.n_sparse}): "
+            f"{correlation.sparse_mean_delta:+.4f}",
+            f"- Mean delta F1, annotation-rich pairs (at or above median, n = "
+            f"{correlation.n_rich}): {correlation.rich_mean_delta:+.4f}",
             "",
             _interpretation(correlation),
         ]
@@ -539,19 +602,25 @@ def _finding_statement(correlation: SparsityCorrelation, rows: list[PairRow]) ->
     str
         One-paragraph finding statement.
     """
+    if _is_undefined(correlation):
+        return (
+            f"No finding can be stated: only {correlation.n_pairs} Conference pairs had "
+            f"both C10 and C3 results with varying annotation density, so the Spearman "
+            f"correlation is undefined."
+        )
     wins = sum(1 for row in rows if row.v8_wins)
-    verdict = "is consistent with" if correlation.rho < 0 else "does not support"
     return (
         f"Across the {correlation.n_pairs} Conference alignment pairs for which both "
         f"conditions completed, the annotation-independent relational signature of V8 "
         f"(C10) outperformed the structured key-value verbalisation of V6 (C3) on "
         f"{wins} pairs. Ranking each pair by the annotation density of its sparser "
-        f"ontology, measured as the mean number of seven annotation predicates present "
-        f"per class or object property, yields a Spearman correlation of r = "
-        f"{correlation.rho:.3f} (p = {correlation.p_value:.3f}) against the per-pair F1 "
-        f"difference. Pairs below the median density gain {correlation.sparse_mean_delta:+.3f} "
-        f"F1 on average from V8, against {correlation.rich_mean_delta:+.3f} for pairs at or "
-        f"above the median. This {verdict} the hypothesis that V8's relational signature "
+        f"ontology, measured as the mean number of the {_MAX_DENSITY} annotation "
+        f"predicates present per class or object property, yields a Spearman correlation "
+        f"of r = {correlation.rho:.3f} (p = {correlation.p_value:.3f}) against the "
+        f"per-pair F1 difference. Pairs below the median density gain "
+        f"{correlation.sparse_mean_delta:+.3f} F1 on average from V8, against "
+        f"{correlation.rich_mean_delta:+.3f} for pairs at or above the median. This "
+        f"{_verdict(correlation)} the hypothesis that V8's relational signature "
         f"compensates for missing lexical annotation."
     )
 
