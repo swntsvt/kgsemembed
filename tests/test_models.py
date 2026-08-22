@@ -1,6 +1,5 @@
 """Tests for the embedding model registry and SentenceTransformer factory."""
 
-import dataclasses
 from dataclasses import FrozenInstanceError
 from types import SimpleNamespace
 from unittest.mock import MagicMock
@@ -75,34 +74,6 @@ def test_model_config_is_immutable() -> None:
         MODEL_REGISTRY["M1"].batch_size = 1
 
 
-def test_no_registered_model_executes_remote_code() -> None:
-    enabled = {key for key, cfg in MODEL_REGISTRY.items() if cfg.trust_remote_code}
-    assert enabled == set()
-
-
-def test_trust_remote_code_defaults_to_false() -> None:
-    config = ModelConfig(
-        model_key="MX",
-        model_id="acme/example",
-        max_tokens=128,
-        ppas_budget=None,
-        query_prefix=None,
-        doc_prefix=None,
-        batch_size=8,
-    )
-    assert config.trust_remote_code is False
-
-
-def test_factory_forwards_trust_remote_code(monkeypatch: pytest.MonkeyPatch) -> None:
-    fake = _patch_cpu_and_mock_transformer(monkeypatch)
-    trusting = dataclasses.replace(MODEL_REGISTRY["M3"], trust_remote_code=True)
-    monkeypatch.setitem(MODEL_REGISTRY, "M3", trusting)
-    load_sentence_transformer("M3")
-    fake.assert_called_once_with(
-        "BAAI/bge-m3", device="cpu", trust_remote_code=True
-    )
-
-
 # ---------------------------------------------------------------------------
 # Model lookup
 # ---------------------------------------------------------------------------
@@ -137,7 +108,6 @@ def test_m2_uncapped_differs_from_m2_only_in_budget_and_batch_size() -> None:
     uncapped = get_model_config("M2_uncapped")
     for field in ("model_id", "max_tokens", "query_prefix", "doc_prefix"):
         assert getattr(m2, field) == getattr(uncapped, field)
-    assert m2.trust_remote_code is uncapped.trust_remote_code is False
     assert m2.ppas_budget == 420
     assert uncapped.ppas_budget is None
 
@@ -218,7 +188,7 @@ def test_model_constructed_only_when_factory_called(
     assert fake.call_count == 0
     model, _ = load_sentence_transformer("M1")
     fake.assert_called_once_with(
-        "sentence-transformers/all-MiniLM-L6-v2", device="cpu", trust_remote_code=False
+        "sentence-transformers/all-MiniLM-L6-v2", device="cpu"
     )
     assert model is fake.return_value
 
@@ -250,9 +220,7 @@ def test_factory_selects_mps_over_cuda(
     fake = MagicMock(name="SentenceTransformer")
     monkeypatch.setattr(models, "SentenceTransformer", fake)
     load_sentence_transformer("M2")
-    fake.assert_called_once_with(
-        "BAAI/bge-large-en-v1.5", device="mps", trust_remote_code=False
-    )
+    fake.assert_called_once_with("BAAI/bge-large-en-v1.5", device="mps")
 
 
 # ---------------------------------------------------------------------------
