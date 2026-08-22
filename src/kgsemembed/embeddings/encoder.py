@@ -8,6 +8,7 @@ prefix.  This module never loads models, performs no file I/O, and contains no
 verbalisation logic.
 """
 
+import logging
 from typing import List
 
 import numpy as np
@@ -15,7 +16,40 @@ from sentence_transformers import SentenceTransformer
 
 from kgsemembed.embeddings.models import ModelConfig, get_model_config
 
+_LOGGER = logging.getLogger("kgsemembed.embeddings.encoder")
+
 _SUPPORTED_ROLES = ("source", "candidate")
+_LONG_TEXT_TOKEN_THRESHOLD = 512
+_CHARS_PER_TOKEN = 4
+
+
+def _estimate_batch_tokens(texts: List[str], max_tokens: int) -> int:
+    """
+    Estimate the encoded sequence length that ``texts`` will occupy.
+
+    Attention memory is driven by the padded sequence length of a batch, which
+    its longest member sets, so the longest text is the memory-relevant
+    statistic rather than the arithmetic mean. Four characters per token is a
+    fast approximation that avoids tokenising the corpus twice. The estimate is
+    capped at ``max_tokens`` because the tokeniser truncates there, so text
+    beyond that limit costs no additional memory.
+
+    Parameters
+    ----------
+    texts : List[str]
+        Texts about to be encoded in a single call.
+    max_tokens : int
+        Maximum sequence length the model accepts before truncating.
+
+    Returns
+    -------
+    int
+        Estimated token count, or ``0`` when ``texts`` is empty.
+    """
+    if not texts:
+        return 0
+    longest = max(len(text) for text in texts) // _CHARS_PER_TOKEN
+    return min(longest, max_tokens)
 
 
 class EmbeddingEncoder:
@@ -128,6 +162,42 @@ class EmbeddingEncoder:
         """
         return self._encode_one(text, "candidate")
 
+    def _effective_batch_size(self, texts: List[str]) -> int:
+        """
+        Return the batch size that keeps tokens per batch roughly constant.
+
+        Long sequences make attention memory grow quadratically, which on MPS
+        overruns the single-buffer limit at the model's configured batch size.
+        Dividing the batch by each multiple of the threshold length holds the
+        total encoded tokens near the value the configured batch size was
+        chosen for.  A model whose token limit is at or below the threshold can
+        never exceed that budget and so always keeps its configured batch size.
+
+        Parameters
+        ----------
+        texts : List[str]
+            Prefixed texts about to be encoded in a single call.
+
+        Returns
+        -------
+        int
+            The configured batch size, or a reduced size of at least ``1``.
+        """
+        estimated_avg_tokens = _estimate_batch_tokens(texts, self.config.max_tokens)
+        if estimated_avg_tokens <= _LONG_TEXT_TOKEN_THRESHOLD:
+            return self.config.batch_size
+        length_factor = estimated_avg_tokens // _LONG_TEXT_TOKEN_THRESHOLD
+        effective_batch = max(1, self.config.batch_size // length_factor)
+        if effective_batch < self.config.batch_size:
+            _LOGGER.debug(
+                "Reducing batch size from %d to %d for %d texts with estimated avg %d tokens",
+                self.config.batch_size,
+                effective_batch,
+                len(texts),
+                estimated_avg_tokens,
+            )
+        return effective_batch
+
     def encode_batch(
         self,
         texts: List[str],
@@ -136,6 +206,10 @@ class EmbeddingEncoder:
     ) -> np.ndarray:
         """
         Encode a batch of entities into unit-normalised ``float32`` vectors.
+
+        The encoding batch size is reduced for long texts so that attention
+        memory stays within device limits; short texts use the configured batch
+        size unchanged.
 
         Parameters
         ----------
@@ -155,7 +229,7 @@ class EmbeddingEncoder:
         prefixed = [self._apply_prefix(text, role) for text in texts]
         embeddings = self.model.encode(
             prefixed,
-            batch_size=self.config.batch_size,
+            batch_size=self._effective_batch_size(prefixed),
             normalize_embeddings=True,
             convert_to_numpy=True,
             show_progress_bar=show_progress,
