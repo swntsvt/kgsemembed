@@ -56,6 +56,12 @@ _COUNT_FIELDS = ("n_source_entities", "n_candidates_per_entity")
 _REQUIRED_FIELDS = (*_TOP_LEVEL_FIELDS, *_METRIC_FIELDS, *_COUNT_FIELDS)
 _RESULT_COLUMNS = (*_REQUIRED_FIELDS, "ablation_group")
 
+_PER_ENTITY_TYPE_FIELD = "per_entity_type"
+_ENTITY_TYPE_COLUMN = "entity_type"
+_REF_COUNT_COLUMN = "n_refs"
+_OVERALL_ENTITY_TYPE = "overall"
+_BREAKDOWN_COLUMNS = (*_RESULT_COLUMNS, _ENTITY_TYPE_COLUMN, _REF_COUNT_COLUMN)
+
 _SUMMARY_FLOAT_FIELDS = (
     "mean_f1",
     "std_f1",
@@ -71,9 +77,16 @@ _PPAS_COMPARISONS = (("C5", "C14", "D5"), ("C10", "C15", "D1"))
 _NO_WARNING_CELL = ""
 
 
-def _empty_results_frame() -> pd.DataFrame:
+def _result_columns(include_entity_type_breakdown: bool = False) -> List[str]:
+    """Return the loaded schema, widened by two columns when rows are expanded."""
+    if include_entity_type_breakdown:
+        return list(_BREAKDOWN_COLUMNS)
+    return list(_RESULT_COLUMNS)
+
+
+def _empty_results_frame(include_entity_type_breakdown: bool = False) -> pd.DataFrame:
     """Return an empty results DataFrame carrying the canonical schema."""
-    return pd.DataFrame(columns=list(_RESULT_COLUMNS))
+    return pd.DataFrame(columns=_result_columns(include_entity_type_breakdown))
 
 
 def _load_json(path: Path) -> Optional[dict]:
@@ -123,31 +136,91 @@ def _build_record(payload: dict, path: Path) -> Optional[dict]:
     return record
 
 
-def load_all_results(results_dir: str = _DEFAULT_RESULTS_DIR) -> pd.DataFrame:
+def _is_complete_bucket(entity_type: str, metrics: object, record: dict) -> bool:
     """
-    Load every experiment result file under ``results_dir`` into one DataFrame.
+    Report whether one entity-type bucket carries every metric a row needs.
 
-    The directory is walked recursively for files matching ``*_results.json``.
-    Malformed files, records missing a required field, and records for
-    unregistered conditions are skipped with a warning; a repeated
-    ``(condition_id, dataset_id, pair_name)`` combination keeps its first
-    occurrence.  ``ablation_group`` is derived from ``EXPERIMENT_CONDITIONS``.
+    A hand-edited or truncated result file can hold a bucket that is not a
+    mapping at all, or one missing a metric.  Either is skipped with a warning
+    rather than aborting the load or emitting a row of silent gaps, matching how
+    :func:`_build_record` treats an incomplete pair-level result.
 
     Parameters
     ----------
-    results_dir : str
-        Root directory of previously generated result files.
+    entity_type : str
+        Key of the bucket, used only for the warning message.
+    metrics : object
+        Value found under that key, which need not be a mapping.
+    record : dict
+        The pair-level row, used only to identify the result in the warning.
 
     Returns
     -------
-    pd.DataFrame
-        One row per AlignmentPair per condition over :data:`_RESULT_COLUMNS`, or
-        an empty DataFrame with that schema when no valid results are found.
+    bool
+        ``True`` when the bucket can be expanded into a row.
     """
-    root = Path(results_dir)
-    if not root.is_dir():
-        _LOGGER.warning("Results directory not found: %s", root)
-        return _empty_results_frame()
+    if isinstance(metrics, dict) and all(field in metrics for field in _METRIC_FIELDS):
+        return True
+    _LOGGER.warning(
+        "Skipping %s breakdown of %s; incomplete entity-type metrics.",
+        entity_type,
+        (record["condition_id"], record["dataset_id"], record["pair_name"]),
+    )
+    return False
+
+
+def _entity_type_records(payload: dict, record: dict) -> List[dict]:
+    """
+    Expand a result's per-entity-type metrics into one row per entity type.
+
+    Result files written before the breakdown existed carry no
+    ``per_entity_type`` field and yield no extra rows, so old and new files
+    aggregate side by side.
+
+    Parameters
+    ----------
+    payload : dict
+        Parsed result JSON payload.
+    record : dict
+        The pair-level row already built from ``payload``.
+
+    Returns
+    -------
+    List[dict]
+        One row per reported entity type, each copying the pair-level row with
+        its metrics replaced by that entity type's.
+    """
+    breakdown = payload.get(_PER_ENTITY_TYPE_FIELD)
+    if not isinstance(breakdown, dict):
+        return []
+    rows: List[dict] = []
+    for entity_type, metrics in breakdown.items():
+        if not _is_complete_bucket(entity_type, metrics, record):
+            continue
+        row = dict(record)
+        row.update({field: metrics[field] for field in _METRIC_FIELDS})
+        row[_ENTITY_TYPE_COLUMN] = entity_type
+        row[_REF_COUNT_COLUMN] = metrics.get(_REF_COUNT_COLUMN)
+        rows.append(row)
+    return rows
+
+
+def _collect_records(root: Path, include_entity_type_breakdown: bool) -> List[dict]:
+    """
+    Read every result file under ``root`` into flat rows.
+
+    Parameters
+    ----------
+    root : Path
+        Root directory walked recursively for ``*_results.json`` files.
+    include_entity_type_breakdown : bool
+        Append one row per entity type after each pair-level row.
+
+    Returns
+    -------
+    List[dict]
+        Rows in file order, with entity-type rows following their pair.
+    """
     records: List[dict] = []
     seen: set = set()
     for path in sorted(root.rglob(_RESULT_GLOB)):
@@ -162,10 +235,54 @@ def load_all_results(results_dir: str = _DEFAULT_RESULTS_DIR) -> pd.DataFrame:
             _LOGGER.warning("Duplicate result for %s; skipping %s.", key, path)
             continue
         seen.add(key)
+        record[_ENTITY_TYPE_COLUMN] = _OVERALL_ENTITY_TYPE
         records.append(record)
+        if include_entity_type_breakdown:
+            records.extend(_entity_type_records(payload, record))
+    return records
+
+
+def load_all_results(
+    results_dir: str = _DEFAULT_RESULTS_DIR,
+    include_entity_type_breakdown: bool = False,
+) -> pd.DataFrame:
+    """
+    Load every experiment result file under ``results_dir`` into one DataFrame.
+
+    The directory is walked recursively for files matching ``*_results.json``.
+    Malformed files, records missing a required field, and records for
+    unregistered conditions are skipped with a warning; a repeated
+    ``(condition_id, dataset_id, pair_name)`` combination keeps its first
+    occurrence.  ``ablation_group`` is derived from ``EXPERIMENT_CONDITIONS``.
+
+    Parameters
+    ----------
+    results_dir : str
+        Root directory of previously generated result files.
+    include_entity_type_breakdown : bool
+        Additionally emit one row per entity type for every mixed-type result
+        that reports a ``per_entity_type`` block, tagging each row with
+        ``entity_type`` and ``n_refs``.  Pair-level rows are retained unchanged
+        and carry ``entity_type == "overall"``.
+
+    Returns
+    -------
+    pd.DataFrame
+        One row per AlignmentPair per condition over :data:`_RESULT_COLUMNS`, or
+        an empty DataFrame with that schema when no valid results are found.
+        With ``include_entity_type_breakdown`` the schema widens to
+        :data:`_BREAKDOWN_COLUMNS` and entity-type rows are interleaved.
+    """
+    root = Path(results_dir)
+    if not root.is_dir():
+        _LOGGER.warning("Results directory not found: %s", root)
+        return _empty_results_frame(include_entity_type_breakdown)
+    records = _collect_records(root, include_entity_type_breakdown)
     if not records:
-        return _empty_results_frame()
-    return pd.DataFrame.from_records(records, columns=list(_RESULT_COLUMNS))
+        return _empty_results_frame(include_entity_type_breakdown)
+    return pd.DataFrame.from_records(
+        records, columns=_result_columns(include_entity_type_breakdown)
+    )
 
 
 def build_condition_summary_table(df: pd.DataFrame) -> pd.DataFrame:
