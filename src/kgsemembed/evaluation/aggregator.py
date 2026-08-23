@@ -63,6 +63,38 @@ _REF_COUNT_COLUMN = "n_refs"
 _OVERALL_ENTITY_TYPE = "overall"
 _BREAKDOWN_COLUMNS = (*_RESULT_COLUMNS, _ENTITY_TYPE_COLUMN, _REF_COUNT_COLUMN)
 
+_ENTITY_TYPES = ("class", "predicate")
+_MIXED_DATASET_IDS = ("D3", "D4_schema")
+_MIN_ENTITY_TYPE_REFS = 3
+_ENTITY_TYPE_GROUP_KEYS = ("condition_id", "strategy", "model_key")
+_ENTITY_TYPE_KEY_LABELS = {
+    "condition_id": "Condition",
+    "strategy": "Strategy",
+    "model_key": "Model",
+}
+_ENTITY_TYPE_TABLE_COLUMNS = (
+    "Condition",
+    "Strategy",
+    "Model",
+    "Class F1",
+    "Class n_refs",
+    "Predicate F1",
+    "Predicate n_refs",
+    "Class vs Predicate gap",
+)
+_ENTITY_TYPE_FLOAT_COLUMNS = ("Class F1", "Predicate F1", "Class vs Predicate gap")
+_ENTITY_TYPE_COUNT_COLUMNS = ("Class n_refs", "Predicate n_refs")
+_NO_ENTITY_TYPE_DATA = "_No per-entity-type data available._"
+_FINDING_DATASET_ID = "D3"
+_NO_FINDING_DATA = (
+    f"No {_FINDING_DATASET_ID} pair reports a per-entity-type breakdown, so no "
+    "aggregate finding is computed."
+)
+_ONE_BUCKET_ONLY = (
+    f"No {_FINDING_DATASET_ID} condition reports both entity types, so no gap "
+    "can be computed."
+)
+
 _SUMMARY_FLOAT_FIELDS = (
     "mean_f1",
     "std_f1",
@@ -512,6 +544,259 @@ def _per_dataset_section(df: pd.DataFrame) -> str:
     return _section("Per-Dataset Breakdown", "\n\n".join(blocks))
 
 
+def _mixed_entity_type_rows(df_expanded: pd.DataFrame) -> pd.DataFrame:
+    """
+    Select the class and predicate rows of the mixed-type datasets.
+
+    A frame loaded without ``include_entity_type_breakdown`` carries no
+    ``entity_type`` column at all and yields nothing, so a caller that never
+    asked for the breakdown still renders a well-formed report.
+
+    Parameters
+    ----------
+    df_expanded : pd.DataFrame
+        Results as returned by :func:`load_all_results` with
+        ``include_entity_type_breakdown=True``.
+
+    Returns
+    -------
+    pd.DataFrame
+        The D3 and D4_schema entity-type rows whose bucket reported at least
+        :data:`_MIN_ENTITY_TYPE_REFS` test references.
+    """
+    if not set(_BREAKDOWN_COLUMNS).issubset(df_expanded.columns):
+        return pd.DataFrame(columns=list(_BREAKDOWN_COLUMNS))
+    rows = df_expanded.copy()
+    rows[_REF_COUNT_COLUMN] = pd.to_numeric(rows[_REF_COUNT_COLUMN], errors="coerce")
+    return rows[
+        rows[_ENTITY_TYPE_COLUMN].isin(_ENTITY_TYPES)
+        & rows["dataset_id"].isin(_MIXED_DATASET_IDS)
+        & (rows[_REF_COUNT_COLUMN] >= _MIN_ENTITY_TYPE_REFS)
+    ]
+
+
+def _entity_type_means(rows: pd.DataFrame) -> pd.DataFrame:
+    """Aggregate mean F1 and total references per condition and entity type."""
+    grouped = rows.groupby(
+        [*_ENTITY_TYPE_GROUP_KEYS, _ENTITY_TYPE_COLUMN], sort=True
+    ).agg(mean_f1=("f1", "mean"), total_refs=(_REF_COUNT_COLUMN, "sum"))
+    return grouped.unstack(_ENTITY_TYPE_COLUMN)
+
+
+def _entity_type_column(wide: pd.DataFrame, metric: str, entity_type: str) -> pd.Series:
+    """Return one aggregated metric of one entity type, all-missing when absent."""
+    if (metric, entity_type) in wide.columns:
+        return wide[(metric, entity_type)]
+    return pd.Series(float("nan"), index=wide.index)
+
+
+def _entity_type_table(rows: pd.DataFrame) -> pd.DataFrame:
+    """Build the per-condition class-versus-predicate comparison table."""
+    wide = _entity_type_means(rows)
+    class_f1 = _entity_type_column(wide, "mean_f1", "class")
+    predicate_f1 = _entity_type_column(wide, "mean_f1", "predicate")
+    table = pd.DataFrame(
+        {
+            "Class F1": class_f1,
+            "Class n_refs": _entity_type_column(wide, "total_refs", "class"),
+            "Predicate F1": predicate_f1,
+            "Predicate n_refs": _entity_type_column(wide, "total_refs", "predicate"),
+            "Class vs Predicate gap": class_f1 - predicate_f1,
+        }
+    ).reset_index()
+    return table.rename(columns=_ENTITY_TYPE_KEY_LABELS)
+
+
+def _ref_count_cell(value: object) -> Optional[int]:
+    """Render a summed reference count as a whole number, keeping gaps missing."""
+    if value is None or (isinstance(value, float) and math.isnan(value)):
+        return None
+    return int(value)
+
+
+def _order_entity_type_table(table: pd.DataFrame) -> pd.DataFrame:
+    """Sort by class F1 descending and round the table for rendering."""
+    ordered = table.sort_values(
+        ["Class F1", "Condition"], ascending=[False, True], na_position="last"
+    ).reset_index(drop=True)
+    float_columns = list(_ENTITY_TYPE_FLOAT_COLUMNS)
+    ordered[float_columns] = ordered[float_columns].round(4)
+    for column in _ENTITY_TYPE_COUNT_COLUMNS:
+        ordered[column] = ordered[column].map(_ref_count_cell)
+    return ordered[list(_ENTITY_TYPE_TABLE_COLUMNS)]
+
+
+def _largest_divergence(rows: pd.DataFrame) -> Optional[tuple]:
+    """
+    Locate the single pair whose class F1 most exceeds its predicate F1.
+
+    Parameters
+    ----------
+    rows : pd.DataFrame
+        Entity-type rows as returned by :func:`_mixed_entity_type_rows`.
+
+    Returns
+    -------
+    Optional[tuple]
+        ``(condition_id, pair_name, gap)`` for the widest gap, or ``None`` when
+        no pair reports both entity types.
+    """
+    pivot = rows.pivot_table(
+        index=["condition_id", "pair_name"],
+        columns=_ENTITY_TYPE_COLUMN,
+        values="f1",
+        aggfunc="mean",
+    )
+    if not set(_ENTITY_TYPES).issubset(pivot.columns):
+        return None
+    gaps = (pivot["class"] - pivot["predicate"]).dropna()
+    if gaps.empty:
+        return None
+    widest = gaps.abs().idxmax()
+    return widest[0], widest[1], float(gaps.loc[widest])
+
+
+def _harder_entity_type_clause(gap: float) -> str:
+    """Open the finding by naming the entity type that scores lower, if either does."""
+    if gap == 0:
+        return "Neither entity type is harder"
+    harder = "Predicates" if gap > 0 else "Classes"
+    return f"{harder} are the harder entity type"
+
+
+def _divergence_sentence(rows: pd.DataFrame) -> str:
+    """
+    Cite the condition and pair whose two entity types diverge most.
+
+    The widest gap is taken by magnitude rather than sign, so the pair cited is
+    the strongest example whichever entity type leads it; quoting a signed
+    maximum would print a negative "exceeds by" whenever predicates lead.
+
+    Parameters
+    ----------
+    rows : pd.DataFrame
+        Entity-type rows as returned by :func:`_mixed_entity_type_rows`.
+
+    Returns
+    -------
+    str
+        The closing sentence of the finding paragraph.
+    """
+    widest = _largest_divergence(rows)
+    if widest is None:
+        return "No pair reports both entity types, so no divergence is cited."
+    condition_id, pair_name, gap = widest
+    if gap == 0:
+        return "No pair diverges; class and predicate F1 are equal throughout."
+    leader, trailer = ("class", "predicate") if gap > 0 else ("predicate", "class")
+    return (
+        f"The widest divergence is {condition_id} on {pair_name}, where {leader} F1 "
+        f"exceeds {trailer} F1 by {abs(gap):.4f}."
+    )
+
+
+def _count_phrase(count: int, noun: str) -> str:
+    """Render a count with its noun in grammatical agreement."""
+    return f"{count} {noun}" if count == 1 else f"{count} {noun}s"
+
+
+def _finding_averages(complete: pd.DataFrame) -> tuple:
+    """Return the mean class F1, the mean predicate F1, and their difference."""
+    mean_class = float(complete["Class F1"].mean())
+    mean_predicate = float(complete["Predicate F1"].mean())
+    return mean_class, mean_predicate, mean_class - mean_predicate
+
+
+def _finding_sentences(rows: pd.DataFrame, table: pd.DataFrame) -> str:
+    """
+    State the harder entity type, the mean gap, and the widest divergence.
+
+    Only conditions reporting both entity types are averaged.  Averaging class
+    F1 over one set of conditions and predicate F1 over another would quote a
+    gap that does not equal the difference of the two means printed beside it,
+    and the gap is subtracted from those means so the three always agree.
+
+    Parameters
+    ----------
+    rows : pd.DataFrame
+        Entity-type rows already narrowed to :data:`_FINDING_DATASET_ID`.
+    table : pd.DataFrame
+        Per-condition summary built from ``rows``.
+
+    Returns
+    -------
+    str
+        The finding paragraph, or a note when no condition reports both types.
+    """
+    complete = table.dropna(subset=["Class F1", "Predicate F1"])
+    if complete.empty:
+        return _ONE_BUCKET_ONLY
+    scoped = rows[rows["condition_id"].isin(set(complete["Condition"]))]
+    mean_class, mean_predicate, gap = _finding_averages(complete)
+    return (
+        f"{_harder_entity_type_clause(gap)}: across the "
+        f"{_count_phrase(len(complete), 'condition')} reporting both entity types "
+        f"on {_FINDING_DATASET_ID}, mean class F1 is {mean_class:.4f} against mean "
+        f"predicate F1 of {mean_predicate:.4f}. The mean class-versus-predicate gap "
+        f"is {gap:.4f} F1 over "
+        f"{_count_phrase(scoped['pair_name'].nunique(), f'{_FINDING_DATASET_ID} pair')}. "
+        f"{_divergence_sentence(scoped)}"
+    )
+
+
+def _entity_type_finding(rows: pd.DataFrame) -> str:
+    """
+    Compose the data-driven finding paragraph beneath the summary table.
+
+    Only :data:`_FINDING_DATASET_ID` rows are averaged.  D4_schema contributes a
+    single pair, so weighting it equally with every Conference pair lets one
+    alignment dictate which entity type the paragraph calls harder.  The summary
+    table above still reports both datasets.
+
+    Parameters
+    ----------
+    rows : pd.DataFrame
+        Entity-type rows as returned by :func:`_mixed_entity_type_rows`.
+
+    Returns
+    -------
+    str
+        The finding paragraph, or a note when no qualifying result exists.
+    """
+    scoped = rows[rows["dataset_id"] == _FINDING_DATASET_ID]
+    if scoped.empty:
+        return _NO_FINDING_DATA
+    return _finding_sentences(scoped, _entity_type_table(scoped))
+
+
+def _entity_type_section(df_expanded: pd.DataFrame) -> str:
+    """
+    Build the class-versus-predicate analysis section for mixed-type datasets.
+
+    The table covers every mixed-type dataset; the finding paragraph beneath it
+    averages :data:`_FINDING_DATASET_ID` alone.  See :func:`_entity_type_finding`
+    for why the two scopes differ.
+
+    Parameters
+    ----------
+    df_expanded : pd.DataFrame
+        Results as returned by :func:`load_all_results` with
+        ``include_entity_type_breakdown=True``.
+
+    Returns
+    -------
+    str
+        The rendered Markdown section, carrying a placeholder note when no
+        result reports a class or predicate breakdown.
+    """
+    rows = _mixed_entity_type_rows(df_expanded)
+    if rows.empty:
+        return _section("Entity-Type Analysis", _NO_ENTITY_TYPE_DATA)
+    table = _order_entity_type_table(_entity_type_table(rows))
+    body = f"{_render_dataframe(table)}\n\n{_entity_type_finding(rows)}"
+    return _section("Entity-Type Analysis", body)
+
+
 def _ablation_group_block(summary: pd.DataFrame, group: str) -> str:
     """Build one ablation-group sub-table using registry-defined membership."""
     heading = f"## Group {group}"
@@ -641,6 +926,30 @@ def _ppas_section(df: pd.DataFrame) -> str:
     return _section("PPAS Ablation", _render_dataframe(pd.DataFrame.from_records(rows)))
 
 
+def _pair_level_frame(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Return one row per AlignmentPair, dropping any interleaved entity-type rows.
+
+    Every section other than the entity-type analysis aggregates one row per
+    pair, so a frame loaded with the breakdown must be narrowed first or each
+    mixed-type pair would be counted once more per entity type it reports.
+
+    Parameters
+    ----------
+    df : pd.DataFrame
+        Results as returned by :func:`load_all_results`, loaded with or without
+        ``include_entity_type_breakdown``.
+
+    Returns
+    -------
+    pd.DataFrame
+        The pair-level rows, unchanged when no breakdown was loaded.
+    """
+    if _ENTITY_TYPE_COLUMN not in df.columns:
+        return df
+    return df[df[_ENTITY_TYPE_COLUMN] == _OVERALL_ENTITY_TYPE]
+
+
 def generate_markdown_report(
     df: pd.DataFrame,
     stats_results: Optional[List[dict]] = None,
@@ -650,11 +959,16 @@ def generate_markdown_report(
     Render the full Phase 2 experiment report to ``output_path``.
 
     Sections are emitted in a fixed order: executive summary, condition summary,
-    per-dataset breakdown, ablation-group analysis, an optional
-    statistical-significance section, and PPAS ablation.  The statistical
-    section is included only when ``stats_results`` is not ``None``.
+    per-dataset breakdown, entity-type analysis, ablation-group analysis, an
+    optional statistical-significance section, and PPAS ablation.  The
+    statistical section is included only when ``stats_results`` is not ``None``.
     Parent directories are created as needed and identical inputs always produce
     byte-for-byte identical output.
+
+    The entity-type analysis is populated only when ``df`` was loaded with
+    ``include_entity_type_breakdown=True``; otherwise that one section carries a
+    placeholder note and every other section is unaffected.  The breakdown rows
+    are consumed here alone, so no other section double-counts a mixed pair.
 
     Parameters
     ----------
@@ -665,16 +979,18 @@ def generate_markdown_report(
     output_path : str
         Destination Markdown file.
     """
-    summary = build_condition_summary_table(df)
+    pairs = _pair_level_frame(df)
+    summary = build_condition_summary_table(pairs)
     sections = [
-        _executive_summary_section(df, summary),
+        _executive_summary_section(pairs, summary),
         _condition_summary_section(summary),
-        _per_dataset_section(df),
+        _per_dataset_section(pairs),
+        _entity_type_section(df),
         _ablation_group_section(summary),
     ]
     if stats_results is not None:
         sections.append(_statistical_section(stats_results))
-    sections.append(_ppas_section(df))
+    sections.append(_ppas_section(pairs))
     path = Path(output_path)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text("\n\n".join(sections) + "\n", encoding="utf-8")

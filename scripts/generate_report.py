@@ -59,7 +59,7 @@ def main() -> None:
     np.random.seed(42)
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s %(message)s")
     args = _build_arg_parser().parse_args()
-    df = load_all_results(args.results_dir)
+    df = load_all_results(args.results_dir, include_entity_type_breakdown=True)
     comparisons = _collect_comparisons(args.results_dir)
     generate_markdown_report(df, comparisons or None, args.output)
     print(f"Report written to {args.output}")
