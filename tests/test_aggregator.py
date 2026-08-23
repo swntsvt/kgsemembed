@@ -564,7 +564,7 @@ def test_report_created_with_parent_dirs(full_results_dir: Path, tmp_path: Path)
     assert "| condition_id |" in output.read_text(encoding="utf-8")
 
 
-def test_report_six_sections_with_stats(full_results_dir: Path, tmp_path: Path) -> None:
+def test_report_seven_sections_with_stats(full_results_dir: Path, tmp_path: Path) -> None:
     df = load_all_results(str(full_results_dir))
     output = tmp_path / "report.md"
     generate_markdown_report(df, _synthetic_stats(), str(output))
@@ -573,18 +573,19 @@ def test_report_six_sections_with_stats(full_results_dir: Path, tmp_path: Path) 
         "# Executive Summary",
         "# Condition Summary Table",
         "# Per-Dataset Breakdown",
+        "# Entity-Type Analysis",
         "# Ablation Group Analysis",
         "# Statistical Significance",
         "# PPAS Ablation",
     ]
 
 
-def test_report_five_sections_without_stats(full_results_dir: Path, tmp_path: Path) -> None:
+def test_report_six_sections_without_stats(full_results_dir: Path, tmp_path: Path) -> None:
     df = load_all_results(str(full_results_dir))
     output = tmp_path / "report.md"
     generate_markdown_report(df, None, str(output))
     headings = _headings(output.read_text(encoding="utf-8"))
-    assert len(headings) == 5
+    assert len(headings) == 6
     assert "# Statistical Significance" not in headings
 
 
@@ -597,11 +598,16 @@ def test_report_is_deterministic(full_results_dir: Path, tmp_path: Path) -> None
     assert first.read_bytes() == second.read_bytes()
 
 
-def test_report_omits_entity_type_section(full_results_dir: Path, tmp_path: Path) -> None:
+def test_report_entity_type_placeholder_without_breakdown(
+    full_results_dir: Path, tmp_path: Path
+) -> None:
+    """A frame loaded without the breakdown still renders the section."""
     df = load_all_results(str(full_results_dir))
     output = tmp_path / "report.md"
     generate_markdown_report(df, None, str(output))
-    assert "Entity-Type Analysis" not in output.read_text(encoding="utf-8")
+    text = output.read_text(encoding="utf-8")
+    assert "# Entity-Type Analysis" in text
+    assert "_No per-entity-type data available._" in text
 
 
 def test_report_handles_empty_results(tmp_path: Path) -> None:
@@ -767,6 +773,443 @@ def test_report_per_dataset_empty_results_note(tmp_path: Path) -> None:
     section = _per_dataset_section(output.read_text(encoding="utf-8"))
     assert "_No results available._" in section
     assert _headings_of(section) == []
+
+
+# ---------------------------------------------------------------------------
+# Entity-Type Analysis section
+# ---------------------------------------------------------------------------
+_ENTITY_TYPE_HEADER = (
+    "| Condition | Strategy | Model | Class F1 | Class n_refs "
+    "| Predicate F1 | Predicate n_refs | Class vs Predicate gap |"
+)
+
+
+def _write_breakdown_result(
+    results_dir: Path,
+    condition_id: str,
+    pair: tuple,
+    buckets: Dict[str, Dict[str, float]],
+) -> Path:
+    """Write one result whose ``per_entity_type`` block holds ``buckets``."""
+    dataset_id, pair_name = pair
+    return _write_result(
+        results_dir,
+        condition_id,
+        dataset_id,
+        pair_name,
+        0.17,
+        overrides={"per_entity_type": buckets},
+    )
+
+
+def _entity_type_report(results_dir: Path, output: Path) -> str:
+    """Render a report from the expanded frame and return its text."""
+    df = load_all_results(str(results_dir), include_entity_type_breakdown=True)
+    generate_markdown_report(df, None, str(output))
+    return output.read_text(encoding="utf-8")
+
+
+def _entity_type_section_text(text: str) -> str:
+    """Return the body of the report's Entity-Type Analysis section."""
+    return text.split("# Entity-Type Analysis", 1)[1].split("\n# ", 1)[0]
+
+
+def _entity_type_rows(text: str) -> List[str]:
+    """Return the table rows rendered in the Entity-Type Analysis section."""
+    section = _entity_type_section_text(text)
+    return [line for line in section.splitlines() if line.startswith("|")]
+
+
+def _expected_row(condition_id: str, cells: str) -> str:
+    """Compose the expected entity-type row for a registered condition."""
+    condition = get_condition(condition_id)
+    return f"| {condition_id} | {condition.strategy_name} | {condition.model_key} | {cells} |"
+
+
+def _cmt_edas_buckets() -> Dict[str, Dict[str, float]]:
+    return {
+        "class": _entity_type_metrics(0.21, 18),
+        "predicate": _entity_type_metrics(0.08, 6),
+    }
+
+
+def test_entity_type_section_between_breakdown_and_ablation(tmp_path: Path) -> None:
+    results_dir = tmp_path / "results"
+    _write_breakdown_result(results_dir, "C1", ("D3", "cmt-edas"), _cmt_edas_buckets())
+    text = _entity_type_report(results_dir, tmp_path / "report.md")
+    assert _headings(text) == [
+        "# Executive Summary",
+        "# Condition Summary Table",
+        "# Per-Dataset Breakdown",
+        "# Entity-Type Analysis",
+        "# Ablation Group Analysis",
+        "# PPAS Ablation",
+    ]
+
+
+def test_entity_type_table_columns_and_values(tmp_path: Path) -> None:
+    results_dir = tmp_path / "results"
+    _write_breakdown_result(results_dir, "C1", ("D3", "cmt-edas"), _cmt_edas_buckets())
+    rows = _entity_type_rows(_entity_type_report(results_dir, tmp_path / "report.md"))
+    assert rows[0] == _ENTITY_TYPE_HEADER
+    assert rows[2:] == [_expected_row("C1", "0.2100 | 18 | 0.0800 | 6 | 0.1300")]
+
+
+def test_entity_type_table_averages_over_pairs_and_datasets(tmp_path: Path) -> None:
+    """One row per condition, aggregating every mixed pair it ran on."""
+    results_dir = tmp_path / "results"
+    _write_breakdown_result(
+        results_dir,
+        "C1",
+        ("D3", "cmt-edas"),
+        {"class": _entity_type_metrics(0.20, 10), "predicate": _entity_type_metrics(0.10, 4)},
+    )
+    _write_breakdown_result(
+        results_dir,
+        "C1",
+        ("D4_schema", "memoryalpha-stexpanded"),
+        {"class": _entity_type_metrics(0.40, 30), "predicate": _entity_type_metrics(0.20, 6)},
+    )
+    rows = _entity_type_rows(_entity_type_report(results_dir, tmp_path / "report.md"))
+    assert rows[2:] == [_expected_row("C1", "0.3000 | 40 | 0.1500 | 10 | 0.1500")]
+
+
+def test_entity_type_table_sorted_by_class_f1_descending(tmp_path: Path) -> None:
+    results_dir = tmp_path / "results"
+    for condition_id, class_f1 in (("C1", 0.30), ("C2", 0.90), ("C3", 0.60)):
+        _write_breakdown_result(
+            results_dir,
+            condition_id,
+            ("D3", "cmt-edas"),
+            {
+                "class": _entity_type_metrics(class_f1, 18),
+                "predicate": _entity_type_metrics(0.05, 6),
+            },
+        )
+    rows = _entity_type_rows(_entity_type_report(results_dir, tmp_path / "report.md"))
+    assert [row.split(" | ")[0].lstrip("| ") for row in rows[2:]] == ["C2", "C3", "C1"]
+
+
+def test_entity_type_table_omits_conditions_without_breakdown(tmp_path: Path) -> None:
+    """A condition that only ran on D1/D2 never reaches the entity-type table."""
+    results_dir = tmp_path / "results"
+    _write_breakdown_result(results_dir, "C1", ("D3", "cmt-edas"), _cmt_edas_buckets())
+    for pair_index in range(3):
+        _write_result(results_dir, "C11", "D1", f"D1_p{pair_index}", 0.5)
+    text = _entity_type_report(results_dir, tmp_path / "report.md")
+    section = _entity_type_section_text(text)
+    assert "| C1 |" in section
+    assert "| C11 |" not in section
+    assert "# Condition Summary Table" in text
+
+
+def test_entity_type_table_ignores_non_mixed_datasets(tmp_path: Path) -> None:
+    """Only D3 and D4_schema contribute; a stray breakdown elsewhere is dropped."""
+    results_dir = tmp_path / "results"
+    _write_breakdown_result(
+        results_dir, "C1", ("D4_instance", "memoryalpha-stexpanded"), _cmt_edas_buckets()
+    )
+    section = _entity_type_section_text(
+        _entity_type_report(results_dir, tmp_path / "report.md")
+    )
+    assert "_No per-entity-type data available._" in section
+
+
+def test_entity_type_table_drops_buckets_below_the_ref_threshold(tmp_path: Path) -> None:
+    results_dir = tmp_path / "results"
+    _write_breakdown_result(
+        results_dir,
+        "C1",
+        ("D3", "cmt-edas"),
+        {
+            "class": _entity_type_metrics(0.21, 18),
+            "predicate": _entity_type_metrics(0.08, 2),
+        },
+    )
+    rows = _entity_type_rows(_entity_type_report(results_dir, tmp_path / "report.md"))
+    assert rows[2:] == [_expected_row("C1", "0.2100 | 18 | N/A | N/A | N/A")]
+
+
+def test_entity_type_finding_cites_computed_values(tmp_path: Path) -> None:
+    results_dir = tmp_path / "results"
+    _write_breakdown_result(results_dir, "C1", ("D3", "cmt-edas"), _cmt_edas_buckets())
+    _write_breakdown_result(
+        results_dir,
+        "C1",
+        ("D3", "cmt-conference"),
+        {"class": _entity_type_metrics(0.85, 20), "predicate": _entity_type_metrics(0.0, 5)},
+    )
+    section = _entity_type_section_text(
+        _entity_type_report(results_dir, tmp_path / "report.md")
+    )
+    assert "Predicates are the harder entity type" in section
+    assert "mean class F1 is 0.5300" in section
+    assert "mean predicate F1 of 0.0400" in section
+    assert "gap is 0.4900 F1" in section
+    assert "C1 on cmt-conference" in section
+    assert "by 0.8500" in section
+
+
+def test_entity_type_finding_names_classes_when_they_score_lower(tmp_path: Path) -> None:
+    results_dir = tmp_path / "results"
+    _write_breakdown_result(
+        results_dir,
+        "C1",
+        ("D3", "cmt-edas"),
+        {"class": _entity_type_metrics(0.10, 18), "predicate": _entity_type_metrics(0.60, 6)},
+    )
+    section = _entity_type_section_text(
+        _entity_type_report(results_dir, tmp_path / "report.md")
+    )
+    assert "Classes are the harder entity type" in section
+    assert "gap is -0.5000 F1" in section
+
+
+def test_entity_type_finding_excludes_d4_schema_from_the_averages(tmp_path: Path) -> None:
+    """One D4_schema pair must not outvote every Conference pair in the prose."""
+    results_dir = tmp_path / "results"
+    _write_breakdown_result(
+        results_dir,
+        "C1",
+        ("D3", "cmt-edas"),
+        {"class": _entity_type_metrics(0.30, 18), "predicate": _entity_type_metrics(0.10, 6)},
+    )
+    _write_breakdown_result(
+        results_dir,
+        "C5",
+        ("D4_schema", "memoryalpha-stexpanded"),
+        {"class": _entity_type_metrics(0.05, 12), "predicate": _entity_type_metrics(0.55, 32)},
+    )
+    text = _entity_type_report(results_dir, tmp_path / "report.md")
+    section = _entity_type_section_text(text)
+    assert _expected_row("C5", "0.0500 | 12 | 0.5500 | 32 | -0.5000") in section
+    assert "Predicates are the harder entity type" in section
+    assert "across the 1 condition reporting" in section
+    assert "mean class F1 is 0.3000" in section
+    assert "gap is 0.2000 F1 over 1 D3 pair." in section
+
+
+def test_entity_type_finding_divergence_ignores_d4_schema(tmp_path: Path) -> None:
+    results_dir = tmp_path / "results"
+    _write_breakdown_result(
+        results_dir,
+        "C1",
+        ("D3", "cmt-edas"),
+        {"class": _entity_type_metrics(0.30, 18), "predicate": _entity_type_metrics(0.10, 6)},
+    )
+    _write_breakdown_result(
+        results_dir,
+        "C1",
+        ("D4_schema", "memoryalpha-stexpanded"),
+        {"class": _entity_type_metrics(0.90, 12), "predicate": _entity_type_metrics(0.05, 32)},
+    )
+    section = _entity_type_section_text(
+        _entity_type_report(results_dir, tmp_path / "report.md")
+    )
+    assert "C1 on cmt-edas" in section
+    assert "by 0.2000" in section
+    assert "memoryalpha-stexpanded" not in section
+
+
+def test_entity_type_finding_reports_absent_d3_data(tmp_path: Path) -> None:
+    """A D4_schema-only run keeps its table row but states no finding."""
+    results_dir = tmp_path / "results"
+    _write_breakdown_result(
+        results_dir, "C5", ("D4_schema", "memoryalpha-stexpanded"), _cmt_edas_buckets()
+    )
+    section = _entity_type_section_text(
+        _entity_type_report(results_dir, tmp_path / "report.md")
+    )
+    assert _expected_row("C5", "0.2100 | 18 | 0.0800 | 6 | 0.1300") in section
+    assert "No D3 pair reports a per-entity-type breakdown" in section
+    assert "harder entity type" not in section
+
+
+_FINDING_NUMBERS = re.compile(
+    r"mean class F1 is (-?\d+\.\d{4}) against mean predicate F1 of (-?\d+\.\d{4})\. "
+    r"The mean class-versus-predicate gap is (-?\d+\.\d{4}) F1"
+)
+
+
+def test_entity_type_finding_gap_matches_the_quoted_means(tmp_path: Path) -> None:
+    """A condition missing one bucket must not skew one mean and not the other."""
+    results_dir = tmp_path / "results"
+    _write_breakdown_result(
+        results_dir,
+        "C1",
+        ("D3", "cmt-edas"),
+        {"class": _entity_type_metrics(0.90, 20), "predicate": _entity_type_metrics(0.10, 5)},
+    )
+    _write_breakdown_result(
+        results_dir,
+        "C2",
+        ("D3", "cmt-conference"),
+        {"class": _entity_type_metrics(0.10, 20)},
+    )
+    section = _entity_type_section_text(
+        _entity_type_report(results_dir, tmp_path / "report.md")
+    )
+    assert _expected_row("C2", "0.1000 | 20 | N/A | N/A | N/A") in section
+    mean_class, mean_predicate, gap = (float(v) for v in _FINDING_NUMBERS.search(section).groups())
+    assert mean_class - mean_predicate == pytest.approx(gap)
+    assert (mean_class, mean_predicate, gap) == (0.90, 0.10, pytest.approx(0.80))
+    assert "across the 1 condition reporting both entity types" in section
+
+
+def test_entity_type_finding_phrases_a_predicate_lead_positively(tmp_path: Path) -> None:
+    """A predicate-led pair must not be reported as a negative class excess."""
+    results_dir = tmp_path / "results"
+    _write_breakdown_result(
+        results_dir,
+        "C1",
+        ("D3", "cmt-edas"),
+        {"class": _entity_type_metrics(0.10, 18), "predicate": _entity_type_metrics(0.60, 6)},
+    )
+    section = _entity_type_section_text(
+        _entity_type_report(results_dir, tmp_path / "report.md")
+    )
+    assert "predicate F1 exceeds class F1 by 0.5000" in section
+    assert "by -" not in section
+
+
+def test_entity_type_finding_picks_the_widest_gap_by_magnitude(tmp_path: Path) -> None:
+    """The cited pair is the strongest example whichever entity type leads it."""
+    results_dir = tmp_path / "results"
+    _write_breakdown_result(
+        results_dir,
+        "C1",
+        ("D3", "cmt-edas"),
+        {"class": _entity_type_metrics(0.90, 18), "predicate": _entity_type_metrics(0.10, 6)},
+    )
+    _write_breakdown_result(
+        results_dir,
+        "C1",
+        ("D3", "cmt-conference"),
+        {"class": _entity_type_metrics(0.05, 18), "predicate": _entity_type_metrics(0.95, 6)},
+    )
+    section = _entity_type_section_text(
+        _entity_type_report(results_dir, tmp_path / "report.md")
+    )
+    assert "C1 on cmt-conference, where predicate F1 exceeds class F1 by 0.9000" in section
+
+
+def test_entity_type_finding_claims_no_harder_type_on_a_zero_gap(tmp_path: Path) -> None:
+    results_dir = tmp_path / "results"
+    _write_breakdown_result(
+        results_dir,
+        "C1",
+        ("D3", "cmt-edas"),
+        {"class": _entity_type_metrics(0.0, 18), "predicate": _entity_type_metrics(0.0, 6)},
+    )
+    section = _entity_type_section_text(
+        _entity_type_report(results_dir, tmp_path / "report.md")
+    )
+    assert "Neither entity type is harder" in section
+    assert "No pair diverges" in section
+    assert "harder entity type:" not in section
+
+
+def test_entity_type_finding_without_any_complete_condition(tmp_path: Path) -> None:
+    """Every D3 bucket is class-only, so no gap may be claimed."""
+    results_dir = tmp_path / "results"
+    _write_breakdown_result(
+        results_dir, "C1", ("D3", "cmt-edas"), {"class": _entity_type_metrics(0.5, 18)}
+    )
+    section = _entity_type_section_text(
+        _entity_type_report(results_dir, tmp_path / "report.md")
+    )
+    assert _expected_row("C1", "0.5000 | 18 | N/A | N/A | N/A") in section
+    assert "No D3 condition reports both entity types" in section
+    assert "harder entity type" not in section
+
+
+def test_generate_markdown_report_never_loads_results_itself(
+    full_results_dir: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The report renders the frame it is given; the caller loads exactly once."""
+    import kgsemembed.evaluation.aggregator as aggregator
+
+    calls: List[tuple] = []
+
+    def counting_load(*args: object, **kwargs: object) -> pd.DataFrame:
+        calls.append((args, kwargs))
+        raise AssertionError("generate_markdown_report must not load results.")
+
+    df = load_all_results(str(full_results_dir), include_entity_type_breakdown=True)
+    monkeypatch.setattr(aggregator, "load_all_results", counting_load)
+    generate_markdown_report(df, None, str(tmp_path / "report.md"))
+    assert calls == []
+
+
+def test_entity_type_section_placeholder_when_no_mixed_results(tmp_path: Path) -> None:
+    results_dir = tmp_path / "results"
+    for pair_index in range(3):
+        _write_result(results_dir, "C1", "D1", f"D1_p{pair_index}", 0.5)
+    section = _entity_type_section_text(
+        _entity_type_report(results_dir, tmp_path / "report.md")
+    )
+    assert "_No per-entity-type data available._" in section
+
+
+def test_entity_type_section_tolerates_legacy_result_files(tmp_path: Path) -> None:
+    """Files predating per_entity_type must not break the expanded report."""
+    results_dir = tmp_path / "results"
+    _write_result(results_dir, "C1", "D2", "D2_p0", 0.5)
+    _write_result(results_dir, "C1", "D1", "D1_p0", 0.4, overrides={"per_entity_type": {}})
+    _write_breakdown_result(results_dir, "C2", ("D3", "cmt-edas"), _cmt_edas_buckets())
+    rows = _entity_type_rows(_entity_type_report(results_dir, tmp_path / "report.md"))
+    assert rows[2:] == [_expected_row("C2", "0.2100 | 18 | 0.0800 | 6 | 0.1300")]
+
+
+def _sections_except_entity_type(text: str) -> List[str]:
+    """Split a report into sections, dropping the entity-type one."""
+    blocks = text.split("\n# ")
+    return [block for block in blocks if not block.startswith("Entity-Type Analysis")]
+
+
+def test_expanded_frame_leaves_every_other_section_byte_identical(tmp_path: Path) -> None:
+    """Loading with the breakdown must change one section and nothing else."""
+    results_dir = tmp_path / "results"
+    _write_production_layout(results_dir)
+    _write_breakdown_result(results_dir, "C1", ("D3", "cmt-edas"), _cmt_edas_buckets())
+    _write_breakdown_result(
+        results_dir, "C1", ("D4_schema", "memoryalpha-stexpanded"), _cmt_edas_buckets()
+    )
+    narrow = tmp_path / "narrow.md"
+    wide = tmp_path / "wide.md"
+    generate_markdown_report(load_all_results(str(results_dir)), None, str(narrow))
+    generate_markdown_report(
+        load_all_results(str(results_dir), include_entity_type_breakdown=True),
+        None,
+        str(wide),
+    )
+    narrow_text = narrow.read_text(encoding="utf-8")
+    wide_text = wide.read_text(encoding="utf-8")
+    assert _sections_except_entity_type(narrow_text) == _sections_except_entity_type(wide_text)
+    assert "_No per-entity-type data available._" in narrow_text
+    assert "| Condition | Strategy | Model |" in wide_text
+
+
+def test_breakdown_rows_do_not_inflate_the_other_sections(tmp_path: Path) -> None:
+    """Entity-type rows are consumed by one section, not counted as pairs."""
+    results_dir = tmp_path / "results"
+    _write_breakdown_result(results_dir, "C1", ("D3", "cmt-edas"), _cmt_edas_buckets())
+    text = _entity_type_report(results_dir, tmp_path / "report.md")
+    per_dataset = _per_dataset_section(text)
+    assert _sub_table(per_dataset, "D3")[2:] == ["| C1 | 0.1700 |"]
+    summary = text.split("# Condition Summary Table", 1)[1].split("\n# ", 1)[0]
+    assert summary.strip().splitlines()[-1].endswith("| 1 |")
+
+
+def test_entity_type_report_is_deterministic(tmp_path: Path) -> None:
+    results_dir = tmp_path / "results"
+    for condition_id in ("C2", "C1"):
+        _write_breakdown_result(
+            results_dir, condition_id, ("D3", "cmt-edas"), _cmt_edas_buckets()
+        )
+    first = _entity_type_report(results_dir, tmp_path / "first.md")
+    second = _entity_type_report(results_dir, tmp_path / "second.md")
+    assert first == second
 
 
 def test_report_ppas_values_from_results(tmp_path: Path) -> None:
