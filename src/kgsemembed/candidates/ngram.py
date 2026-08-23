@@ -44,6 +44,7 @@ _BLOCK_ROWS = 256
 _LABEL_PREDICATES = (RDFS.label, SKOS.prefLabel)
 _OPAQUE_ID_PATTERN = re.compile(r"^[EQ]\d+$")
 _TYPED_LITERAL_PATTERN = re.compile(r'^"(.*)"\^\^<[^>]*>$', re.DOTALL)
+DATE_PATTERN = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
 
 @dataclass(frozen=True)
@@ -95,9 +96,17 @@ def _literal_text(obj: Literal) -> str:
 
 
 def _is_informative(text: str, min_length: int, max_length: int) -> bool:
-    """Return whether *text* is a usable length and not a bare quantity."""
+    """Return whether *text* is a usable length and not a bare quantity.
+
+    ``YYYY-MM-DD`` dates are exempt from the quantity filter. Aligned D5
+    entities carry the same ``birthDate`` or ``releaseDate`` value on both
+    sides, so a date is an alignment key rather than the bare magnitude the
+    filter exists to discard. Plain years and decimals stay filtered.
+    """
     if not min_length <= len(text) <= max_length:
         return False
+    if DATE_PATTERN.match(text):
+        return True
     return not text.replace(".", "").replace("-", "").replace(" ", "").isnumeric()
 
 

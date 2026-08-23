@@ -143,7 +143,7 @@ def test_attribute_text_strips_openea_inlined_datatype_suffix() -> None:
     text = get_entity_text_from_attributes(graph, "http://dbpedia.org/resource/E1")
 
     assert "XMLSchema" not in text
-    assert text == "The Hoodlum Saint"
+    assert text == "1955-03-02 The Hoodlum Saint"
 
 
 def test_attribute_text_drops_numeric_and_out_of_range_values() -> None:
@@ -155,6 +155,52 @@ def test_attribute_text_drops_numeric_and_out_of_range_values() -> None:
     graph.add((entity, URIRef("http://dbpedia.org/ontology/rel"), URIRef("http://example.org/o")))
 
     assert get_entity_text_from_attributes(graph, "http://dbpedia.org/resource/E2") == ""
+
+
+def test_attribute_text_keeps_date_shaped_values() -> None:
+    """Dates align across D5 sides, so they survive the bare-quantity filter."""
+    graph = Graph()
+    entity = URIRef("http://dbpedia.org/resource/E4")
+    graph.add((entity, URIRef("http://dbpedia.org/ontology/birthDate"),
+               Literal('"1955-03-02"^^<http://www.w3.org/2001/XMLSchema#date>')))
+
+    text = get_entity_text_from_attributes(graph, "http://dbpedia.org/resource/E4")
+
+    assert text == "1955-03-02"
+
+
+def test_attribute_text_keeps_dates_while_dropping_years_and_decimals() -> None:
+    graph = Graph()
+    entity = URIRef("http://dbpedia.org/resource/E5")
+    graph.add((entity, URIRef("http://dbpedia.org/ontology/birthYear"),
+               Literal('"1955"^^<http://www.w3.org/2001/XMLSchema#gYear>')))
+    graph.add((entity, URIRef("http://dbpedia.org/ontology/budget"), Literal("14000000")))
+    graph.add((entity, URIRef("http://dbpedia.org/ontology/releaseDate"),
+               Literal('"1946-04-11"^^<http://www.w3.org/2001/XMLSchema#date>')))
+    graph.add((entity, URIRef("http://dbpedia.org/ontology/runtime"), Literal("6480.0")))
+
+    text = get_entity_text_from_attributes(graph, "http://dbpedia.org/resource/E5")
+
+    assert text == "1946-04-11"
+
+
+def test_entity_label_uses_date_attributes_for_opaque_ids() -> None:
+    graph = Graph()
+    entity = URIRef("http://www.wikidata.org/entity/Q1108721")
+    graph.add((entity, URIRef("http://www.wikidata.org/entity/P569"),
+               Literal('"1955-03-02"^^<http://www.w3.org/2001/XMLSchema#date>')))
+
+    assert get_entity_label(graph, str(entity)) == "1955-03-02"
+
+
+def test_attribute_text_rejects_malformed_date_like_values() -> None:
+    graph = Graph()
+    entity = URIRef("http://dbpedia.org/resource/E6")
+    graph.add((entity, URIRef("http://dbpedia.org/ontology/p1"), Literal("1955-3-2")))
+    graph.add((entity, URIRef("http://dbpedia.org/ontology/p2"), Literal("19550302")))
+    graph.add((entity, URIRef("http://dbpedia.org/ontology/p3"), Literal("1955-03")))
+
+    assert get_entity_text_from_attributes(graph, "http://dbpedia.org/resource/E6") == ""
 
 
 def test_attribute_text_respects_max_values() -> None:
