@@ -295,9 +295,20 @@ D5  DBpedia-Wikidata 15K EN (OpenEA)      Instances only
     names (DBpedia E291085, Wikidata Q1108721). Falling back to those names
     gave candidate recall@20 of 0.0015 and pinned every D5 F1 at ≈0.0001.
     get_entity_label() in candidates/ngram.py now substitutes attribute
-    text for opaque IDs, raising recall@20 to 0.1339 and best F1 to 0.0499.
-    D5 remains far weaker than D1-D4; the residual gap is a limitation of
-    lexical candidate generation on label-free KGs, not a system defect.
+    text for opaque IDs, raising recall@20 from 0.0015 to 0.1339. Exempting
+    YYYY-MM-DD values from the bare-quantity filter (DATE_PATTERN in
+    ngram.py) raised it again to 0.2667; best F1 is 0.0609 (C14, V4+V6/M3).
+    Dates are a strong cross-KG key here — an aligned pair carries the same
+    birthDate or releaseDate on both sides — and account for 19.8% of
+    DBpedia and 4.0% of Wikidata attribute values.
+    D5 remains far weaker than D1-D4, but candidate generation is no longer
+    the binding constraint: recall@20 is 0.2667 while C14 reaches R@10
+    0.2260 and F1 0.0609, so gold pairs now enter the candidate set without
+    being ranked to the top. The residual gap is a ranking and precision
+    problem at the embedding stage, not a candidate-recall one.
+    Treat a D5 recall@20 gain as an upper bound on the achievable F1 gain:
+    dates are shared by construction (thousands of films release on one
+    date), so some recovered pairs arrive via a non-discriminative key.
     Attribute text is capped at 10 literal values, sorted by predicate then
     value so the selection does not depend on store iteration order.
     OpenEA inlines the datatype into the value column, so a D5 literal's
@@ -305,6 +316,8 @@ D5  DBpedia-Wikidata 15K EN (OpenEA)      Instances only
     Strip that suffix before using D5 literal text anywhere: left intact it
     enters an n-gram index as boilerplate shared by nearly every entity on
     both sides, inflating gold-pair similarity while carrying no signal.
+    Stripping is what makes the date exemption safe: _literal_text() yields
+    a bare 1955-03-02, so DATE_PATTERN matches the value, not the datatype.
     WARNING: Do not use DBP2.0 — it is multilingual, has no attr_triples,
     and uses a different folder structure.
 ```
