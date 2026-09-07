@@ -1,0 +1,5 @@
+name: sample
+domain: demo
+source_rdf: data/sample/source.rdf
+target_rdf: data/sample/target.rdf
+alignment_rdf: data/sample/reference.rdf

@@ -1,0 +1,206 @@
+<?xml version="1.0" encoding="utf-8"?>
+<rdf:RDF xmlns="http://knowledgeweb.semanticweb.org/heterogeneity/alignment"
+         xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+  <Alignment>
+    <map>
+      <Cell>
+        <entity1 rdf:resource="http://mouse.owl#MA_0002285"/>
+        <entity2 rdf:resource="http://human.owl#NCI_C52901"/>
+        <relation>=</relation>
+        <measure>1.0</measure>
+      </Cell>
+    </map>
+    <map>
+      <Cell>
+        <entity1 rdf:resource="http://mouse.owl#MA_0002286"/>
+        <entity2 rdf:resource="http://human.owl#NCI_C32446"/>
+        <relation>=</relation>
+        <measure>1.0</measure>
+      </Cell>
+    </map>
+    <map>
+      <Cell>
+        <entity1 rdf:resource="http://mouse.owl#MA_0002287"/>
+        <entity2 rdf:resource="http://human.owl#NCI_C53152"/>
+        <relation>=</relation>
+        <measure>1.0</measure>
+      </Cell>
+    </map>
+    <map>
+      <Cell>
+        <entity1 rdf:resource="http://mouse.owl#MA_0002288"/>
+        <entity2 rdf:resource="http://human.owl#NCI_C32462"/>
+        <relation>=</relation>
+        <measure>1.0</measure>
+      </Cell>
+    </map>
+    <map>
+      <Cell>
+        <entity1 rdf:resource="http://mouse.owl#MA_0002289"/>
+        <entity2 rdf:resource="http://human.owl#NCI_C52902"/>
+        <relation>=</relation>
+        <measure>1.0</measure>
+      </Cell>
+    </map>
+    <map>
+      <Cell>
+        <entity1 rdf:resource="http://mouse.owl#MA_0002290"/>
+        <entity2 rdf:resource="http://human.owl#NCI_C52911"/>
+        <relation>=</relation>
+        <measure>1.0</measure>
+      </Cell>
+    </map>
+    <map>
+      <Cell>
+        <entity1 rdf:resource="http://mouse.owl#MA_0002291"/>
+        <entity2 rdf:resource="http://human.owl#NCI_C52913"/>
+        <relation>=</relation>
+        <measure>1.0</measure>
+      </Cell>
+    </map>
+    <map>
+      <Cell>
+        <entity1 rdf:resource="http://mouse.owl#MA_0002292"/>
+        <entity2 rdf:resource="http://human.owl#NCI_C52914"/>
+        <relation>=</relation>
+        <measure>1.0</measure>
+      </Cell>
+    </map>
+    <map>
+      <Cell>
+        <entity1 rdf:resource="http://mouse.owl#MA_0002293"/>
+        <entity2 rdf:resource="http://human.owl#NCI_C52916"/>
+        <relation>=</relation>
+        <measure>1.0</measure>
+      </Cell>
+    </map>
+    <map>
+      <Cell>
+        <entity1 rdf:resource="http://mouse.owl#MA_0002294"/>
+        <entity2 rdf:resource="http://human.owl#NCI_C52917"/>
+        <relation>=</relation>
+        <measure>1.0</measure>
+      </Cell>
+    </map>
+    <map>
+      <Cell>
+        <entity1 rdf:resource="http://mouse.owl#MA_0002295"/>
+        <entity2 rdf:resource="http://human.owl#NCI_C52918"/>
+        <relation>=</relation>
+        <measure>1.0</measure>
+      </Cell>
+    </map>
+    <map>
+      <Cell>
+        <entity1 rdf:resource="http://mouse.owl#MA_0002297"/>
+        <entity2 rdf:resource="http://human.owl#NCI_C53155"/>
+        <relation>=</relation>
+        <measure>1.0</measure>
+      </Cell>
+    </map>
+    <map>
+      <Cell>
+        <entity1 rdf:resource="http://mouse.owl#MA_0002298"/>
+        <entity2 rdf:resource="http://human.owl#NCI_C53156"/>
+        <relation>=</relation>
+        <measure>1.0</measure>
+      </Cell>
+    </map>
+    <map>
+      <Cell>
+        <entity1 rdf:resource="http://mouse.owl#MA_0002299"/>
+        <entity2 rdf:resource="http://human.owl#NCI_C52921"/>
+        <relation>=</relation>
+        <measure>1.0</measure>
+      </Cell>
+    </map>
+    <map>
+      <Cell>
+        <entity1 rdf:resource="http://mouse.owl#MA_0002300"/>
+        <entity2 rdf:resource="http://human.owl#NCI_C52923"/>
+        <relation>=</relation>
+        <measure>1.0</measure>
+      </Cell>
+    </map>
+    <map>
+      <Cell>
+        <entity1 rdf:resource="http://mouse.owl#MA_0002301"/>
+        <entity2 rdf:resource="http://human.owl#NCI_C52925"/>
+        <relation>=</relation>
+        <measure>1.0</measure>
+      </Cell>
+    </map>
+    <map>
+      <Cell>
+        <entity1 rdf:resource="http://mouse.owl#MA_0002302"/>
+        <entity2 rdf:resource="http://human.owl#NCI_C53172"/>
+        <relation>=</relation>
+        <measure>1.0</measure>
+      </Cell>
+    </map>
+    <map>
+      <Cell>
+        <entity1 rdf:resource="http://mouse.owl#MA_0002303"/>
+        <entity2 rdf:resource="http://human.owl#NCI_C52701"/>
+        <relation>=</relation>
+        <measure>1.0</measure>
+      </Cell>
+    </map>
+    <map>
+      <Cell>
+        <entity1 rdf:resource="http://mouse.owl#MA_0002304"/>
+        <entity2 rdf:resource="http://human.owl#NCI_C52702"/>
+        <relation>=</relation>
+        <measure>1.0</measure>
+      </Cell>
+    </map>
+    <map>
+      <Cell>
+        <entity1 rdf:resource="http://mouse.owl#MA_0002306"/>
+        <entity2 rdf:resource="http://human.owl#NCI_C32666"/>
+        <relation>=</relation>
+        <measure>1.0</measure>
+      </Cell>
+    </map>
+    <map>
+      <Cell>
+        <entity1 rdf:resource="http://mouse.owl#MA_0002307"/>
+        <entity2 rdf:resource="http://human.owl#NCI_C52928"/>
+        <relation>=</relation>
+        <measure>1.0</measure>
+      </Cell>
+    </map>
+    <map>
+      <Cell>
+        <entity1 rdf:resource="http://mouse.owl#MA_0002308"/>
+        <entity2 rdf:resource="http://human.owl#NCI_C52930"/>
+        <relation>=</relation>
+        <measure>1.0</measure>
+      </Cell>
+    </map>
+    <map>
+      <Cell>
+        <entity1 rdf:resource="http://mouse.owl#MA_0002309"/>
+        <entity2 rdf:resource="http://human.owl#NCI_C52560"/>
+        <relation>=</relation>
+        <measure>1.0</measure>
+      </Cell>
+    </map>
+    <map>
+      <Cell>
+        <entity1 rdf:resource="http://mouse.owl#MA_0002310"/>
+        <entity2 rdf:resource="http://human.owl#NCI_C52933"/>
+        <relation>=</relation>
+        <measure>1.0</measure>
+      </Cell>
+    </map>
+    <map>
+      <Cell>
+        <entity1 rdf:resource="http://mouse.owl#MA_0002311"/>
+        <entity2 rdf:resource="http://human.owl#NCI_C52935"/>
+        <relation>=</relation>
+        <measure>1.0</measure>
+      </Cell>
+    </map>
+  </Alignment>
+</rdf:RDF>

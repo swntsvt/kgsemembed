@@ -1,0 +1,996 @@
+"""Aggregate Phase 2 experiment results into a publication-ready Markdown report.
+
+This module is a reporting layer built on top of the result files written by
+:mod:`kgsemembed.pipeline.run_experiment` under the
+``data/results/{condition_id}/{dataset_id}/{pair_name}_results.json`` convention.
+It loads previously generated results, aggregates their metrics into summary and
+per-dataset tables, and renders a deterministic Markdown report.
+
+It never reruns experiments, performs statistical testing, produces plots, or
+emits LaTeX; statistical comparison results computed elsewhere are rendered as
+Markdown tables only when supplied.  Ablation-group membership is always derived
+from :data:`kgsemembed.pipeline.conditions.EXPERIMENT_CONDITIONS` rather than
+duplicated here.
+"""
+
+from __future__ import annotations
+
+import json
+import logging
+import math
+from dataclasses import dataclass
+from pathlib import Path
+from typing import List, Optional
+
+import pandas as pd
+
+from kgsemembed.evaluation.stats import (
+    _TABLE_COLUMNS as _STATS_COLUMNS,
+    _sanitise_warning,
+)
+from kgsemembed.pipeline.conditions import get_condition, get_conditions_for_group
+
+_LOGGER = logging.getLogger("kgsemembed.evaluation.aggregator")
+
+_RESULT_GLOB = "*_results.json"
+_DEFAULT_RESULTS_DIR = "data/results/"
+
+_TOP_LEVEL_FIELDS = (
+    "condition_id",
+    "dataset_id",
+    "pair_name",
+    "strategy",
+    "model_key",
+    "model_id",
+)
+_METRIC_FIELDS = (
+    "f1",
+    "precision",
+    "recall",
+    "threshold",
+    "mrr",
+    "recall_at_1",
+    "recall_at_5",
+    "recall_at_10",
+)
+_COUNT_FIELDS = ("n_source_entities", "n_candidates_per_entity")
+_REQUIRED_FIELDS = (*_TOP_LEVEL_FIELDS, *_METRIC_FIELDS, *_COUNT_FIELDS)
+_RESULT_COLUMNS = (*_REQUIRED_FIELDS, "ablation_group")
+
+_PER_ENTITY_TYPE_FIELD = "per_entity_type"
+_ENTITY_TYPE_COLUMN = "entity_type"
+_REF_COUNT_COLUMN = "n_refs"
+_OVERALL_ENTITY_TYPE = "overall"
+_BREAKDOWN_COLUMNS = (*_RESULT_COLUMNS, _ENTITY_TYPE_COLUMN, _REF_COUNT_COLUMN)
+
+_ENTITY_TYPES = ("class", "predicate")
+_MIXED_DATASET_IDS = ("D3", "D4_schema")
+_MIN_ENTITY_TYPE_REFS = 3
+_ENTITY_TYPE_GROUP_KEYS = ("condition_id", "strategy", "model_key")
+_ENTITY_TYPE_KEY_LABELS = {
+    "condition_id": "Condition",
+    "strategy": "Strategy",
+    "model_key": "Model",
+}
+_ENTITY_TYPE_TABLE_COLUMNS = (
+    "Condition",
+    "Strategy",
+    "Model",
+    "Class F1",
+    "Class n_refs",
+    "Predicate F1",
+    "Predicate n_refs",
+    "Class vs Predicate gap",
+)
+_ENTITY_TYPE_FLOAT_COLUMNS = ("Class F1", "Predicate F1", "Class vs Predicate gap")
+_ENTITY_TYPE_COUNT_COLUMNS = ("Class n_refs", "Predicate n_refs")
+_NO_ENTITY_TYPE_DATA = "_No per-entity-type data available._"
+_FINDING_DATASET_ID = "D3"
+_NO_FINDING_DATA = (
+    f"No {_FINDING_DATASET_ID} pair reports a per-entity-type breakdown, so no "
+    "aggregate finding is computed."
+)
+_ONE_BUCKET_ONLY = (
+    f"No {_FINDING_DATASET_ID} condition reports both entity types, so no gap "
+    "can be computed."
+)
+
+_SUMMARY_FLOAT_FIELDS = (
+    "mean_f1",
+    "std_f1",
+    "mean_mrr",
+    "mean_recall_at_1",
+    "mean_recall_at_5",
+    "mean_recall_at_10",
+)
+_SUMMARY_COLUMNS = ("condition_id", "strategy", "model_key", *_SUMMARY_FLOAT_FIELDS, "n_pairs")
+
+_ABLATION_GROUPS = ("A", "B", "C", "D")
+
+_CONTROLLED_ABLATION = "Controlled ablation (same model)"
+_CONFOUNDED_ABLATION = "Confounded (different models)"
+
+_PPAS_VARIED = "Yes — V4+V6 invokes PPAS via should_apply_ppas()"
+_PPAS_UNVARIED = "No — V2+V8 does not invoke PPAS"
+_PPAS_UNVARIED_CONFOUNDED = (
+    "No — V2+V8 does not invoke PPAS (confounded by model change)"
+)
+
+
+@dataclass(frozen=True)
+class _PpasComparison:
+    """
+    One row of the PPAS ablation table.
+
+    Attributes
+    ----------
+    condition_a : str
+        Condition rendered in the ``Mean F1 (A)`` column.
+    condition_b : str
+        Condition rendered in the ``Mean F1 (B)`` column.
+    dataset_id : str
+        Dataset the two conditions are compared on.
+    ablation_type : str
+        Whether the pair holds the embedding model fixed.
+    ppas_variable : str
+        Whether PPAS is genuinely the variable under test, which it is only
+        when the compared strategies consult a token budget at all.
+    """
+
+    condition_a: str
+    condition_b: str
+    dataset_id: str
+    ablation_type: str
+    ppas_variable: str
+
+
+_PPAS_COMPARISONS = (
+    _PpasComparison("C5", "C14", "D5", _CONFOUNDED_ABLATION, _PPAS_VARIED),
+    _PpasComparison("C10", "C15", "D1", _CONFOUNDED_ABLATION, _PPAS_UNVARIED_CONFOUNDED),
+    _PpasComparison("C10", "C19", "D1", _CONTROLLED_ABLATION, _PPAS_UNVARIED),
+)
+_NO_WARNING_CELL = ""
+
+
+def _result_columns(include_entity_type_breakdown: bool = False) -> List[str]:
+    """Return the loaded schema, widened by two columns when rows are expanded."""
+    if include_entity_type_breakdown:
+        return list(_BREAKDOWN_COLUMNS)
+    return list(_RESULT_COLUMNS)
+
+
+def _empty_results_frame(include_entity_type_breakdown: bool = False) -> pd.DataFrame:
+    """Return an empty results DataFrame carrying the canonical schema."""
+    return pd.DataFrame(columns=_result_columns(include_entity_type_breakdown))
+
+
+def _load_json(path: Path) -> Optional[dict]:
+    """Parse a result file, logging a warning and returning ``None`` on failure."""
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError) as exc:
+        _LOGGER.warning("Skipping malformed result file %s: %s", path, exc)
+        return None
+
+
+def _build_record(payload: dict, path: Path) -> Optional[dict]:
+    """
+    Flatten a result payload into a single row, or skip it with a warning.
+
+    Parameters
+    ----------
+    payload : dict
+        Parsed result JSON payload.
+    path : Path
+        Source file, used only for diagnostic logging.
+
+    Returns
+    -------
+    Optional[dict]
+        A flat mapping over :data:`_RESULT_COLUMNS`, or ``None`` when a required
+        field is absent or the condition is unregistered.
+    """
+    record: dict = {}
+    for field in _TOP_LEVEL_FIELDS:
+        record[field] = payload.get(field)
+    metrics = payload.get("metrics")
+    if isinstance(metrics, dict):
+        for field in _METRIC_FIELDS:
+            record[field] = metrics.get(field)
+    for field in _COUNT_FIELDS:
+        record[field] = payload.get(field)
+    missing = [field for field in _REQUIRED_FIELDS if record.get(field) is None]
+    if missing:
+        _LOGGER.warning("Skipping %s; missing required fields: %s", path, missing)
+        return None
+    try:
+        record["ablation_group"] = get_condition(record["condition_id"]).ablation_group
+    except KeyError:
+        _LOGGER.warning("Skipping %s; unknown condition %r.", path, record["condition_id"])
+        return None
+    return record
+
+
+def _is_complete_bucket(entity_type: str, metrics: object, record: dict) -> bool:
+    """
+    Report whether one entity-type bucket carries every metric a row needs.
+
+    A hand-edited or truncated result file can hold a bucket that is not a
+    mapping at all, or one missing a metric.  Either is skipped with a warning
+    rather than aborting the load or emitting a row of silent gaps, matching how
+    :func:`_build_record` treats an incomplete pair-level result.
+
+    Parameters
+    ----------
+    entity_type : str
+        Key of the bucket, used only for the warning message.
+    metrics : object
+        Value found under that key, which need not be a mapping.
+    record : dict
+        The pair-level row, used only to identify the result in the warning.
+
+    Returns
+    -------
+    bool
+        ``True`` when the bucket can be expanded into a row.
+    """
+    if isinstance(metrics, dict) and all(field in metrics for field in _METRIC_FIELDS):
+        return True
+    _LOGGER.warning(
+        "Skipping %s breakdown of %s; incomplete entity-type metrics.",
+        entity_type,
+        (record["condition_id"], record["dataset_id"], record["pair_name"]),
+    )
+    return False
+
+
+def _entity_type_records(payload: dict, record: dict) -> List[dict]:
+    """
+    Expand a result's per-entity-type metrics into one row per entity type.
+
+    Result files written before the breakdown existed carry no
+    ``per_entity_type`` field and yield no extra rows, so old and new files
+    aggregate side by side.
+
+    Parameters
+    ----------
+    payload : dict
+        Parsed result JSON payload.
+    record : dict
+        The pair-level row already built from ``payload``.
+
+    Returns
+    -------
+    List[dict]
+        One row per reported entity type, each copying the pair-level row with
+        its metrics replaced by that entity type's.
+    """
+    breakdown = payload.get(_PER_ENTITY_TYPE_FIELD)
+    if not isinstance(breakdown, dict):
+        return []
+    rows: List[dict] = []
+    for entity_type, metrics in breakdown.items():
+        if not _is_complete_bucket(entity_type, metrics, record):
+            continue
+        row = dict(record)
+        row.update({field: metrics[field] for field in _METRIC_FIELDS})
+        row[_ENTITY_TYPE_COLUMN] = entity_type
+        row[_REF_COUNT_COLUMN] = metrics.get(_REF_COUNT_COLUMN)
+        rows.append(row)
+    return rows
+
+
+def _collect_records(root: Path, include_entity_type_breakdown: bool) -> List[dict]:
+    """
+    Read every result file under ``root`` into flat rows.
+
+    Parameters
+    ----------
+    root : Path
+        Root directory walked recursively for ``*_results.json`` files.
+    include_entity_type_breakdown : bool
+        Append one row per entity type after each pair-level row.
+
+    Returns
+    -------
+    List[dict]
+        Rows in file order, with entity-type rows following their pair.
+    """
+    records: List[dict] = []
+    seen: set = set()
+    for path in sorted(root.rglob(_RESULT_GLOB)):
+        payload = _load_json(path)
+        if payload is None:
+            continue
+        record = _build_record(payload, path)
+        if record is None:
+            continue
+        key = (record["condition_id"], record["dataset_id"], record["pair_name"])
+        if key in seen:
+            _LOGGER.warning("Duplicate result for %s; skipping %s.", key, path)
+            continue
+        seen.add(key)
+        record[_ENTITY_TYPE_COLUMN] = _OVERALL_ENTITY_TYPE
+        records.append(record)
+        if include_entity_type_breakdown:
+            records.extend(_entity_type_records(payload, record))
+    return records
+
+
+def load_all_results(
+    results_dir: str = _DEFAULT_RESULTS_DIR,
+    include_entity_type_breakdown: bool = False,
+) -> pd.DataFrame:
+    """
+    Load every experiment result file under ``results_dir`` into one DataFrame.
+
+    The directory is walked recursively for files matching ``*_results.json``.
+    Malformed files, records missing a required field, and records for
+    unregistered conditions are skipped with a warning; a repeated
+    ``(condition_id, dataset_id, pair_name)`` combination keeps its first
+    occurrence.  ``ablation_group`` is derived from ``EXPERIMENT_CONDITIONS``.
+
+    Parameters
+    ----------
+    results_dir : str
+        Root directory of previously generated result files.
+    include_entity_type_breakdown : bool
+        Additionally emit one row per entity type for every mixed-type result
+        that reports a ``per_entity_type`` block, tagging each row with
+        ``entity_type`` and ``n_refs``.  Pair-level rows are retained unchanged
+        and carry ``entity_type == "overall"``.
+
+    Returns
+    -------
+    pd.DataFrame
+        One row per AlignmentPair per condition over :data:`_RESULT_COLUMNS`, or
+        an empty DataFrame with that schema when no valid results are found.
+        With ``include_entity_type_breakdown`` the schema widens to
+        :data:`_BREAKDOWN_COLUMNS` and entity-type rows are interleaved.
+    """
+    root = Path(results_dir)
+    if not root.is_dir():
+        _LOGGER.warning("Results directory not found: %s", root)
+        return _empty_results_frame(include_entity_type_breakdown)
+    records = _collect_records(root, include_entity_type_breakdown)
+    if not records:
+        return _empty_results_frame(include_entity_type_breakdown)
+    return pd.DataFrame.from_records(
+        records, columns=_result_columns(include_entity_type_breakdown)
+    )
+
+
+def build_condition_summary_table(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Aggregate metrics per condition across every AlignmentPair.
+
+    Parameters
+    ----------
+    df : pd.DataFrame
+        Results as returned by :func:`load_all_results`.
+
+    Returns
+    -------
+    pd.DataFrame
+        One row per condition over :data:`_SUMMARY_COLUMNS`, sorted by
+        ``mean_f1`` descending with ``condition_id`` breaking ties, and every
+        floating-point value rounded to four decimal places.
+    """
+    if df.empty:
+        return pd.DataFrame(columns=list(_SUMMARY_COLUMNS))
+    grouped = df.groupby(["condition_id", "strategy", "model_key"], sort=False)
+    summary = grouped.agg(
+        mean_f1=("f1", "mean"),
+        std_f1=("f1", lambda scores: float(scores.std(ddof=0))),
+        mean_mrr=("mrr", "mean"),
+        mean_recall_at_1=("recall_at_1", "mean"),
+        mean_recall_at_5=("recall_at_5", "mean"),
+        mean_recall_at_10=("recall_at_10", "mean"),
+        n_pairs=("pair_name", "count"),
+    ).reset_index()
+    summary = summary.sort_values(
+        ["mean_f1", "condition_id"], ascending=[False, True]
+    ).reset_index(drop=True)
+    summary[list(_SUMMARY_FLOAT_FIELDS)] = summary[list(_SUMMARY_FLOAT_FIELDS)].round(4)
+    return summary[list(_SUMMARY_COLUMNS)]
+
+
+def build_dataset_breakdown_table(df: pd.DataFrame, metric: str = "f1") -> pd.DataFrame:
+    """
+    Pivot the mean of ``metric`` with conditions as rows and datasets as columns.
+
+    Parameters
+    ----------
+    df : pd.DataFrame
+        Results as returned by :func:`load_all_results`.
+    metric : str
+        Metric column to aggregate, e.g. ``"f1"``.
+
+    Returns
+    -------
+    pd.DataFrame
+        A ``condition_id`` × ``dataset_id`` pivot of mean ``metric`` values,
+        rows sorted by ``condition_id`` and columns sorted deterministically,
+        with every value rounded to four decimal places.
+
+    Raises
+    ------
+    ValueError
+        If ``metric`` is not a column of ``df``.
+    """
+    if metric not in df.columns:
+        raise ValueError(
+            f"Unknown metric {metric!r}; available columns: {sorted(df.columns)}."
+        )
+    if df.empty:
+        return pd.DataFrame(index=pd.Index([], name="condition_id"))
+    pivot = df.pivot_table(
+        index="condition_id", columns="dataset_id", values=metric, aggfunc="mean"
+    )
+    pivot = pivot.sort_index().reindex(sorted(pivot.columns), axis=1)
+    pivot.columns.name = None
+    return pivot.round(4)
+
+
+def _format_value(value: object) -> str:
+    """Render a single cell value with four-decimal floats and ``N/A`` gaps."""
+    if value is None:
+        return "N/A"
+    if isinstance(value, float):
+        return "N/A" if math.isnan(value) else f"{value:.4f}"
+    return str(value)
+
+
+def _render_dataframe(frame: pd.DataFrame) -> str:
+    """Render a DataFrame as a GitHub Markdown table."""
+    headers = [str(column) for column in frame.columns]
+    lines = [
+        "| " + " | ".join(headers) + " |",
+        "| " + " | ".join(["---"] * len(headers)) + " |",
+    ]
+    for _, row in frame.iterrows():
+        cells = [_format_value(row[column]) for column in frame.columns]
+        lines.append("| " + " | ".join(cells) + " |")
+    return "\n".join(lines)
+
+
+def _section(title: str, body: str) -> str:
+    """Compose a level-one Markdown section from a title and body."""
+    return f"# {title}\n\n{body}"
+
+
+def _best_conditions(df: pd.DataFrame) -> List[tuple]:
+    """Return ``(dataset_id, condition_id, mean_f1)`` of the best condition per dataset."""
+    breakdown = build_dataset_breakdown_table(df, "f1")
+    best: List[tuple] = []
+    for dataset_id in breakdown.columns:
+        column = breakdown[dataset_id].dropna()
+        if column.empty:
+            continue
+        winner = column.idxmax()
+        best.append((dataset_id, winner, float(column.loc[winner])))
+    return best
+
+
+def _executive_summary_section(df: pd.DataFrame, summary: pd.DataFrame) -> str:
+    """Build the executive-summary section naming the best condition per dataset."""
+    best = _best_conditions(df) if not df.empty else []
+    if not best:
+        return _section("Executive Summary", "_No results available._")
+    meta = summary.set_index("condition_id")
+    records = [
+        {
+            "Dataset": dataset_id,
+            "Best Condition": condition_id,
+            "Strategy": meta.loc[condition_id, "strategy"],
+            "Model": meta.loc[condition_id, "model_key"],
+            "Mean F1": value,
+        }
+        for dataset_id, condition_id, value in best
+    ]
+    return _section("Executive Summary", _render_dataframe(pd.DataFrame.from_records(records)))
+
+
+def _condition_summary_section(summary: pd.DataFrame) -> str:
+    """Build the section listing every condition sorted by mean F1."""
+    if summary.empty:
+        return _section("Condition Summary Table", "_No results available._")
+    return _section("Condition Summary Table", _render_dataframe(summary))
+
+
+def _per_dataset_block(breakdown: pd.DataFrame, dataset_id: str) -> str:
+    """Build one per-dataset breakdown sub-table from the shared F1 pivot."""
+    heading = f"## {dataset_id}"
+    if dataset_id not in breakdown.columns:
+        return f"{heading}\n\n_No results available for {dataset_id}._"
+    frame = breakdown[dataset_id].dropna().reset_index()
+    if frame.empty:
+        return f"{heading}\n\n_No results available for {dataset_id}._"
+    frame.columns = ["condition_id", "mean_f1"]
+    frame = frame.sort_values(
+        ["mean_f1", "condition_id"], ascending=[False, True]
+    ).reset_index(drop=True)
+    return f"{heading}\n\n{_render_dataframe(frame)}"
+
+
+def _present_dataset_ids(df: pd.DataFrame) -> List[str]:
+    """
+    List every dataset ID appearing in the results, in deterministic order.
+
+    Sub-datasets such as ``D4_schema`` and ``D4_instance`` are reported under
+    their own IDs rather than being folded into a parent dataset, so the
+    breakdown never looks for an ID the results do not carry.
+
+    Parameters
+    ----------
+    df : pd.DataFrame
+        Results as returned by :func:`load_all_results`.
+
+    Returns
+    -------
+    List[str]
+        The distinct ``dataset_id`` values, sorted lexicographically.
+    """
+    return sorted(df["dataset_id"].dropna().unique(), key=str)
+
+
+def _per_dataset_section(df: pd.DataFrame) -> str:
+    """Build the per-dataset breakdown section reusing the shared F1 pivot."""
+    dataset_ids = _present_dataset_ids(df) if not df.empty else []
+    if not dataset_ids:
+        return _section("Per-Dataset Breakdown", "_No results available._")
+    breakdown = build_dataset_breakdown_table(df, "f1")
+    blocks = [_per_dataset_block(breakdown, dataset_id) for dataset_id in dataset_ids]
+    return _section("Per-Dataset Breakdown", "\n\n".join(blocks))
+
+
+def _mixed_entity_type_rows(df_expanded: pd.DataFrame) -> pd.DataFrame:
+    """
+    Select the class and predicate rows of the mixed-type datasets.
+
+    A frame loaded without ``include_entity_type_breakdown`` carries no
+    ``entity_type`` column at all and yields nothing, so a caller that never
+    asked for the breakdown still renders a well-formed report.
+
+    Parameters
+    ----------
+    df_expanded : pd.DataFrame
+        Results as returned by :func:`load_all_results` with
+        ``include_entity_type_breakdown=True``.
+
+    Returns
+    -------
+    pd.DataFrame
+        The D3 and D4_schema entity-type rows whose bucket reported at least
+        :data:`_MIN_ENTITY_TYPE_REFS` test references.
+    """
+    if not set(_BREAKDOWN_COLUMNS).issubset(df_expanded.columns):
+        return pd.DataFrame(columns=list(_BREAKDOWN_COLUMNS))
+    rows = df_expanded.copy()
+    rows[_REF_COUNT_COLUMN] = pd.to_numeric(rows[_REF_COUNT_COLUMN], errors="coerce")
+    return rows[
+        rows[_ENTITY_TYPE_COLUMN].isin(_ENTITY_TYPES)
+        & rows["dataset_id"].isin(_MIXED_DATASET_IDS)
+        & (rows[_REF_COUNT_COLUMN] >= _MIN_ENTITY_TYPE_REFS)
+    ]
+
+
+def _entity_type_means(rows: pd.DataFrame) -> pd.DataFrame:
+    """Aggregate mean F1 and total references per condition and entity type."""
+    grouped = rows.groupby(
+        [*_ENTITY_TYPE_GROUP_KEYS, _ENTITY_TYPE_COLUMN], sort=True
+    ).agg(mean_f1=("f1", "mean"), total_refs=(_REF_COUNT_COLUMN, "sum"))
+    return grouped.unstack(_ENTITY_TYPE_COLUMN)
+
+
+def _entity_type_column(wide: pd.DataFrame, metric: str, entity_type: str) -> pd.Series:
+    """Return one aggregated metric of one entity type, all-missing when absent."""
+    if (metric, entity_type) in wide.columns:
+        return wide[(metric, entity_type)]
+    return pd.Series(float("nan"), index=wide.index)
+
+
+def _entity_type_table(rows: pd.DataFrame) -> pd.DataFrame:
+    """Build the per-condition class-versus-predicate comparison table."""
+    wide = _entity_type_means(rows)
+    class_f1 = _entity_type_column(wide, "mean_f1", "class")
+    predicate_f1 = _entity_type_column(wide, "mean_f1", "predicate")
+    table = pd.DataFrame(
+        {
+            "Class F1": class_f1,
+            "Class n_refs": _entity_type_column(wide, "total_refs", "class"),
+            "Predicate F1": predicate_f1,
+            "Predicate n_refs": _entity_type_column(wide, "total_refs", "predicate"),
+            "Class vs Predicate gap": class_f1 - predicate_f1,
+        }
+    ).reset_index()
+    return table.rename(columns=_ENTITY_TYPE_KEY_LABELS)
+
+
+def _ref_count_cell(value: object) -> Optional[int]:
+    """Render a summed reference count as a whole number, keeping gaps missing."""
+    if value is None or (isinstance(value, float) and math.isnan(value)):
+        return None
+    return int(value)
+
+
+def _order_entity_type_table(table: pd.DataFrame) -> pd.DataFrame:
+    """Sort by class F1 descending and round the table for rendering."""
+    ordered = table.sort_values(
+        ["Class F1", "Condition"], ascending=[False, True], na_position="last"
+    ).reset_index(drop=True)
+    float_columns = list(_ENTITY_TYPE_FLOAT_COLUMNS)
+    ordered[float_columns] = ordered[float_columns].round(4)
+    for column in _ENTITY_TYPE_COUNT_COLUMNS:
+        ordered[column] = ordered[column].map(_ref_count_cell)
+    return ordered[list(_ENTITY_TYPE_TABLE_COLUMNS)]
+
+
+def _largest_divergence(rows: pd.DataFrame) -> Optional[tuple]:
+    """
+    Locate the single pair whose class F1 most exceeds its predicate F1.
+
+    Parameters
+    ----------
+    rows : pd.DataFrame
+        Entity-type rows as returned by :func:`_mixed_entity_type_rows`.
+
+    Returns
+    -------
+    Optional[tuple]
+        ``(condition_id, pair_name, gap)`` for the widest gap, or ``None`` when
+        no pair reports both entity types.
+    """
+    pivot = rows.pivot_table(
+        index=["condition_id", "pair_name"],
+        columns=_ENTITY_TYPE_COLUMN,
+        values="f1",
+        aggfunc="mean",
+    )
+    if not set(_ENTITY_TYPES).issubset(pivot.columns):
+        return None
+    gaps = (pivot["class"] - pivot["predicate"]).dropna()
+    if gaps.empty:
+        return None
+    widest = gaps.abs().idxmax()
+    return widest[0], widest[1], float(gaps.loc[widest])
+
+
+def _harder_entity_type_clause(gap: float) -> str:
+    """Open the finding by naming the entity type that scores lower, if either does."""
+    if gap == 0:
+        return "Neither entity type is harder"
+    harder = "Predicates" if gap > 0 else "Classes"
+    return f"{harder} are the harder entity type"
+
+
+def _divergence_sentence(rows: pd.DataFrame) -> str:
+    """
+    Cite the condition and pair whose two entity types diverge most.
+
+    The widest gap is taken by magnitude rather than sign, so the pair cited is
+    the strongest example whichever entity type leads it; quoting a signed
+    maximum would print a negative "exceeds by" whenever predicates lead.
+
+    Parameters
+    ----------
+    rows : pd.DataFrame
+        Entity-type rows as returned by :func:`_mixed_entity_type_rows`.
+
+    Returns
+    -------
+    str
+        The closing sentence of the finding paragraph.
+    """
+    widest = _largest_divergence(rows)
+    if widest is None:
+        return "No pair reports both entity types, so no divergence is cited."
+    condition_id, pair_name, gap = widest
+    if gap == 0:
+        return "No pair diverges; class and predicate F1 are equal throughout."
+    leader, trailer = ("class", "predicate") if gap > 0 else ("predicate", "class")
+    return (
+        f"The widest divergence is {condition_id} on {pair_name}, where {leader} F1 "
+        f"exceeds {trailer} F1 by {abs(gap):.4f}."
+    )
+
+
+def _count_phrase(count: int, noun: str) -> str:
+    """Render a count with its noun in grammatical agreement."""
+    return f"{count} {noun}" if count == 1 else f"{count} {noun}s"
+
+
+def _finding_averages(complete: pd.DataFrame) -> tuple:
+    """Return the mean class F1, the mean predicate F1, and their difference."""
+    mean_class = float(complete["Class F1"].mean())
+    mean_predicate = float(complete["Predicate F1"].mean())
+    return mean_class, mean_predicate, mean_class - mean_predicate
+
+
+def _finding_sentences(rows: pd.DataFrame, table: pd.DataFrame) -> str:
+    """
+    State the harder entity type, the mean gap, and the widest divergence.
+
+    Only conditions reporting both entity types are averaged.  Averaging class
+    F1 over one set of conditions and predicate F1 over another would quote a
+    gap that does not equal the difference of the two means printed beside it,
+    and the gap is subtracted from those means so the three always agree.
+
+    Parameters
+    ----------
+    rows : pd.DataFrame
+        Entity-type rows already narrowed to :data:`_FINDING_DATASET_ID`.
+    table : pd.DataFrame
+        Per-condition summary built from ``rows``.
+
+    Returns
+    -------
+    str
+        The finding paragraph, or a note when no condition reports both types.
+    """
+    complete = table.dropna(subset=["Class F1", "Predicate F1"])
+    if complete.empty:
+        return _ONE_BUCKET_ONLY
+    scoped = rows[rows["condition_id"].isin(set(complete["Condition"]))]
+    mean_class, mean_predicate, gap = _finding_averages(complete)
+    return (
+        f"{_harder_entity_type_clause(gap)}: across the "
+        f"{_count_phrase(len(complete), 'condition')} reporting both entity types "
+        f"on {_FINDING_DATASET_ID}, mean class F1 is {mean_class:.4f} against mean "
+        f"predicate F1 of {mean_predicate:.4f}. The mean class-versus-predicate gap "
+        f"is {gap:.4f} F1 over "
+        f"{_count_phrase(scoped['pair_name'].nunique(), f'{_FINDING_DATASET_ID} pair')}. "
+        f"{_divergence_sentence(scoped)}"
+    )
+
+
+def _entity_type_finding(rows: pd.DataFrame) -> str:
+    """
+    Compose the data-driven finding paragraph beneath the summary table.
+
+    Only :data:`_FINDING_DATASET_ID` rows are averaged.  D4_schema contributes a
+    single pair, so weighting it equally with every Conference pair lets one
+    alignment dictate which entity type the paragraph calls harder.  The summary
+    table above still reports both datasets.
+
+    Parameters
+    ----------
+    rows : pd.DataFrame
+        Entity-type rows as returned by :func:`_mixed_entity_type_rows`.
+
+    Returns
+    -------
+    str
+        The finding paragraph, or a note when no qualifying result exists.
+    """
+    scoped = rows[rows["dataset_id"] == _FINDING_DATASET_ID]
+    if scoped.empty:
+        return _NO_FINDING_DATA
+    return _finding_sentences(scoped, _entity_type_table(scoped))
+
+
+def _entity_type_section(df_expanded: pd.DataFrame) -> str:
+    """
+    Build the class-versus-predicate analysis section for mixed-type datasets.
+
+    The table covers every mixed-type dataset; the finding paragraph beneath it
+    averages :data:`_FINDING_DATASET_ID` alone.  See :func:`_entity_type_finding`
+    for why the two scopes differ.
+
+    Parameters
+    ----------
+    df_expanded : pd.DataFrame
+        Results as returned by :func:`load_all_results` with
+        ``include_entity_type_breakdown=True``.
+
+    Returns
+    -------
+    str
+        The rendered Markdown section, carrying a placeholder note when no
+        result reports a class or predicate breakdown.
+    """
+    rows = _mixed_entity_type_rows(df_expanded)
+    if rows.empty:
+        return _section("Entity-Type Analysis", _NO_ENTITY_TYPE_DATA)
+    table = _order_entity_type_table(_entity_type_table(rows))
+    body = f"{_render_dataframe(table)}\n\n{_entity_type_finding(rows)}"
+    return _section("Entity-Type Analysis", body)
+
+
+def _ablation_group_block(summary: pd.DataFrame, group: str) -> str:
+    """Build one ablation-group sub-table using registry-defined membership."""
+    heading = f"## Group {group}"
+    condition_ids = [condition.condition_id for condition in get_conditions_for_group(group)]
+    block = summary[summary["condition_id"].isin(condition_ids)] if not summary.empty else summary
+    if block.empty:
+        return f"{heading}\n\n_No results available for Group {group}._"
+    return f"{heading}\n\n{_render_dataframe(block)}"
+
+
+def _ablation_group_section(summary: pd.DataFrame) -> str:
+    """Build the ablation-group analysis section for groups A through D."""
+    blocks = [_ablation_group_block(summary, group) for group in _ABLATION_GROUPS]
+    return _section("Ablation Group Analysis", "\n\n".join(blocks))
+
+
+def _effect_size_cell(result: dict) -> Optional[float]:
+    """Return a comparison's rank-biserial effect size, or ``None`` when absent."""
+    value = result.get("effect_size_r")
+    return None if value is None else round(float(value), 4)
+
+
+def _warning_cell(result: dict) -> str:
+    """
+    Render a Wilcoxon warning as one footnote cell.
+
+    The cell is left blank when SciPy raised nothing, where the exported stats
+    table prints a dash; escaping is shared so warning text renders identically
+    in both outputs.
+
+    Parameters
+    ----------
+    result : dict
+        A Wilcoxon comparison result, which need not carry a warning.
+
+    Returns
+    -------
+    str
+        The escaped warning text, or an empty cell.
+    """
+    message = result.get("wilcoxon_warning")
+    return _sanitise_warning(message) if message else _NO_WARNING_CELL
+
+
+def _stats_row(result: dict) -> dict:
+    """Project a Wilcoxon comparison result onto the report's stats columns."""
+    return {
+        "Condition A": result["condition_a"],
+        "Condition B": result["condition_b"],
+        "n": result["n_pairs"],
+        "p-value": round(float(result["p_value"]), 4),
+        "Corrected sig.": bool(result.get("corrected_significant", False)),
+        "delta-F1": round(float(result["delta_f1"]), 4),
+        "effect_size_r": _effect_size_cell(result),
+        "Warning": _warning_cell(result),
+    }
+
+
+def _statistical_section(stats_results: List[dict]) -> str:
+    """
+    Build the statistical-significance section from Wilcoxon comparison results.
+
+    The columns are the ones :func:`kgsemembed.evaluation.export_stats_table`
+    writes, so the aggregated report and the exported stats table always expose
+    the same statistical fields, including ``effect_size_r`` and the trailing
+    warning footnote.
+
+    Parameters
+    ----------
+    stats_results : List[dict]
+        Wilcoxon comparison results; an empty list yields a placeholder note.
+
+    Returns
+    -------
+    str
+        The rendered Markdown section.
+    """
+    if not stats_results:
+        return _section("Statistical Significance", "_No statistical comparison results available._")
+    frame = pd.DataFrame.from_records(
+        [_stats_row(result) for result in stats_results], columns=list(_STATS_COLUMNS)
+    )
+    return _section("Statistical Significance", _render_dataframe(frame))
+
+
+def _mean_metric(df: pd.DataFrame, condition_id: str, dataset_id: str) -> Optional[float]:
+    """Return a condition's mean F1 on a dataset, or ``None`` when absent."""
+    subset = df[(df["condition_id"] == condition_id) & (df["dataset_id"] == dataset_id)]
+    if subset.empty:
+        return None
+    return round(float(subset["f1"].mean()), 4)
+
+
+def _ppas_row(df: pd.DataFrame, comparison: _PpasComparison) -> dict:
+    """
+    Build one PPAS comparison row from the loaded results.
+
+    Parameters
+    ----------
+    df : pd.DataFrame
+        Results as returned by :func:`load_all_results`.
+    comparison : _PpasComparison
+        The comparison definition to render.
+
+    Returns
+    -------
+    dict
+        A row over the PPAS ablation table's columns.
+    """
+    mean_a = _mean_metric(df, comparison.condition_a, comparison.dataset_id)
+    mean_b = _mean_metric(df, comparison.condition_b, comparison.dataset_id)
+    delta = round(mean_b - mean_a, 4) if mean_a is not None and mean_b is not None else None
+    return {
+        "Comparison": f"{comparison.condition_a} vs {comparison.condition_b}",
+        "Dataset": comparison.dataset_id,
+        "Ablation Type": comparison.ablation_type,
+        "PPAS Variable?": comparison.ppas_variable,
+        "Mean F1 (A)": mean_a,
+        "Mean F1 (B)": mean_b,
+        "Delta F1": delta,
+    }
+
+
+def _ppas_section(df: pd.DataFrame) -> str:
+    """Build the PPAS ablation section from the loaded results."""
+    rows = [_ppas_row(df, comparison) for comparison in _PPAS_COMPARISONS]
+    return _section("PPAS Ablation", _render_dataframe(pd.DataFrame.from_records(rows)))
+
+
+def _pair_level_frame(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Return one row per AlignmentPair, dropping any interleaved entity-type rows.
+
+    Every section other than the entity-type analysis aggregates one row per
+    pair, so a frame loaded with the breakdown must be narrowed first or each
+    mixed-type pair would be counted once more per entity type it reports.
+
+    Parameters
+    ----------
+    df : pd.DataFrame
+        Results as returned by :func:`load_all_results`, loaded with or without
+        ``include_entity_type_breakdown``.
+
+    Returns
+    -------
+    pd.DataFrame
+        The pair-level rows, unchanged when no breakdown was loaded.
+    """
+    if _ENTITY_TYPE_COLUMN not in df.columns:
+        return df
+    return df[df[_ENTITY_TYPE_COLUMN] == _OVERALL_ENTITY_TYPE]
+
+
+def generate_markdown_report(
+    df: pd.DataFrame,
+    stats_results: Optional[List[dict]] = None,
+    output_path: str = "data/results/report.md",
+) -> None:
+    """
+    Render the full Phase 2 experiment report to ``output_path``.
+
+    Sections are emitted in a fixed order: executive summary, condition summary,
+    per-dataset breakdown, entity-type analysis, ablation-group analysis, an
+    optional statistical-significance section, and PPAS ablation.  The
+    statistical section is included only when ``stats_results`` is not ``None``.
+    Parent directories are created as needed and identical inputs always produce
+    byte-for-byte identical output.
+
+    The entity-type analysis is populated only when ``df`` was loaded with
+    ``include_entity_type_breakdown=True``; otherwise that one section carries a
+    placeholder note and every other section is unaffected.  The breakdown rows
+    are consumed here alone, so no other section double-counts a mixed pair.
+
+    Parameters
+    ----------
+    df : pd.DataFrame
+        Results as returned by :func:`load_all_results`.
+    stats_results : Optional[List[dict]]
+        Wilcoxon comparison results to render; ``None`` omits the section.
+    output_path : str
+        Destination Markdown file.
+    """
+    pairs = _pair_level_frame(df)
+    summary = build_condition_summary_table(pairs)
+    sections = [
+        _executive_summary_section(pairs, summary),
+        _condition_summary_section(summary),
+        _per_dataset_section(pairs),
+        _entity_type_section(df),
+        _ablation_group_section(summary),
+    ]
+    if stats_results is not None:
+        sections.append(_statistical_section(stats_results))
+    sections.append(_ppas_section(pairs))
+    path = Path(output_path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("\n\n".join(sections) + "\n", encoding="utf-8")

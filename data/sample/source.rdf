@@ -1,0 +1,106 @@
+<?xml version="1.0" encoding="utf-8"?>
+<rdf:RDF
+   xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+   xmlns:rdfs="http://www.w3.org/2000/01/rdf-schema#"
+>
+  <rdf:Description rdf:about="http://mouse.owl#MA_0002309">
+    <rdf:type rdf:resource="http://www.w3.org/2002/07/owl#Class"/>
+    <rdfs:label rdf:datatype="http://www.w3.org/2001/XMLSchema#string">gluteus maximus</rdfs:label>
+  </rdf:Description>
+  <rdf:Description rdf:about="http://mouse.owl#MA_0002285">
+    <rdf:type rdf:resource="http://www.w3.org/2002/07/owl#Class"/>
+    <rdfs:label rdf:datatype="http://www.w3.org/2001/XMLSchema#string">cutaneous trunci</rdfs:label>
+  </rdf:Description>
+  <rdf:Description rdf:about="http://mouse.owl#MA_0002310">
+    <rdf:type rdf:resource="http://www.w3.org/2002/07/owl#Class"/>
+    <rdfs:label rdf:datatype="http://www.w3.org/2001/XMLSchema#string">gluteus medius</rdfs:label>
+  </rdf:Description>
+  <rdf:Description rdf:about="http://mouse.owl#MA_0002291">
+    <rdf:type rdf:resource="http://www.w3.org/2002/07/owl#Class"/>
+    <rdfs:label rdf:datatype="http://www.w3.org/2001/XMLSchema#string">extensor carpi radialis longus</rdfs:label>
+  </rdf:Description>
+  <rdf:Description rdf:about="http://mouse.owl#MA_0002306">
+    <rdf:type rdf:resource="http://www.w3.org/2002/07/owl#Class"/>
+    <rdfs:label rdf:datatype="http://www.w3.org/2001/XMLSchema#string">gastrocnemius</rdfs:label>
+  </rdf:Description>
+  <rdf:Description rdf:about="http://mouse.owl#MA_0002298">
+    <rdf:type rdf:resource="http://www.w3.org/2002/07/owl#Class"/>
+    <rdfs:label rdf:datatype="http://www.w3.org/2001/XMLSchema#string">flexor carpi ulnaris</rdfs:label>
+  </rdf:Description>
+  <rdf:Description rdf:about="http://mouse.owl#MA_0002287">
+    <rdf:type rdf:resource="http://www.w3.org/2002/07/owl#Class"/>
+    <rdfs:label rdf:datatype="http://www.w3.org/2001/XMLSchema#string">depressor labii inferioris</rdfs:label>
+  </rdf:Description>
+  <rdf:Description rdf:about="http://mouse.owl#MA_0002300">
+    <rdf:type rdf:resource="http://www.w3.org/2002/07/owl#Class"/>
+    <rdfs:label rdf:datatype="http://www.w3.org/2001/XMLSchema#string">flexor digitorum profundus</rdfs:label>
+  </rdf:Description>
+  <rdf:Description rdf:about="http://mouse.owl#MA_0002302">
+    <rdf:type rdf:resource="http://www.w3.org/2002/07/owl#Class"/>
+    <rdfs:label rdf:datatype="http://www.w3.org/2001/XMLSchema#string">foot interosseus muscle</rdfs:label>
+  </rdf:Description>
+  <rdf:Description rdf:about="http://mouse.owl#MA_0002303">
+    <rdf:type rdf:resource="http://www.w3.org/2002/07/owl#Class"/>
+    <rdfs:label rdf:datatype="http://www.w3.org/2001/XMLSchema#string">dorsal foot interosseus muscle</rdfs:label>
+  </rdf:Description>
+  <rdf:Description rdf:about="http://mouse.owl#MA_0002290">
+    <rdf:type rdf:resource="http://www.w3.org/2002/07/owl#Class"/>
+    <rdfs:label rdf:datatype="http://www.w3.org/2001/XMLSchema#string">extensor carpi radialis brevis</rdfs:label>
+  </rdf:Description>
+  <rdf:Description rdf:about="http://mouse.owl#MA_0002286">
+    <rdf:type rdf:resource="http://www.w3.org/2002/07/owl#Class"/>
+    <rdfs:label rdf:datatype="http://www.w3.org/2001/XMLSchema#string">deltoid</rdfs:label>
+  </rdf:Description>
+  <rdf:Description rdf:about="http://mouse.owl#MA_0002297">
+    <rdf:type rdf:resource="http://www.w3.org/2002/07/owl#Class"/>
+    <rdfs:label rdf:datatype="http://www.w3.org/2001/XMLSchema#string">flexor carpi radialis</rdfs:label>
+  </rdf:Description>
+  <rdf:Description rdf:about="http://mouse.owl#MA_0002301">
+    <rdf:type rdf:resource="http://www.w3.org/2002/07/owl#Class"/>
+    <rdfs:label rdf:datatype="http://www.w3.org/2001/XMLSchema#string">flexor hallucis longus</rdfs:label>
+  </rdf:Description>
+  <rdf:Description rdf:about="http://mouse.owl#MA_0002289">
+    <rdf:type rdf:resource="http://www.w3.org/2002/07/owl#Class"/>
+    <rdfs:label rdf:datatype="http://www.w3.org/2001/XMLSchema#string">erector spinae</rdfs:label>
+  </rdf:Description>
+  <rdf:Description rdf:about="http://mouse.owl#MA_0002307">
+    <rdf:type rdf:resource="http://www.w3.org/2002/07/owl#Class"/>
+    <rdfs:label rdf:datatype="http://www.w3.org/2001/XMLSchema#string">genioglossus</rdfs:label>
+  </rdf:Description>
+  <rdf:Description rdf:about="http://mouse.owl#MA_0002292">
+    <rdf:type rdf:resource="http://www.w3.org/2002/07/owl#Class"/>
+    <rdfs:label rdf:datatype="http://www.w3.org/2001/XMLSchema#string">extensor carpi ulnaris</rdfs:label>
+  </rdf:Description>
+  <rdf:Description rdf:about="http://mouse.owl#MA_0002288">
+    <rdf:type rdf:resource="http://www.w3.org/2002/07/owl#Class"/>
+    <rdfs:label rdf:datatype="http://www.w3.org/2001/XMLSchema#string">digastric</rdfs:label>
+  </rdf:Description>
+  <rdf:Description rdf:about="http://mouse.owl#MA_0002295">
+    <rdf:type rdf:resource="http://www.w3.org/2002/07/owl#Class"/>
+    <rdfs:label rdf:datatype="http://www.w3.org/2001/XMLSchema#string">extensor digitorum longus</rdfs:label>
+  </rdf:Description>
+  <rdf:Description rdf:about="http://mouse.owl#MA_0002308">
+    <rdf:type rdf:resource="http://www.w3.org/2002/07/owl#Class"/>
+    <rdfs:label rdf:datatype="http://www.w3.org/2001/XMLSchema#string">geniohyoid</rdfs:label>
+  </rdf:Description>
+  <rdf:Description rdf:about="http://mouse.owl#MA_0002304">
+    <rdf:type rdf:resource="http://www.w3.org/2002/07/owl#Class"/>
+    <rdfs:label rdf:datatype="http://www.w3.org/2001/XMLSchema#string">plantar foot interosseus muscle</rdfs:label>
+  </rdf:Description>
+  <rdf:Description rdf:about="http://mouse.owl#MA_0002294">
+    <rdf:type rdf:resource="http://www.w3.org/2002/07/owl#Class"/>
+    <rdfs:label rdf:datatype="http://www.w3.org/2001/XMLSchema#string">extensor digitorum lateralis</rdfs:label>
+  </rdf:Description>
+  <rdf:Description rdf:about="http://mouse.owl#MA_0002311">
+    <rdf:type rdf:resource="http://www.w3.org/2002/07/owl#Class"/>
+    <rdfs:label rdf:datatype="http://www.w3.org/2001/XMLSchema#string">gracilis</rdfs:label>
+  </rdf:Description>
+  <rdf:Description rdf:about="http://mouse.owl#MA_0002293">
+    <rdf:type rdf:resource="http://www.w3.org/2002/07/owl#Class"/>
+    <rdfs:label rdf:datatype="http://www.w3.org/2001/XMLSchema#string">extensor digitorum communis</rdfs:label>
+  </rdf:Description>
+  <rdf:Description rdf:about="http://mouse.owl#MA_0002299">
+    <rdf:type rdf:resource="http://www.w3.org/2002/07/owl#Class"/>
+    <rdfs:label rdf:datatype="http://www.w3.org/2001/XMLSchema#string">flexor digitorum longus</rdfs:label>
+  </rdf:Description>
+</rdf:RDF>

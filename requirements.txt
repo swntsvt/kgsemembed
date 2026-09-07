@@ -1,0 +1,14 @@
+sentence-transformers
+transformers
+torch
+pandas
+numpy
+scipy
+rdflib==7.6.0
+hydra-core
+omegaconf
+tqdm
+pytest
+matplotlib
+seaborn
+orjson

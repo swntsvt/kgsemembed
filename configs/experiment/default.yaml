@@ -1,0 +1,5 @@
+name: phase2_baseline
+seed: 42
+output_dir: outputs
+log_level: INFO
+evaluation_ks: [1, 5, 10, 20, 50]

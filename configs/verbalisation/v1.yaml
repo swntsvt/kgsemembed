@@ -1,0 +1,5 @@
+strategy: v1
+include_normalized_variants: true
+include_annotations: false
+include_graph_context: false
+template_name: null
