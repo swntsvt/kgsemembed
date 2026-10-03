@@ -115,6 +115,10 @@ python scripts/generate_candidates.py --datasets D1 D2 D3 D4 D5 \
 python scripts/generate_report.py \
     --results_dir data/results/ --output data/results/report.md
 
+# Compute stage-1 candidate recall@20 (the ceiling re-ranking cannot exceed)
+python scripts/compute_recall_at_20.py \
+    --datasets D1 D2 D3 D4 D5 --data_dir data/
+
 # Check dataset presence
 python scripts/download_datasets.py --data_dir data/ --check
 ```
@@ -218,10 +222,19 @@ kgsemembed/                      # repo root
   on them.
 - **Language**: English-only datasets assumed throughout.
 - **Python**: 3.12+ required, always via `venv`.
-- **Key dependencies**: `rdflib` (7.6.0 installed; unpinned in
-  `requirements.txt` / `pyproject.toml`), `sentence-transformers`,
-  `torch`, `transformers`, `scipy`, `pandas`, `numpy`, `orjson`, `tqdm`,
-  plus `hydra-core` and `omegaconf` for the legacy scaffold above.
+- **Key dependencies**: `rdflib` (pinned `==7.6.0` in `requirements.txt`,
+  `>=7.6,<8` in `pyproject.toml`), `scipy` (`>=1.18`; see below),
+  `sentence-transformers`, `torch`, `transformers`, `pandas`, `numpy`,
+  `orjson`, `tqdm`, plus `hydra-core` and `omegaconf` for the legacy scaffold
+  above. Installed on the development machine: scipy 1.18.1, numpy 2.5.3,
+  torch 2.11.0, transformers 5.5.4, sentence-transformers 5.4.0.
+- **scipy floor**: scipy 1.15.3 wheels fail to `dlopen` on macOS 26+ (Darwin
+  27), aborting every import of `kgsemembed.candidates` with a
+  ``__DATA/__thread_bss`` section error from `_propack`. 1.18.1 loads cleanly;
+  the floor is set there because that is the version verified, not because
+  intermediate releases were bisected. Upgrading from 1.15.3 leaves results
+  unchanged: D3 candidate files regenerate byte-identical, and C1/D4 metrics
+  reproduce exactly.
 
 ### Embedding Models
 
