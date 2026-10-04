@@ -123,6 +123,11 @@ python scripts/compute_recall_at_20.py \
 # F1 is weighted by n_refs per pair; report.md uses the unweighted pair mean.
 python scripts/generate_entity_type_table.py --results_dir data/results/
 
+# Plot Figure 1: D3 per-pair F1, C3 vs C10, CMT/EDAS pairs highlighted.
+# Writes figures/fig1_d3_scatter.pdf (+ .png) and prints win counts.
+python scripts/generate_figure1_d3_scatter.py \
+    --results_dir data/results/ --output_dir figures/
+
 # Check dataset presence
 python scripts/download_datasets.py --data_dir data/ --check
 ```
@@ -204,6 +209,7 @@ kgsemembed/                      # repo root
 ├── data/                        # OAEI KG datasets (do not regenerate or overwrite)
 │   ├── candidates/              # generated candidate files
 │   └── results/                 # output JSON — data/results/<condition>/<dataset>/
+├── figures/                     # generated paper figures — gitignored, rebuilt by scripts
 ├── logs/                        # experiment execution logs
 └── venv/                        # ⚠️ virtual environment — DO NOT MODIFY
 ```
