@@ -119,6 +119,10 @@ python scripts/generate_report.py \
 python scripts/compute_recall_at_20.py \
     --datasets D1 D2 D3 D4 D5 --data_dir data/
 
+# Print D3 class vs predicate F1 rows (LaTeX) for the Section 4.3 table.
+# F1 is weighted by n_refs per pair; report.md uses the unweighted pair mean.
+python scripts/generate_entity_type_table.py --results_dir data/results/
+
 # Check dataset presence
 python scripts/download_datasets.py --data_dir data/ --check
 ```
