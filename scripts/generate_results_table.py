@@ -7,7 +7,9 @@ Each cell is the mean F1 over the pairs a condition was run on for that
 dataset, so D3 cells average the 21 Conference pairs.  Conditions follow the
 paper order and a rule separates consecutive ablation groups.  The best value
 in each dataset column is set in bold; values that tie at four decimal places
-are all bolded.  The final column averages the non-D5 cells a condition has.
+are all bolded.  The final column averages D1-D4 (both D4 columns) and is shown
+only for conditions run on all of them, so every mean it reports covers the
+same datasets and the column can be compared row against row.  D5 is left out.
 
 Strategy, model and ablation group come from the condition registry, so the
 table cannot drift from the conditions that were actually run.  Results are
@@ -47,7 +49,7 @@ _DATASETS = ("D1", "D2", "D3", "D4_schema", "D4_instance", "D5")
 _COLUMN_HEADS = (
     "D1", "D2", "D3", r"D4$_{\mathrm{sc}}$", r"D4$_{\mathrm{in}}$", "D5"
 )
-_MEAN_EXCLUDED_DATASET = "D5"
+_MEAN_DATASETS = ("D1", "D2", "D3", "D4_schema", "D4_instance")
 _D3_PAIR_COUNT = 21
 _MODEL_MARKERS = {"M2_uncapped": r"M2$^\dagger$", "M4": r"M4$^\ddagger$"}
 _MISSING = "---"
@@ -60,7 +62,10 @@ _CAPTION = (
     r"\texttt{ppas\_budget=None}); C19 is identical to C10 by design. "
     r"$\ddagger$: M4 (BioLORD) evaluated on D1 and D2 only.}"
 )
-_FOOTNOTE = r"$^*$Mean excludes D5 (recall@20 ceiling 26.67\%)."
+_FOOTNOTE = (
+    r"$^*$Mean over D1--D4 (D4 schema and instance), shown only for "
+    r"conditions run on all of them; excludes D5 (recall@20 ceiling 26.67\%)."
+)
 
 
 def load_cell_means(results_dir: str) -> CellMeans:
@@ -120,13 +125,12 @@ def best_per_dataset(means: CellMeans) -> Dict[str, str]:
     return {dataset_id: _format_f1(value) for dataset_id, value in best.items()}
 
 
-def _mean_excluding_d5(values: Dict[str, Optional[float]]) -> Optional[float]:
-    """Average the cells a condition has, leaving out D5."""
-    kept = [
-        value for dataset_id, value in values.items()
-        if dataset_id != _MEAN_EXCLUDED_DATASET and value is not None
-    ]
-    return sum(kept) / len(kept) if kept else None
+def _mean_over_d1_to_d4(values: Dict[str, Optional[float]]) -> Optional[float]:
+    """Average D1-D4, or ``None`` unless the condition has every one of them."""
+    kept = [values[dataset_id] for dataset_id in _MEAN_DATASETS]
+    if any(value is None for value in kept):
+        return None
+    return sum(kept) / len(kept)
 
 
 def _latex_row(condition_id: str, means: CellMeans, best: Dict[str, str]) -> str:
@@ -156,7 +160,7 @@ def _latex_row(condition_id: str, means: CellMeans, best: Dict[str, str]) -> str
     ]
     model = _MODEL_MARKERS.get(condition.model_key, condition.model_key)
     leading = [condition_id, condition.strategy_name, model, condition.ablation_group]
-    trailing = [_format_f1(_mean_excluding_d5(values))]
+    trailing = [_format_f1(_mean_over_d1_to_d4(values))]
     return " & ".join(leading + cells + trailing) + r" \\"
 
 

@@ -107,12 +107,29 @@ def test_best_per_column_is_bold_and_ties_are_all_bold(tmp_path: Path) -> None:
     assert rows["C3"][4] == "0.3000"
 
 
-def test_mean_column_excludes_d5(tmp_path: Path) -> None:
-    """The final column averages only the non-D5 cells a condition has."""
-    _write_result(tmp_path, "C1", "D1", 0.2)
-    _write_result(tmp_path, "C1", "D4_instance", 0.4)
+def _write_d1_to_d4(results_dir: Path, condition_id: str, f1s: List[float]) -> None:
+    for dataset_id, f1 in zip(("D1", "D2", "D3", "D4_schema", "D4_instance"), f1s):
+        _write_result(results_dir, condition_id, dataset_id, f1)
+
+
+def test_mean_column_averages_d1_to_d4_and_excludes_d5(tmp_path: Path) -> None:
+    """With every D1-D4 cell present, the mean covers them and ignores D5."""
+    _write_d1_to_d4(tmp_path, "C1", [0.1, 0.2, 0.3, 0.4, 0.5])
     _write_result(tmp_path, "C1", "D5", 0.9)
     assert _rows(tmp_path)["C1"][-1] == "0.3000"
+
+
+def test_mean_column_is_dash_without_full_coverage(tmp_path: Path) -> None:
+    """A condition missing any D1-D4 cell, such as C17, reports no mean."""
+    _write_result(tmp_path, "C17", "D1", 0.4)
+    _write_result(tmp_path, "C17", "D2", 0.6)
+    assert _rows(tmp_path)["C17"][-1] == "---"
+
+
+def test_mean_column_is_dash_when_one_d4_column_is_missing(tmp_path: Path) -> None:
+    """Both D4 columns count, so lacking D4_instance withholds the mean."""
+    _write_d1_to_d4(tmp_path, "C1", [0.1, 0.2, 0.3, 0.4])
+    assert _rows(tmp_path)["C1"][-1] == "---"
 
 
 def test_mean_column_is_dash_with_only_d5(tmp_path: Path) -> None:
