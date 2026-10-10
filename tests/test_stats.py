@@ -495,7 +495,7 @@ def _seed_group(results_dir: Path, group: str) -> None:
 
 @pytest.mark.parametrize(
     "group,expected",
-    [("A", 3), ("B", 4), ("C", 3), ("D", 2)],
+    [("A", 3), ("B", 5), ("C", 3), ("D", 2)],
 )
 def test_group_comparison_counts(tmp_path: Path, group: str, expected: int) -> None:
     _seed_group(tmp_path, group)
@@ -525,7 +525,13 @@ def test_group_results_contain_corrected_significant(tmp_path: Path) -> None:
 def test_group_comparisons_match_canonical_matrix(tmp_path: Path) -> None:
     expected = {
         "A": [("C1", "C2"), ("C1", "C17"), ("C2", "C17")],
-        "B": [("C3", "C10"), ("C9", "C10"), ("C12", "C1"), ("C18", "C10")],
+        "B": [
+            ("C3", "C10"),
+            ("C9", "C10"),
+            ("C12", "C1"),
+            ("C18", "C10"),
+            ("C20", "C10"),
+        ],
         "C": [("C10", "C13"), ("C11", "C13"), ("C6", "C16")],
         "D": [("C5", "C14"), ("C10", "C15")],
     }
@@ -546,12 +552,12 @@ def _run_group_with_fixed_pvalue(
 
 
 def test_bonferroni_uses_group_comparison_count(tmp_path: Path) -> None:
-    # Group B has 4 comparisons; the corrected threshold is 0.05 / 4 = 0.0125.
-    # p=0.012 is below it and p=0.013 above it, so this pair of assertions is
+    # Group B has 5 comparisons; the corrected threshold is 0.05 / 5 = 0.01.
+    # p=0.009 is below it and p=0.011 above it, so this pair of assertions is
     # only satisfied when the divisor is exactly the group's comparison count.
-    below = _run_group_with_fixed_pvalue(tmp_path / "below", "B", 0.012)
-    above = _run_group_with_fixed_pvalue(tmp_path / "above", "B", 0.013)
-    assert len(below) == 4 and len(above) == 4
+    below = _run_group_with_fixed_pvalue(tmp_path / "below", "B", 0.009)
+    above = _run_group_with_fixed_pvalue(tmp_path / "above", "B", 0.011)
+    assert len(below) == 5 and len(above) == 5
     assert all(result["corrected_significant"] is True for result in below)
     assert all(result["corrected_significant"] is False for result in above)
 
@@ -565,7 +571,7 @@ def test_bonferroni_correction_is_group_local(tmp_path: Path) -> None:
 
 
 def test_corrected_significant_does_not_overwrite_significant(tmp_path: Path) -> None:
-    # p=0.03 is significant at alpha=0.05 but not at the corrected 0.05/4.
+    # p=0.03 is significant at alpha=0.05 but not at the corrected 0.05/5.
     results = _run_group_with_fixed_pvalue(tmp_path, "B", 0.03)
     for result in results:
         assert result["significant"] is True

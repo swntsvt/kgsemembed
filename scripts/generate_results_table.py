@@ -46,7 +46,7 @@ _LOGGER = logging.getLogger("kgsemembed.scripts.generate_results_table")
 
 _CONDITION_ORDER = (
     "C1", "C2", "C17",
-    "C9", "C12", "C3", "C10", "C18",
+    "C9", "C12", "C3", "C20", "C10", "C18",
     "C4", "C5", "C6", "C7", "C8", "C11", "C13", "C16",
     "C14", "C15", "C19",
 )

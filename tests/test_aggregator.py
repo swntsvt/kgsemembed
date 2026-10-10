@@ -471,7 +471,7 @@ def test_condition_summary_row_count(full_results_dir: Path) -> None:
     df = load_all_results(str(full_results_dir))
     summary = build_condition_summary_table(df)
     assert list(summary.columns) == _EXPECTED_SUMMARY_COLUMNS
-    assert len(summary) == len(EXPERIMENT_CONDITIONS) == 19
+    assert len(summary) == len(EXPERIMENT_CONDITIONS) == 20
 
 
 def test_condition_summary_sorted_descending(full_results_dir: Path) -> None:

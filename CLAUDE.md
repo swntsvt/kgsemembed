@@ -233,8 +233,9 @@ kgsemembed/                      # repo root
 
 - **Configuration**: Experiment conditions are defined as `ExperimentCondition`
   dataclasses in `src/kgsemembed/pipeline/conditions.py`. There are currently
-  **19 conditions (C1–C19)**, validated at import time; the count is asserted
-  against `_EXPECTED_CONDITION_COUNT`. No external config file drives the
+  **20 conditions (C1–C20)**, validated at import time; the count is asserted
+  against `_EXPECTED_CONDITION_COUNT`. C20 (V2/M2) is the controlled baseline
+  for V8: it differs from C10 (V2+V8/M2) only by the V8 component. No external config file drives the
   Phase 2 pipeline.
 - **Legacy Hydra scaffold**: `run_experiment.py` still holds a `@hydra.main`
   `main()` entry point and a `run_experiment(cfg)` candidate-generation

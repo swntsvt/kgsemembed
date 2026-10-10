@@ -26,6 +26,7 @@ _CANONICAL_MATRIX = [
     ("C10", "V2+V8", "M2", _ALL, True, "B"),
     ("C12", "V8", "M2", ["D3", "D4"], True, "B"),
     ("C18", "V2+V8", "M1", _ALL, True, "B"),
+    ("C20", "V2", "M2", _ALL, True, "B"),
     ("C4", "V3", "M2", ["D1", "D2", "D3"], True, "C"),
     ("C5", "V4", "M2", ["D4", "D5"], True, "C"),
     ("C6", "V2+V7", "M4", ["D1", "D2"], True, "C"),
@@ -54,8 +55,8 @@ def _make_condition(**overrides) -> ExperimentCondition:
     return ExperimentCondition(**defaults)
 
 
-def test_registry_holds_nineteen_conditions():
-    assert len(EXPERIMENT_CONDITIONS) == 19
+def test_registry_holds_twenty_conditions():
+    assert len(EXPERIMENT_CONDITIONS) == 20
 
 
 def test_registry_matches_canonical_matrix_in_order():
@@ -152,6 +153,86 @@ def test_c19_verbalises_identically_to_c10():
     )
 
 
+def _v8_ablation_graph():
+    from rdflib import Graph, Literal, OWL, RDF, RDFS, URIRef
+
+    ex = "http://example.org/"
+    graph = Graph()
+    heart, organ, part_of, aorta = (
+        URIRef(f"{ex}{name}") for name in ("Heart", "Organ", "partOf", "aorta1")
+    )
+    graph.add((heart, RDF.type, OWL.Class))
+    graph.add((heart, RDFS.label, Literal("Heart", lang="en")))
+    graph.add((heart, RDFS.comment, Literal("A muscular organ.")))
+    graph.add((heart, RDFS.subClassOf, organ))
+    graph.add((part_of, RDF.type, OWL.ObjectProperty))
+    graph.add((part_of, RDFS.label, Literal("part of")))
+    graph.add((part_of, RDFS.domain, heart))
+    graph.add((part_of, RDFS.range, organ))
+    graph.add((aorta, RDFS.label, Literal("Aorta")))
+    graph.add((aorta, part_of, heart))
+    return graph, {"class": heart, "predicate": part_of, "instance": aorta}
+
+
+def test_c20_is_the_annotation_only_baseline_on_m2():
+    condition = get_condition("C20")
+    assert condition.strategy_name == "V2"
+    assert condition.model_key == "M2"
+    assert condition.datasets == _ALL
+    assert condition.apply_ppas is True
+    assert condition.ablation_group == "B"
+    assert [c.condition_id for c in EXPERIMENT_CONDITIONS].count("C20") == 1
+
+
+def test_c20_differs_from_c10_only_in_strategy():
+    c20, c10 = get_condition("C20"), get_condition("C10")
+    assert c10.strategy_name == "V2+V8"
+    for field in ("model_key", "datasets", "apply_ppas", "ablation_group"):
+        assert getattr(c20, field) == getattr(c10, field)
+
+
+def test_c20_builds_the_bare_annotation_verbaliser():
+    from kgsemembed.verbalisation import AnnotationVerbaliser
+    from kgsemembed.verbalisation.registry import build_verbaliser
+
+    condition = get_condition("C20")
+    verbaliser = build_verbaliser(condition.strategy_name, condition.model_key)
+    assert type(verbaliser) is AnnotationVerbaliser
+
+
+def test_c10_builds_annotation_then_relational_signature():
+    from kgsemembed.verbalisation import (
+        AnnotationVerbaliser,
+        CombinedVerbaliser,
+        RelationalSignatureVerbaliser,
+    )
+    from kgsemembed.verbalisation.registry import build_verbaliser
+
+    condition = get_condition("C10")
+    verbaliser = build_verbaliser(condition.strategy_name, condition.model_key)
+    assert isinstance(verbaliser, CombinedVerbaliser)
+    assert [type(s) for s in verbaliser.strategies] == [
+        AnnotationVerbaliser,
+        RelationalSignatureVerbaliser,
+    ]
+
+
+@pytest.mark.parametrize("entity_type", ["class", "predicate", "instance"])
+def test_c10_text_extends_c20_text_with_v8(entity_type):
+    """V8 is appended to the C20 text, never replacing any of it."""
+    from kgsemembed.verbalisation import RelationalSignatureVerbaliser
+    from kgsemembed.verbalisation.registry import build_verbaliser
+
+    graph, entities = _v8_ablation_graph()
+    entity = entities[entity_type]
+    c20, c10 = get_condition("C20"), get_condition("C10")
+    baseline = build_verbaliser(c20.strategy_name, c20.model_key)
+    combined = build_verbaliser(c10.strategy_name, c10.model_key)
+    v2_text = baseline.verbalise(graph, entity, entity_type)
+    v8_text = RelationalSignatureVerbaliser().verbalise(graph, entity, entity_type)
+    assert combined.verbalise(graph, entity, entity_type) == f"{v2_text}\n{v8_text}"
+
+
 def test_get_condition_unknown_raises_key_error():
     with pytest.raises(KeyError):
         get_condition("C999")
@@ -188,7 +269,7 @@ def test_get_conditions_for_group_d_holds_every_non_ppas_condition():
     "group, expected_ids",
     [
         ("A", ["C1", "C2", "C17"]),
-        ("B", ["C3", "C9", "C10", "C12", "C18"]),
+        ("B", ["C3", "C9", "C10", "C12", "C18", "C20"]),
         ("C", ["C4", "C5", "C6", "C7", "C8", "C11", "C13", "C16"]),
     ],
 )

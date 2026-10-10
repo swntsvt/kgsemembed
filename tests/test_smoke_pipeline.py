@@ -1023,6 +1023,36 @@ def test_model_loaded_once_per_model_group(fakes, tmp_path):
     assert fakes["encoders"] == 1
 
 
+def test_c20_and_c10_share_model_and_provenance(fakes, tmp_path):
+    results_dir = tmp_path / "results"
+    runner.run_all_conditions(
+        condition_ids=["C20", "C10"],
+        dataset_ids=["D1"],
+        data_dir=tmp_path,
+        results_dir=results_dir,
+    )
+    assert fakes["models"] == ["M2"]
+    payloads = {
+        condition_id: json.loads(
+            (results_dir / condition_id / "D1" / "d1_pair_results.json").read_text()
+        )
+        for condition_id in ("C20", "C10")
+    }
+    assert payloads["C20"]["strategy"] == "V2"
+    assert payloads["C10"]["strategy"] == "V2+V8"
+    for field in (
+        "model_key",
+        "model_id",
+        "hf_revision",
+        "apply_ppas",
+        "ppas_effective",
+        "n_candidates_per_entity",
+        "n_source_entities",
+        "versions",
+    ):
+        assert payloads["C20"][field] == payloads["C10"][field]
+
+
 def test_distinct_models_loaded_once_each(fakes, tmp_path):
     runner.run_all_conditions(
         condition_ids=["C1", "C3"],
