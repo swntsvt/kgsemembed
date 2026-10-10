@@ -128,6 +128,12 @@ python scripts/generate_entity_type_table.py --results_dir data/results/
 python scripts/generate_figure1_d3_scatter.py \
     --results_dir data/results/ --output_dir figures/
 
+# Plot Figure 2: D1/D2 F1 per model with V2+V8 held constant, plus the C17
+# (V1/M4) reference bar. C15 has no D2 run, so that bar is drawn as n/a.
+# Writes figures/fig2_model_comparison.pdf (+ .png) and prints the values.
+python scripts/generate_figure2_model_comparison.py \
+    --results_dir data/results/ --output_dir figures/
+
 # Check dataset presence
 python scripts/download_datasets.py --data_dir data/ --check
 ```
