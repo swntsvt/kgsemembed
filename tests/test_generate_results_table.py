@@ -87,7 +87,7 @@ def test_model_markers_match_caption(tmp_path: Path) -> None:
 
 
 def test_every_condition_appears_in_paper_order(tmp_path: Path) -> None:
-    """All nineteen conditions are listed, in the fixed table order."""
+    """All twenty conditions are listed, in the fixed table order."""
     assert list(_rows(tmp_path)) == list(script._CONDITION_ORDER)
 
 

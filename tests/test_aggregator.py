@@ -580,6 +580,28 @@ def test_report_seven_sections_with_stats(full_results_dir: Path, tmp_path: Path
     ]
 
 
+def _group_block(report: str, group: str) -> str:
+    return report.split(f"## Group {group}\n", 1)[1].split("\n#", 1)[0]
+
+
+def test_group_e_block_lists_c10_as_reference(full_results_dir: Path, tmp_path: Path) -> None:
+    df = load_all_results(str(full_results_dir))
+    output = tmp_path / "report.md"
+    generate_markdown_report(df, None, str(output))
+    block = _group_block(output.read_text(encoding="utf-8"), "E")
+    assert "| C20 |" in block and "| C10 |" in block
+
+
+def test_group_b_block_is_registry_membership_only(
+    full_results_dir: Path, tmp_path: Path
+) -> None:
+    df = load_all_results(str(full_results_dir))
+    output = tmp_path / "report.md"
+    generate_markdown_report(df, None, str(output))
+    block = _group_block(output.read_text(encoding="utf-8"), "B")
+    assert "| C20 |" not in block and "| C1 |" not in block
+
+
 def test_report_six_sections_without_stats(full_results_dir: Path, tmp_path: Path) -> None:
     df = load_all_results(str(full_results_dir))
     output = tmp_path / "report.md"

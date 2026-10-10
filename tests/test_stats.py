@@ -525,12 +525,7 @@ def test_group_results_contain_corrected_significant(tmp_path: Path) -> None:
 def test_group_comparisons_match_canonical_matrix(tmp_path: Path) -> None:
     expected = {
         "A": [("C1", "C2"), ("C1", "C17"), ("C2", "C17")],
-        "B": [
-            ("C3", "C10"),
-            ("C9", "C10"),
-            ("C12", "C1"),
-            ("C18", "C10"),
-        ],
+        "B": [("C3", "C10"), ("C9", "C10"), ("C12", "C1"), ("C18", "C10")],
         "C": [("C10", "C13"), ("C11", "C13"), ("C6", "C16")],
         "D": [("C5", "C14"), ("C10", "C15")],
         "E": [("C20", "C10")],
