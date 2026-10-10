@@ -126,18 +126,6 @@ EXPERIMENT_CONDITIONS: List[ExperimentCondition] = [
         ablation_group="B",
     ),
     ExperimentCondition(
-        condition_id="C20",
-        strategy_name="V2",
-        model_key="M2",
-        datasets=["D1", "D2", "D3", "D4", "D5"],
-        apply_ppas=True,
-        description=(
-            "Annotation-only baseline on BGE, used as the controlled baseline "
-            "for measuring the incremental contribution of V8."
-        ),
-        ablation_group="B",
-    ),
-    ExperimentCondition(
         condition_id="C4",
         strategy_name="V3",
         model_key="M2",
@@ -240,6 +228,18 @@ EXPERIMENT_CONDITIONS: List[ExperimentCondition] = [
         apply_ppas=False,
         description="PPAS ablation: V2+V8 on bge-large without token budget cap",
         ablation_group="D",
+    ),
+    ExperimentCondition(
+        condition_id="C20",
+        strategy_name="V2",
+        model_key="M2",
+        datasets=["D1", "D2", "D3", "D4", "D5"],
+        apply_ppas=True,
+        description=(
+            "Annotation-only baseline on BGE, used as the controlled baseline "
+            "for measuring the incremental contribution of V8."
+        ),
+        ablation_group="E",
     ),
 ]
 

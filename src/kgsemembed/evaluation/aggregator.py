@@ -105,7 +105,7 @@ _SUMMARY_FLOAT_FIELDS = (
 )
 _SUMMARY_COLUMNS = ("condition_id", "strategy", "model_key", *_SUMMARY_FLOAT_FIELDS, "n_pairs")
 
-_ABLATION_GROUPS = ("A", "B", "C", "D")
+_ABLATION_GROUPS = ("A", "B", "C", "D", "E")
 
 _CONTROLLED_ABLATION = "Controlled ablation (same model)"
 _CONFOUNDED_ABLATION = "Confounded (different models)"
@@ -808,7 +808,7 @@ def _ablation_group_block(summary: pd.DataFrame, group: str) -> str:
 
 
 def _ablation_group_section(summary: pd.DataFrame) -> str:
-    """Build the ablation-group analysis section for groups A through D."""
+    """Build the ablation-group analysis section for groups A through E."""
     blocks = [_ablation_group_block(summary, group) for group in _ABLATION_GROUPS]
     return _section("Ablation Group Analysis", "\n\n".join(blocks))
 

@@ -1023,33 +1023,39 @@ def test_model_loaded_once_per_model_group(fakes, tmp_path):
     assert fakes["encoders"] == 1
 
 
-def test_c20_and_c10_share_model_and_provenance(fakes, tmp_path):
-    results_dir = tmp_path / "results"
+_SHARED_C20_C10_FIELDS = (
+    "model_key",
+    "model_id",
+    "hf_revision",
+    "apply_ppas",
+    "ppas_effective",
+    "n_candidates_per_entity",
+    "n_source_entities",
+    "versions",
+)
+
+
+def _run_c20_and_c10(results_dir: Path, data_dir: Path) -> dict:
+    """Run C20 and C10 on D1 together and return each condition's payload."""
     runner.run_all_conditions(
         condition_ids=["C20", "C10"],
         dataset_ids=["D1"],
-        data_dir=tmp_path,
+        data_dir=data_dir,
         results_dir=results_dir,
     )
-    assert fakes["models"] == ["M2"]
-    payloads = {
+    return {
         condition_id: json.loads(
             (results_dir / condition_id / "D1" / "d1_pair_results.json").read_text()
         )
         for condition_id in ("C20", "C10")
     }
-    assert payloads["C20"]["strategy"] == "V2"
-    assert payloads["C10"]["strategy"] == "V2+V8"
-    for field in (
-        "model_key",
-        "model_id",
-        "hf_revision",
-        "apply_ppas",
-        "ppas_effective",
-        "n_candidates_per_entity",
-        "n_source_entities",
-        "versions",
-    ):
+
+
+def test_c20_and_c10_share_model_and_provenance(fakes: dict, tmp_path: Path) -> None:
+    payloads = _run_c20_and_c10(tmp_path / "results", tmp_path)
+    assert fakes["models"] == ["M2"]
+    assert (payloads["C20"]["strategy"], payloads["C10"]["strategy"]) == ("V2", "V2+V8")
+    for field in _SHARED_C20_C10_FIELDS:
         assert payloads["C20"][field] == payloads["C10"][field]
 
 
