@@ -154,7 +154,30 @@ def test_table_is_a_complete_environment(tmp_path: Path) -> None:
     assert lines[0] == r"\begin{table*}[t]"
     assert lines[-1] == r"\end{table*}"
     assert r"\begin{tabular}{llllrrrrrrr}" in lines
-    assert any(line.startswith(r"\multicolumn{11}{l}") for line in lines)
+
+
+def test_mean_note_sits_below_the_tabular(tmp_path: Path) -> None:
+    """The note is a threeparttable note, not a row that widens the columns."""
+    lines = build_table(str(tmp_path))
+    assert not any(r"\multicolumn" in line for line in lines)
+    assert lines[-7:] == [
+        r"\hline",
+        r"\end{tabular}",
+        r"\begin{tablenotes}",
+        script._MEAN_NOTE,
+        r"\end{tablenotes}",
+        r"\end{threeparttable}",
+        r"\end{table*}",
+    ]
+    assert script._MEAN_NOTE.startswith(r"\item[*] Mean over D1--D4")
+
+
+def test_caption_and_header_are_inside_threeparttable(tmp_path: Path) -> None:
+    """The caption takes the table's width and the Mean head carries the mark."""
+    lines = build_table(str(tmp_path))
+    start = lines.index(r"\begin{threeparttable}")
+    assert lines[start + 1].startswith(r"\caption{")
+    assert any(r"\textbf{Mean\tnote{*}}" in line for line in lines)
 
 
 def test_caption_scopes_dashes_to_dataset_columns(tmp_path: Path) -> None:

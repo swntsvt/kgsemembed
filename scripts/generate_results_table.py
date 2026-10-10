@@ -11,6 +11,10 @@ are all bolded.  The final column averages D1-D4 (both D4 columns) and is shown
 only for conditions run on all of them, so every mean it reports covers the
 same datasets and the column can be compared row against row.  D5 is left out.
 
+The table is wrapped in ``threeparttable`` so the Mean note sits below the
+table at the table's width instead of stretching the last column; the paper's
+preamble must load ``\\usepackage{threeparttable}``.
+
 Strategy, model and ablation group come from the condition registry, so the
 table cannot drift from the conditions that were actually run.  Results are
 read through ``kgsemembed.evaluation.load_all_results``, so malformed files,
@@ -62,8 +66,8 @@ _CAPTION = (
     r"\texttt{ppas\_budget=None}); C19 is identical to C10 by design. "
     r"$\ddagger$: M4 (BioLORD) evaluated on D1 and D2 only.}"
 )
-_FOOTNOTE = (
-    r"$^*$Mean over D1--D4 (D4 schema and instance), shown only for "
+_MEAN_NOTE = (
+    r"\item[*] Mean over D1--D4 (D4 schema and instance), shown only for "
     r"conditions run on all of them; excludes D5 (recall@20 ceiling 26.67\%)."
 )
 
@@ -180,11 +184,12 @@ def _body_rows(means: CellMeans) -> List[str]:
 
 def _header_rows() -> List[str]:
     """Render the table preamble, caption and column headings."""
-    heads = ["Cond", "Strategy", "Model", "Grp", *_COLUMN_HEADS, "Mean$^*$"]
+    heads = ["Cond", "Strategy", "Model", "Grp", *_COLUMN_HEADS, r"Mean\tnote{*}"]
     return [
         r"\begin{table*}[t]",
         r"\scriptsize",
         r"\setlength{\tabcolsep}{4pt}",
+        r"\begin{threeparttable}",
         _CAPTION,
         r"\label{tab:main_results}",
         r"\begin{tabular}{llll" + "r" * (len(_DATASETS) + 1) + "}",
@@ -195,12 +200,14 @@ def _header_rows() -> List[str]:
 
 
 def _footer_rows() -> List[str]:
-    """Render the closing rule, mean footnote and environment ends."""
-    n_columns = 4 + len(_DATASETS) + 1
+    """Render the closing rule, the Mean note below the table and the ends."""
     return [
         r"\hline",
-        rf"\multicolumn{{{n_columns}}}{{l}}{{{_FOOTNOTE}}} \\",
         r"\end{tabular}",
+        r"\begin{tablenotes}",
+        _MEAN_NOTE,
+        r"\end{tablenotes}",
+        r"\end{threeparttable}",
         r"\end{table*}",
     ]
 

@@ -124,6 +124,8 @@ python scripts/compute_recall_at_20.py \
 # Mean$^*$ averages D1-D4 (both D4 columns, never D5) and is printed only for
 # conditions run on all five of those columns; partial-coverage rows such as
 # C17 (D1/D2 only) show a dash, so every reported mean is comparable.
+# Output is wrapped in threeparttable with the Mean note in tablenotes, so the
+# paper's preamble must load \usepackage{threeparttable}.
 python scripts/generate_results_table.py --results_dir data/results/
 
 # Print D3 class vs predicate F1 rows (LaTeX) for the Section 4.3 table.
