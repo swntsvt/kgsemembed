@@ -111,7 +111,9 @@ python -m kgsemembed.pipeline.run_experiment \
 python scripts/generate_candidates.py --datasets D1 D2 D3 D4 D5 \
     --data_dir data/
 
-# Generate the results report
+# Generate the results report. The Statistical Significance section tests
+# dataset columns, not alignment pairs (see "Statistical analysis"), and only
+# accepts results written under the current evaluation protocol.
 python scripts/generate_report.py \
     --results_dir data/results/ --output data/results/report.md
 
@@ -288,7 +290,7 @@ Registered in `src/kgsemembed/embeddings/models.py` as `MODEL_REGISTRY`.
   reaches its 8192-token context without any.
 - **M2_uncapped**: same weights as M2, `ppas_budget=None`. Used only for the
   controlled PPAS ablation (C19). V2+V8 does not invoke PPAS under any model,
-  so C19 is bit-for-bit identical to C10.
+  so C19 is bit-for-bit identical to C10 (both record `ppas_effective: false`).
 - **M5 asymmetric**: source side gets the instruction prefix
   (`query_prefix="Instruct: Retrieve semantically similar text.\nQuery: {}"`),
   candidate side gets no prefix. Apply the prefix only via `encode_source()` /
@@ -309,16 +311,16 @@ V8+V6.
 ```
 D1  SNOMED-FMA Body (Bio-ML, OAEI)        Classes only
     data/d1_snomed_fma/source.rdf, target.rdf, reference.rdf
-    Split: 0/20/80, seeded shuffle, EDOAL reference
+    Split: 0/20/80 by source entity, seeded shuffle, EDOAL reference
 
 D2  Anatomy MA-NCI (OAEI Anatomy Track)    Classes only
     data/d2_anatomy/source.rdf, target.rdf, reference.rdf
-    Split: 0/20/80, seeded shuffle, EDOAL reference
+    Split: 0/20/80 by source entity, seeded shuffle, EDOAL reference
 
 D3  Conference (OAEI Conference Track)     Classes + Predicates (mixed)
     data/d3_conference/{pair_name}/source.rdf, target.rdf, reference.rdf
     21 pair subdirectories; entity_type="mixed"
-    Split: 0/20/80 per pair, seeded shuffle
+    Split: 0/20/80 by source entity per pair, seeded shuffle
 
 D4_schema  memoryalpha-stexpanded schema  Classes + Predicates (mixed)
 D4_instance memoryalpha-stexpanded instances  Instances only
@@ -332,6 +334,8 @@ D5  DBpedia-Wikidata 15K EN (OpenEA)      Instances only
     data/d5_openea/D_W_15K_V2/
     Built from rel_triples_1/2 + attr_triples_1/2 via _graph_from_triple_files()
     Do NOT use rdflib.Graph.parse() for D5
+    Train: 721_5fold/1/train_links (loaded into train_refs; excluded from
+    scoring, never trained on)
     Val: 721_5fold/1/valid_links   Test: 721_5fold/1/test_links
     OpenEA deleted all entity labels, and both sides carry opaque local
     names (DBpedia E291085, Wikidata Q1108721). Falling back to those names
@@ -368,6 +372,46 @@ D5  DBpedia-Wikidata 15K EN (OpenEA)      Instances only
 whose `dataset_id` values are `D4_schema` and `D4_instance`. Conditions
 therefore list `"D4"`, while results are written under both directories.
 
+## Evaluation protocol (version 2)
+
+`EVALUATION_PROTOCOL_VERSION` in `evaluation/metrics.py` is written into every
+result. Version 1 results (no `evaluation_protocol` field) are not comparable
+with version 2 and are rejected by `evaluation/stats.py`.
+
+- **Splits** are grouped by source entity, so every reference of a 1:N source
+  lands in the same slice.
+- **Populations** (`evaluation/population.py`): each source is scored in
+  exactly one of validation or test. A source with a test reference is test;
+  else with a validation reference, validation; else with a training reference
+  (D5 only), excluded. Unmatched sources (no reference anywhere) are split
+  between validation and test at the slice's reference-source ratio by a
+  stable `zlib.crc32` draw; their predictions are false positives (the OAEI
+  complete-reference convention), so tuning sees the same FP pressure as test.
+- **Prediction**: each source predicts only its top-ranked candidate, kept if
+  its score reaches the threshold (BERTMapLt's one-mapping-per-source rule).
+- **Threshold**: tuned on the validation population over 0.10–0.99 in steps
+  of 0.01; ties resolve to the lower median of the tied thresholds.
+- **MRR** averages over test reference sources; a reference source without a
+  ranked list contributes 0, a ranked source without a reference is ignored.
+  Recall@k divides by the number of test references.
+
+## Statistical analysis
+
+`evaluation/stats.py` tests **dataset columns**, not alignment pairs: D1, D2,
+D3 (mean of its 21 pairs), D4_schema, D4_instance, D5. The 21 D3 pairs share
+seven ontologies (each one in six pairs), so they are not independent and must
+not be pooled as separate observations. `"D4"` in a comparison expands to both
+D4 columns.
+
+- Wilcoxon signed-rank, two-sided, zero differences dropped, p-value by exact
+  sign-flip permutation. Fewer than five columns → reported, not tested.
+- `effect_size_r` is the signed matched-pairs rank-biserial
+  `(R+ - R-)/(R+ + R-)`, positive when B beats A.
+- With n columns the smallest attainable p is `2/2**n` (0.03125 at n=6), so
+  under group B's alpha/4 no comparison can be significant; results carry
+  `min_attainable_p` and `underpowered`. Only group E (alpha/1) can reach
+  significance. Pair-level W/T/L counts are descriptive only.
+
 ## Result JSON schema
 
 Every file written by `run_experiment.py` contains:
@@ -376,21 +420,28 @@ Every file written by `run_experiment.py` contains:
 {
   "condition_id", "dataset_id", "pair_name",
   "strategy", "model_key", "model_id",
-  "apply_ppas", "ppas_effective",
+  "apply_ppas", "ppas_effective", "token_budget",
   "metrics": {
     "f1", "precision", "recall", "threshold",
     "mrr", "recall_at_1", "recall_at_5", "recall_at_10"
   },
+  "counts": {"tp", "fp", "fn"},
   "per_entity_type": {
     "class":     {"f1", "precision", "recall", "threshold",
                   "mrr", "recall_at_1", "recall_at_5", "recall_at_10",
-                  "n_refs"},
+                  "tp", "fp", "fn", "n_refs"},
     "predicate": {...}
   },
-  "n_source_entities", "n_candidates_per_entity",
+  "population": {"n_train_refs", "n_val_refs", "n_test_refs",
+                 "n_val_ranked_sources", "n_test_ranked_sources",
+                 "n_val_unmatched_sources", "n_test_unmatched_sources"},
+  "n_source_entities", "n_candidates_per_entity", "candidates_sha256",
   "hf_revision", "kgsemembed_version",
   "python_version", "run_timestamp",
-  "versions": {"python", "torch", "transformers", "sentence_transformers"}
+  "versions": {"python", "torch", "transformers", "sentence_transformers",
+               "numpy", "scipy", "rdflib"},
+  "random_seed", "split_seed", "evaluation_protocol",
+  "git_commit", "git_dirty"
 }
 ```
 
@@ -399,10 +450,13 @@ Old result files without `per_entity_type` are valid — the aggregator handles
 both. A bucket with fewer than three test references is dropped with a warning
 rather than reported.
 
-`ppas_effective` records what verbalisation actually did (`PPAS_BUDGETS[model]
-is not None`), independent of the condition's declared `apply_ppas`, so any
-divergence between configured intent and executed behaviour is visible in the
-result file.
+`ppas_effective` records whether verbalisation can actually sample with PPAS:
+the strategy contains V3, V4, or V6 (`PPAS_SAMPLING_COMPONENTS` in
+`verbalisation/ppas.py`) **and** the model has a budget
+(`strategy_uses_ppas()`). Only C3, C4, C5, and C7 qualify; every V1/V2/V8
+condition records `false` despite declaring `apply_ppas=True`, so the
+divergence between configured intent and executed behaviour is visible.
+`token_budget` records the model budget V5/V7 truncate to, which is not PPAS.
 
 ## Critical pitfalls
 
@@ -434,8 +488,9 @@ hash() is salted per process by PYTHONHASHSEED; crc32 is stable.
 float64 arithmetic throughout ngram.py scoring.
 float32 causes tie-breaking inconsistency on real data (observed on D3).
 
-Threshold is tuned on val-source pairs only.
-Never pass test-source scored pairs to tune_threshold().
+Threshold is tuned on the validation population only.
+Never pass test-population pairs to tune_threshold(); pass
+top_ranked_pairs() of the validation ranked lists, as _resolve_threshold does.
 ```
 
 ## Constraints

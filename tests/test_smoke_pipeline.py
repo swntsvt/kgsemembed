@@ -201,7 +201,7 @@ def test_run_condition_returns_metrics_and_writes_json(fakes, tmp_path):
     assert set(results) == {"D2"}
     metrics = results["D2"]
     assert metrics["recall_at_1"] == 1.0
-    assert metrics["threshold"] == 0.1
+    assert metrics["threshold"] == 0.54
 
     result_file = tmp_path / "results" / "C1" / "D2" / "d2_pair_results.json"
     assert result_file.exists()
@@ -224,18 +224,30 @@ def test_result_json_matches_required_schema(fakes, tmp_path):
         "model_id",
         "apply_ppas",
         "ppas_effective",
+        "token_budget",
         "metrics",
+        "counts",
         "per_entity_type",
+        "population",
         "n_source_entities",
         "n_candidates_per_entity",
+        "candidates_sha256",
         "hf_revision",
         "kgsemembed_version",
         "python_version",
         "run_timestamp",
         "versions",
+        "random_seed",
+        "split_seed",
+        "evaluation_protocol",
+        "git_commit",
+        "git_dirty",
     }
     assert payload["apply_ppas"] is True
-    assert payload["ppas_effective"] is True
+    assert payload["ppas_effective"] is False
+    assert payload["token_budget"] == 200
+    assert payload["evaluation_protocol"] == runner.EVALUATION_PROTOCOL_VERSION
+    assert set(payload["counts"]) == {"tp", "fp", "fn"}
     assert set(payload["metrics"]) == {
         "f1",
         "precision",
@@ -256,6 +268,9 @@ def test_result_json_matches_required_schema(fakes, tmp_path):
         "torch",
         "transformers",
         "sentence_transformers",
+        "numpy",
+        "scipy",
+        "rdflib",
     }
     assert all(isinstance(value, str) for value in payload["versions"].values())
 
@@ -571,7 +586,7 @@ def test_buckets_do_not_borrow_each_others_predictions():
     ] + [_ranked(_mixed_uri("p", index), _mixed_uri("tp", 9)) for index in (1, 2, 3)]
     pair = dataclasses.replace(_mixed_pair(), val_refs=[])
 
-    breakdown = runner._per_entity_type_metrics(pair, ranked_lists, 0.5)
+    breakdown = runner._per_entity_type_metrics(pair, {"val": [], "test": ranked_lists}, 0.5)
 
     assert breakdown["class"]["precision"] == 1.0
     assert breakdown["class"]["f1"] == 1.0
@@ -585,7 +600,7 @@ def test_buckets_without_validation_refs_use_the_supplied_threshold():
         _ranked(_mixed_uri("c", index), _mixed_uri("tc", index)) for index in (1, 2, 3)
     ] + [_ranked(_mixed_uri("p", index), _mixed_uri("tp", index)) for index in (1, 2, 3)]
 
-    breakdown = runner._per_entity_type_metrics(pair, ranked_lists, 0.75)
+    breakdown = runner._per_entity_type_metrics(pair, {"val": [], "test": ranked_lists}, 0.75)
     assert [metrics["threshold"] for metrics in breakdown.values()] == [0.75, 0.75]
 
 
@@ -599,7 +614,7 @@ def test_n_refs_counts_each_bucket_separately():
         for index in _MIXED_INDICES
     ]
 
-    breakdown = runner._per_entity_type_metrics(pair, ranked_lists, 0.5)
+    breakdown = runner._per_entity_type_metrics(pair, {"val": [], "test": ranked_lists}, 0.5)
     assert breakdown["class"]["n_refs"] == 4
     assert breakdown["predicate"]["n_refs"] == 3
     assert sum(metrics["n_refs"] for metrics in breakdown.values()) == len(test_refs)
@@ -621,7 +636,7 @@ def test_buckets_decompose_the_pair_level_recall():
     ranked_lists = hits + misses
 
     overall = runner.compute_all_metrics(ranked_lists, pair.test_refs, threshold=0.5)
-    breakdown = runner._per_entity_type_metrics(pair, ranked_lists, 0.5)
+    breakdown = runner._per_entity_type_metrics(pair, {"val": [], "test": ranked_lists}, 0.5)
 
     recovered = sum(
         metrics["recall"] * metrics["n_refs"] for metrics in breakdown.values()
@@ -634,7 +649,7 @@ def test_non_mixed_pair_is_never_split():
     """A class-typed pair must not be split even when its graph is mixed."""
     pair = dataclasses.replace(_mixed_pair(), entity_type="class")
     ranked_lists = [_ranked(_mixed_uri("c", 1), _mixed_uri("tc", 1))]
-    assert runner._per_entity_type_metrics(pair, ranked_lists, 0.5) == {}
+    assert runner._per_entity_type_metrics(pair, {"val": [], "test": ranked_lists}, 0.5) == {}
 
 
 def test_mixed_pair_records_metrics_per_entity_type(fakes, monkeypatch, tmp_path):
@@ -643,7 +658,7 @@ def test_mixed_pair_records_metrics_per_entity_type(fakes, monkeypatch, tmp_path
     breakdown = payload["per_entity_type"]
     assert set(breakdown) == {"class", "predicate"}
     for metrics in breakdown.values():
-        assert set(metrics) == {*runner._METRIC_KEYS, "n_refs"}
+        assert set(metrics) == {*runner._METRIC_KEYS, *runner._COUNT_KEYS, "n_refs"}
         assert metrics["n_refs"] == 3
         assert metrics["recall_at_1"] == 1.0
 
@@ -1264,17 +1279,196 @@ def test_result_json_records_maximum_candidate_count(fakes, monkeypatch, tmp_pat
 # ---------------------------------------------------------------------------
 
 
+def _condition_with(strategy_name, model_key):
+    from kgsemembed.pipeline.conditions import get_condition
+
+    return dataclasses.replace(
+        get_condition("C3"), strategy_name=strategy_name, model_key=model_key
+    )
+
+
 def test_effective_ppas_false_for_model_without_budget():
-    assert runner._effective_ppas("M3") is False
+    assert runner._effective_ppas(_condition_with("V2+V6", "M3")) is False
 
 
-def test_effective_ppas_true_for_budgeted_models():
-    for model_key in ("M1", "M2", "M4", "M5"):
-        assert runner._effective_ppas(model_key) is True
+def test_effective_ppas_true_for_ppas_strategies_on_budgeted_models():
+    for strategy in ("V3", "V4", "V6", "V2+V6", "V6+V3", "V4+V6", "V8+V6"):
+        for model_key in ("M1", "M2", "M4", "M5"):
+            assert runner._effective_ppas(_condition_with(strategy, model_key)) is True
 
 
-def test_effective_ppas_matches_ppas_disabled_conditions():
+def test_effective_ppas_false_for_strategies_without_ppas():
+    for strategy in ("V1", "V2", "V5", "V7", "V8", "V2+V8", "V2+V7", "V2+V8+V7"):
+        assert runner._effective_ppas(_condition_with(strategy, "M2")) is False
+
+
+def test_effective_ppas_of_registered_conditions():
     from kgsemembed.pipeline.conditions import EXPERIMENT_CONDITIONS
 
-    for condition in EXPERIMENT_CONDITIONS:
-        assert runner._effective_ppas(condition.model_key) is condition.apply_ppas
+    expected = {"C3", "C4", "C5", "C7"}
+    effective = {
+        condition.condition_id
+        for condition in EXPERIMENT_CONDITIONS
+        if runner._effective_ppas(condition)
+    }
+    assert effective == expected
+
+
+def test_c19_and_c10_report_identical_ppas_execution():
+    from kgsemembed.pipeline.conditions import get_condition
+
+    assert runner._effective_ppas(get_condition("C19")) is False
+    assert runner._effective_ppas(get_condition("C10")) is False
+
+
+# ---------------------------------------------------------------------------
+# Evaluation populations
+# ---------------------------------------------------------------------------
+
+
+def _population_pair(source_entities, train_refs=()):
+    return AlignmentPair(
+        dataset_id="D1",
+        pair_name="population_pair",
+        source_graph=Graph(),
+        target_graph=Graph(),
+        source_entities=list(source_entities),
+        val_refs=[("v", "x")],
+        test_refs=[("t", "y")],
+        train_refs=list(train_refs),
+    )
+
+
+def _unmatched_uri(in_validation):
+    from kgsemembed.evaluation.population import draws_validation
+
+    return next(
+        uri
+        for uri in (f"http://example.org/u{index}" for index in range(1000))
+        if draws_validation(uri, 0.5) is in_validation
+    )
+
+
+_VAL_AND_TEST_LISTS = [
+    [("v", "x", 0.9), ("v", "n", 0.2)],
+    [("t", "y", 0.9), ("t", "n", 0.2)],
+]
+
+
+def test_validation_predictions_are_not_test_false_positives():
+    metrics = runner._evaluate_pair(_population_pair(["v", "t"]), _VAL_AND_TEST_LISTS)
+    assert (metrics["tp"], metrics["fp"], metrics["fn"]) == (1, 0, 0)
+    assert metrics["precision"] == 1.0
+    assert metrics["mrr"] == 1.0
+
+
+def test_training_source_predictions_are_not_counted():
+    pair = _population_pair(["v", "t", "r"], train_refs=[("r", "z")])
+    ranked = _VAL_AND_TEST_LISTS + [[("r", "z", 0.99)]]
+    metrics = runner._evaluate_pair(pair, ranked)
+    assert metrics["fp"] == 0
+    assert metrics["population"]["n_test_ranked_sources"] == 1
+
+
+def test_unmatched_test_source_prediction_is_a_false_positive():
+    uri = _unmatched_uri(in_validation=False)
+    ranked = _VAL_AND_TEST_LISTS + [[(uri, "w", 0.95)]]
+    metrics = runner._evaluate_pair(_population_pair(["v", "t", uri]), ranked)
+    assert metrics["fp"] == 1
+    assert metrics["population"]["n_test_unmatched_sources"] == 1
+
+
+def test_unmatched_validation_source_raises_the_tuned_threshold():
+    uri = _unmatched_uri(in_validation=True)
+    ranked = _VAL_AND_TEST_LISTS + [[(uri, "w", 0.7)]]
+    with_unmatched = runner._evaluate_pair(_population_pair(["v", "t", uri]), ranked)
+    without = runner._evaluate_pair(_population_pair(["v", "t"]), _VAL_AND_TEST_LISTS)
+    assert with_unmatched["threshold"] > 0.7
+    assert without["threshold"] < 0.7
+    assert with_unmatched["fp"] == 0
+
+
+def test_mrr_is_averaged_over_test_reference_sources_only():
+    uri = _unmatched_uri(in_validation=False)
+    ranked = [
+        [("v", "x", 0.9)],
+        [("t", "n", 0.9), ("t", "y", 0.8)],
+        [(uri, "w", 0.95)],
+    ]
+    metrics = runner._evaluate_pair(_population_pair(["v", "t", uri]), ranked)
+    assert metrics["mrr"] == 0.5
+
+
+def test_population_record_reports_every_count():
+    uri = _unmatched_uri(in_validation=False)
+    pair = _population_pair(["v", "t", "r", uri], train_refs=[("r", "z")])
+    ranked = _VAL_AND_TEST_LISTS + [[("r", "z", 0.9)], [(uri, "w", 0.3)]]
+    assert runner._evaluate_pair(pair, ranked)["population"] == {
+        "n_train_refs": 1,
+        "n_val_refs": 1,
+        "n_test_refs": 1,
+        "n_val_ranked_sources": 1,
+        "n_test_ranked_sources": 2,
+        "n_val_unmatched_sources": 0,
+        "n_test_unmatched_sources": 1,
+    }
+
+
+def test_buckets_score_only_the_test_population():
+    pair = _mixed_pair()
+    ranked_lists = [
+        _ranked(_mixed_uri(prefix, index), _mixed_uri(f"t{prefix}", index))
+        for prefix in ("c", "p")
+        for index in _MIXED_INDICES
+    ]
+    metrics = runner._evaluate_pair(pair, ranked_lists)
+    for bucket in metrics["per_entity_type"].values():
+        assert bucket["fp"] == 0
+        assert bucket["tp"] == 3
+
+
+# ---------------------------------------------------------------------------
+# Provenance
+# ---------------------------------------------------------------------------
+
+
+def test_candidate_digest_is_order_independent_and_content_sensitive():
+    first = runner._candidate_digest({"a": ["x", "y"], "b": ["z"]})
+    reordered = runner._candidate_digest({"b": ["z"], "a": ["x", "y"]})
+    changed = runner._candidate_digest({"a": ["y", "x"], "b": ["z"]})
+    assert first == reordered
+    assert first != changed
+
+
+def test_git_state_reports_unknown_outside_a_work_tree(monkeypatch):
+    monkeypatch.setattr(runner, "_git_output", lambda *_args: None)
+    assert runner._git_state() == {"git_commit": "unknown", "git_dirty": None}
+
+
+def test_git_state_reads_the_repository():
+    state = runner._git_state()
+    assert len(state["git_commit"]) == 40
+    assert isinstance(state["git_dirty"], bool)
+
+
+def test_result_records_seeds_and_candidate_digest(fakes, tmp_path):
+    payload = _run_and_read_payload(tmp_path)
+    assert payload["random_seed"] == 42
+    assert payload["split_seed"] == 42
+    assert payload["candidates_sha256"] == runner._candidate_digest(dict(_CANDIDATES))
+    assert payload["counts"]["tp"] + payload["counts"]["fn"] == 1
+
+
+def test_stale_protocol_result_is_read_with_a_warning(tmp_path, runner_logs):
+    path = tmp_path / "stale_results.json"
+    path.write_text(json.dumps({"metrics": {"f1": 0.5}}), encoding="utf-8")
+    assert runner._read_metrics(path) == {"f1": 0.5}
+    assert "evaluation protocol" in runner_logs.text
+
+
+def test_current_protocol_result_is_read_silently(tmp_path, runner_logs):
+    path = tmp_path / "current_results.json"
+    payload = {"metrics": {"f1": 0.5}, "evaluation_protocol": runner.EVALUATION_PROTOCOL_VERSION}
+    path.write_text(json.dumps(payload), encoding="utf-8")
+    runner._read_metrics(path)
+    assert "evaluation protocol" not in runner_logs.text
