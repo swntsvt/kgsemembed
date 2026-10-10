@@ -35,6 +35,7 @@ import random
 from typing import Dict, List, Optional, Tuple
 
 import numpy as np
+import pandas as pd
 
 from kgsemembed.evaluation import load_all_results
 from kgsemembed.pipeline.conditions import get_condition
@@ -86,20 +87,22 @@ def load_cell_means(results_dir: str) -> CellMeans:
     CellMeans
         Mean F1 keyed by ``(condition_id, dataset_id)``.
     """
-    df = load_all_results(results_dir)
-    grouped = df.groupby(["condition_id", "dataset_id"])["f1"]
-    _warn_on_partial_d3(grouped.size().to_dict())
-    return {key: float(value) for key, value in grouped.mean().items()}
+    cells = load_all_results(results_dir).groupby(
+        ["condition_id", "dataset_id"], as_index=False
+    ).agg(mean_f1=("f1", "mean"), n_pairs=("f1", "size"))
+    _warn_on_partial_d3(cells)
+    keys = zip(cells["condition_id"], cells["dataset_id"])
+    return {(str(c), str(d)): float(f1) for (c, d), f1 in zip(keys, cells["mean_f1"])}
 
 
-def _warn_on_partial_d3(pair_counts: Dict[Tuple[str, str], int]) -> None:
+def _warn_on_partial_d3(cells: pd.DataFrame) -> None:
     """Warn for any D3 cell not averaged over all Conference pairs."""
-    for (condition_id, dataset_id), count in sorted(pair_counts.items()):
-        if dataset_id == "D3" and count != _D3_PAIR_COUNT:
-            _LOGGER.warning(
-                "%s/D3 has %d pairs, not %d; the caption will be inaccurate.",
-                condition_id, count, _D3_PAIR_COUNT,
-            )
+    partial = cells[(cells["dataset_id"] == "D3") & (cells["n_pairs"] != _D3_PAIR_COUNT)]
+    for condition_id, count in zip(partial["condition_id"], partial["n_pairs"]):
+        _LOGGER.warning(
+            "%s/D3 has %d pairs, not %d; the caption will be inaccurate.",
+            condition_id, count, _D3_PAIR_COUNT,
+        )
 
 
 def _format_f1(value: Optional[float]) -> str:
@@ -131,10 +134,13 @@ def best_per_dataset(means: CellMeans) -> Dict[str, str]:
 
 def _mean_over_d1_to_d4(values: Dict[str, Optional[float]]) -> Optional[float]:
     """Average D1-D4, or ``None`` unless the condition has every one of them."""
-    kept = [values[dataset_id] for dataset_id in _MEAN_DATASETS]
-    if any(value is None for value in kept):
+    present = [
+        value for dataset_id in _MEAN_DATASETS
+        if (value := values[dataset_id]) is not None
+    ]
+    if len(present) < len(_MEAN_DATASETS):
         return None
-    return sum(kept) / len(kept)
+    return sum(present) / len(present)
 
 
 def _latex_row(condition_id: str, means: CellMeans, best: Dict[str, str]) -> str:
