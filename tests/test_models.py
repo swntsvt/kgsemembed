@@ -332,3 +332,11 @@ def test_load_sentence_transformer_returns_instance() -> None:
     model, model_info = load_sentence_transformer("M1")
     assert isinstance(model, SentenceTransformer)
     assert set(model_info) == {"model_key", "model_id", "device", "hf_revision"}
+
+
+def test_factory_buckets_sequence_padding(monkeypatch: pytest.MonkeyPatch) -> None:
+    _patch_cpu_and_mock_transformer(monkeypatch)
+    model, _ = load_sentence_transformer("M1")
+    assert model[0].processing_kwargs == {
+        "text": {"pad_to_multiple_of": models.PAD_TO_MULTIPLE_OF}
+    }

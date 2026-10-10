@@ -219,3 +219,30 @@ def should_apply_ppas(triples: List[Tuple], model_key: str) -> bool:
     if budget is None:
         return False
     return len(triples) > PPAS_TRIGGER_THRESHOLD
+
+
+# Strategy components that select triples in PPAS tier-priority order under the
+# model budget: V3 and V4 via ppas_sample(), V6 via its own greedy tier pass.
+# V5 and V7 truncate to the budget without tier priority; V1, V2, V8 ignore it.
+PPAS_SAMPLING_COMPONENTS = frozenset({"V3", "V4", "V6"})
+
+
+def strategy_uses_ppas(strategy_name: str, model_key: str) -> bool:
+    """Report whether a strategy can sample triples with PPAS under a model.
+
+    Parameters
+    ----------
+    strategy_name : str
+        Registered strategy, possibly composite (e.g. ``"V2+V6"``).
+    model_key : str
+        Model key (e.g. ``"M2"``).
+
+    Returns
+    -------
+    bool
+        ``True`` when a component of the strategy is in
+        :data:`PPAS_SAMPLING_COMPONENTS` and the model has a token budget.
+    """
+    components = set(strategy_name.split("+"))
+    has_budget = PPAS_BUDGETS.get(model_key) is not None
+    return has_budget and bool(components & PPAS_SAMPLING_COMPONENTS)
