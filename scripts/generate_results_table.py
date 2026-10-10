@@ -67,7 +67,8 @@ _CAPTION = (
     r"$\dagger$: M2\_uncapped (same weights as M2, "
     r"\texttt{ppas\_budget=None}); C19 is identical to C10 by design. "
     r"C20 (V2, M2) is the controlled baseline for C10 (V2+V8, M2): "
-    r"the two differ only by the V8 component. "
+    r"the two differ only by the V8 component, and C20 forms its own "
+    r"group (E), placed after group B so it sits beside C10. "
     r"$\ddagger$: M4 (BioLORD) evaluated on D1 and D2 only.}"
 )
 _MEAN_NOTE = (

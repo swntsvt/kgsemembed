@@ -827,7 +827,29 @@ def _ablation_group_block(summary: pd.DataFrame, group: str) -> str:
     block = summary[summary["condition_id"].isin(condition_ids)] if not summary.empty else summary
     if block.empty:
         return f"{heading}\n\n_No results available for Group {group}._"
-    return f"{heading}\n\n{_render_dataframe(block)}"
+    return f"{heading}\n\n{_render_dataframe(block)}{_reference_note(group)}"
+
+
+def _reference_note(group: str) -> str:
+    """
+    Explain any reference rows a group's sub-table borrows from other groups.
+
+    Parameters
+    ----------
+    group : str
+        Ablation group identifier, e.g. ``"E"``.
+
+    Returns
+    -------
+    str
+        A Markdown note naming each reference condition and its own group,
+        or an empty string when the group has no reference rows.
+    """
+    references = _GROUP_REFERENCE_CONDITIONS.get(group, ())
+    if not references:
+        return ""
+    labels = ", ".join(f"{cid} (group {get_condition(cid).ablation_group})" for cid in references)
+    return f"\n\n_{labels} shown for reference: the controlled comparison for Group {group}._"
 
 
 def _ablation_group_section(summary: pd.DataFrame) -> str:
