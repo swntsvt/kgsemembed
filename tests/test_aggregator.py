@@ -471,7 +471,7 @@ def test_condition_summary_row_count(full_results_dir: Path) -> None:
     df = load_all_results(str(full_results_dir))
     summary = build_condition_summary_table(df)
     assert list(summary.columns) == _EXPECTED_SUMMARY_COLUMNS
-    assert len(summary) == len(EXPERIMENT_CONDITIONS) == 19
+    assert len(summary) == len(EXPERIMENT_CONDITIONS) == 20
 
 
 def test_condition_summary_sorted_descending(full_results_dir: Path) -> None:
@@ -578,6 +578,40 @@ def test_report_seven_sections_with_stats(full_results_dir: Path, tmp_path: Path
         "# Statistical Significance",
         "# PPAS Ablation",
     ]
+
+
+def _group_block(report: str, group: str) -> str:
+    return report.split(f"## Group {group}\n", 1)[1].split("\n#", 1)[0]
+
+
+def test_group_e_block_lists_c10_as_reference(full_results_dir: Path, tmp_path: Path) -> None:
+    df = load_all_results(str(full_results_dir))
+    output = tmp_path / "report.md"
+    generate_markdown_report(df, None, str(output))
+    block = _group_block(output.read_text(encoding="utf-8"), "E")
+    assert "| C20 |" in block and "| C10 |" in block
+    assert "_C10 (group B) shown for reference" in block
+
+
+def test_groups_without_reference_rows_carry_no_note(
+    full_results_dir: Path, tmp_path: Path
+) -> None:
+    df = load_all_results(str(full_results_dir))
+    output = tmp_path / "report.md"
+    generate_markdown_report(df, None, str(output))
+    report = output.read_text(encoding="utf-8")
+    for group in ("A", "B", "C", "D"):
+        assert "shown for reference" not in _group_block(report, group)
+
+
+def test_group_b_block_is_registry_membership_only(
+    full_results_dir: Path, tmp_path: Path
+) -> None:
+    df = load_all_results(str(full_results_dir))
+    output = tmp_path / "report.md"
+    generate_markdown_report(df, None, str(output))
+    block = _group_block(output.read_text(encoding="utf-8"), "B")
+    assert "| C20 |" not in block and "| C1 |" not in block
 
 
 def test_report_six_sections_without_stats(full_results_dir: Path, tmp_path: Path) -> None:

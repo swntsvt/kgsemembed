@@ -25,7 +25,7 @@ from kgsemembed.evaluation import run_group_comparisons
 from kgsemembed.evaluation.aggregator import generate_markdown_report, load_all_results
 
 _LOGGER = logging.getLogger("kgsemembed.scripts.generate_report")
-_ABLATION_GROUPS = ("A", "B", "C", "D")
+_ABLATION_GROUPS = ("A", "B", "C", "D", "E")
 
 
 def _build_arg_parser() -> argparse.ArgumentParser:

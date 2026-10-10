@@ -495,7 +495,7 @@ def _seed_group(results_dir: Path, group: str) -> None:
 
 @pytest.mark.parametrize(
     "group,expected",
-    [("A", 3), ("B", 4), ("C", 3), ("D", 2)],
+    [("A", 3), ("B", 4), ("C", 3), ("D", 2), ("E", 1)],
 )
 def test_group_comparison_counts(tmp_path: Path, group: str, expected: int) -> None:
     _seed_group(tmp_path, group)
@@ -528,6 +528,7 @@ def test_group_comparisons_match_canonical_matrix(tmp_path: Path) -> None:
         "B": [("C3", "C10"), ("C9", "C10"), ("C12", "C1"), ("C18", "C10")],
         "C": [("C10", "C13"), ("C11", "C13"), ("C6", "C16")],
         "D": [("C5", "C14"), ("C10", "C15")],
+        "E": [("C20", "C10")],
     }
     for group, pairs in expected.items():
         _seed_group(tmp_path, group)

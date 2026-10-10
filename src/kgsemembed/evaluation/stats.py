@@ -73,6 +73,9 @@ _GROUP_COMPARISONS: Dict[str, Tuple[_Comparison, ...]] = {
         _Comparison("C5", "C14", ("D5",)),
         _Comparison("C10", "C15", ("D1",)),
     ),
+    "E": (
+        _Comparison("C20", "C10", ("D1", "D2", "D3", "D4", "D5")),
+    ),
 }
 
 
@@ -456,7 +459,7 @@ def run_group_comparisons(
     Parameters
     ----------
     group : str
-        Ablation group identifier, one of ``"A"``, ``"B"``, ``"C"``, ``"D"``.
+        Ablation group identifier, one of ``"A"`` to ``"E"``.
     results_dir : str
         Root directory of previously generated result files.
     alpha : float

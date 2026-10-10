@@ -47,6 +47,7 @@ _LOGGER = logging.getLogger("kgsemembed.scripts.generate_results_table")
 _CONDITION_ORDER = (
     "C1", "C2", "C17",
     "C9", "C12", "C3", "C10", "C18",
+    "C20",
     "C4", "C5", "C6", "C7", "C8", "C11", "C13", "C16",
     "C14", "C15", "C19",
 )
@@ -65,6 +66,9 @@ _CAPTION = (
     r"Bold: best result per dataset column. "
     r"$\dagger$: M2\_uncapped (same weights as M2, "
     r"\texttt{ppas\_budget=None}); C19 is identical to C10 by design. "
+    r"C20 (V2, M2) is the controlled baseline for C10 (V2+V8, M2): "
+    r"the two differ only by the V8 component, and C20 forms its own "
+    r"group (E), placed after group B so it sits beside C10. "
     r"$\ddagger$: M4 (BioLORD) evaluated on D1 and D2 only.}"
 )
 _MEAN_NOTE = (

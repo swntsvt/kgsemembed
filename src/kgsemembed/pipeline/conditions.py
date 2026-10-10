@@ -16,7 +16,7 @@ from typing import List
 from kgsemembed.embeddings.models import MODEL_REGISTRY
 from kgsemembed.verbalisation.registry import VALID_STRATEGY_NAMES
 
-_EXPECTED_CONDITION_COUNT = 19
+_EXPECTED_CONDITION_COUNT = 20
 _NON_PPAS_CONDITIONS = frozenset({"C14", "C15", "C19"})
 
 
@@ -228,6 +228,18 @@ EXPERIMENT_CONDITIONS: List[ExperimentCondition] = [
         apply_ppas=False,
         description="PPAS ablation: V2+V8 on bge-large without token budget cap",
         ablation_group="D",
+    ),
+    ExperimentCondition(
+        condition_id="C20",
+        strategy_name="V2",
+        model_key="M2",
+        datasets=["D1", "D2", "D3", "D4", "D5"],
+        apply_ppas=True,
+        description=(
+            "Annotation-only baseline on BGE, used as the controlled baseline "
+            "for measuring the incremental contribution of V8."
+        ),
+        ablation_group="E",
     ),
 ]
 

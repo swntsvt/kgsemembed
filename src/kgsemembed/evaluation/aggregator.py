@@ -20,7 +20,7 @@ import logging
 import math
 from dataclasses import dataclass
 from pathlib import Path
-from typing import List, Optional
+from typing import Dict, List, Optional, Tuple
 
 import pandas as pd
 
@@ -105,7 +105,8 @@ _SUMMARY_FLOAT_FIELDS = (
 )
 _SUMMARY_COLUMNS = ("condition_id", "strategy", "model_key", *_SUMMARY_FLOAT_FIELDS, "n_pairs")
 
-_ABLATION_GROUPS = ("A", "B", "C", "D")
+_ABLATION_GROUPS = ("A", "B", "C", "D", "E")
+_GROUP_REFERENCE_CONDITIONS: Dict[str, Tuple[str, ...]] = {"E": ("C10",)}
 
 _CONTROLLED_ABLATION = "Controlled ablation (same model)"
 _CONFOUNDED_ABLATION = "Confounded (different models)"
@@ -797,18 +798,62 @@ def _entity_type_section(df_expanded: pd.DataFrame) -> str:
     return _section("Entity-Type Analysis", body)
 
 
+def _group_condition_ids(group: str) -> List[str]:
+    """
+    Return the conditions shown in an ablation group's sub-table.
+
+    Group E holds only C20, whose sole comparison is against C10 in group B,
+    so C10 is listed alongside it as a reference row to keep the contrast in
+    one table.
+
+    Parameters
+    ----------
+    group : str
+        Ablation group identifier, e.g. ``"E"``.
+
+    Returns
+    -------
+    List[str]
+        Registry members of ``group`` followed by its reference conditions.
+    """
+    members = [condition.condition_id for condition in get_conditions_for_group(group)]
+    return members + list(_GROUP_REFERENCE_CONDITIONS.get(group, ()))
+
+
 def _ablation_group_block(summary: pd.DataFrame, group: str) -> str:
-    """Build one ablation-group sub-table using registry-defined membership."""
+    """Build one ablation-group sub-table from its members and reference rows."""
     heading = f"## Group {group}"
-    condition_ids = [condition.condition_id for condition in get_conditions_for_group(group)]
+    condition_ids = _group_condition_ids(group)
     block = summary[summary["condition_id"].isin(condition_ids)] if not summary.empty else summary
     if block.empty:
         return f"{heading}\n\n_No results available for Group {group}._"
-    return f"{heading}\n\n{_render_dataframe(block)}"
+    return f"{heading}\n\n{_render_dataframe(block)}{_reference_note(group)}"
+
+
+def _reference_note(group: str) -> str:
+    """
+    Explain any reference rows a group's sub-table borrows from other groups.
+
+    Parameters
+    ----------
+    group : str
+        Ablation group identifier, e.g. ``"E"``.
+
+    Returns
+    -------
+    str
+        A Markdown note naming each reference condition and its own group,
+        or an empty string when the group has no reference rows.
+    """
+    references = _GROUP_REFERENCE_CONDITIONS.get(group, ())
+    if not references:
+        return ""
+    labels = ", ".join(f"{cid} (group {get_condition(cid).ablation_group})" for cid in references)
+    return f"\n\n_{labels} shown for reference: the controlled comparison for Group {group}._"
 
 
 def _ablation_group_section(summary: pd.DataFrame) -> str:
-    """Build the ablation-group analysis section for groups A through D."""
+    """Build the ablation-group analysis section for groups A through E."""
     blocks = [_ablation_group_block(summary, group) for group in _ABLATION_GROUPS]
     return _section("Ablation Group Analysis", "\n\n".join(blocks))
 
