@@ -157,6 +157,12 @@ def test_table_is_a_complete_environment(tmp_path: Path) -> None:
     assert any(line.startswith(r"\multicolumn{11}{l}") for line in lines)
 
 
+def test_caption_scopes_dashes_to_dataset_columns(tmp_path: Path) -> None:
+    """A Mean dash means partial coverage, so the caption limits its dash note."""
+    caption = next(line for line in build_table(str(tmp_path)) if line.startswith(r"\caption"))
+    assert "Dashes in dataset columns indicate conditions not run" in caption
+
+
 def test_partial_d3_pair_count_warns(
     tmp_path: Path, captured_warnings: List[logging.LogRecord]
 ) -> None:

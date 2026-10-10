@@ -56,7 +56,7 @@ _MISSING = "---"
 _CAPTION = (
     r"\caption{Mean F1 per condition per dataset. "
     r"D3 values are means over 21 pairs. "
-    r"Dashes indicate conditions not run on that dataset. "
+    r"Dashes in dataset columns indicate conditions not run on that dataset. "
     r"Bold: best result per dataset column. "
     r"$\dagger$: M2\_uncapped (same weights as M2, "
     r"\texttt{ppas\_budget=None}); C19 is identical to C10 by design. "
