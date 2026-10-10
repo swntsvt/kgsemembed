@@ -1411,7 +1411,25 @@ def test_population_record_reports_every_count():
         "n_test_ranked_sources": 2,
         "n_val_unmatched_sources": 0,
         "n_test_unmatched_sources": 1,
+        "reference_complete": True,
     }
+
+
+def test_partial_reference_ignores_unjudgeable_unmatched_predictions():
+    uri = _unmatched_uri(in_validation=False)
+    pair = dataclasses.replace(_population_pair(["v", "t", uri]), reference_complete=False)
+    ranked = _VAL_AND_TEST_LISTS + [[(uri, "w", 0.95)]]
+    metrics = runner._evaluate_pair(pair, ranked)
+    assert metrics["fp"] == 0
+    assert metrics["population"]["n_test_ranked_sources"] == 1
+
+
+def test_partial_reference_counts_predictions_that_contradict_gold():
+    uri = _unmatched_uri(in_validation=False)
+    pair = dataclasses.replace(_population_pair(["v", "t", uri]), reference_complete=False)
+    ranked = _VAL_AND_TEST_LISTS + [[(uri, "y", 0.95)]]
+    metrics = runner._evaluate_pair(pair, ranked)
+    assert metrics["fp"] == 1
 
 
 def test_buckets_score_only_the_test_population():

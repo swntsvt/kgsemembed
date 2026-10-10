@@ -1,5 +1,6 @@
 """Tests for the validation/test evaluation populations."""
 
+import dataclasses
 import zlib
 
 import pytest
@@ -9,6 +10,7 @@ from kgsemembed.datasets import AlignmentPair
 from kgsemembed.evaluation.population import (
     build_populations,
     draws_validation,
+    judgeable_ranked_lists,
     restrict_ranked_lists,
     validation_share,
 )
@@ -25,6 +27,10 @@ def _pair(source_entities, val_refs=(), test_refs=(), train_refs=()) -> Alignmen
         test_refs=list(test_refs),
         train_refs=list(train_refs),
     )
+
+
+def _partial(pair: AlignmentPair) -> AlignmentPair:
+    return dataclasses.replace(pair, reference_complete=False)
 
 
 def _unmatched(count: int) -> list:
@@ -109,3 +115,23 @@ def test_restrict_ranked_lists_keeps_population_order_and_drops_empty_lists() ->
         [("a", "x", 0.9)],
         [("c", "z", 0.7)],
     ]
+
+
+_JUDGE_LISTS = [
+    [("t", "y", 0.9)],
+    [("u1", "w", 0.9), ("u1", "y", 0.8)],
+    [("u2", "x", 0.9)],
+    [("u3", "r", 0.9)],
+]
+
+
+def test_complete_reference_judges_every_prediction() -> None:
+    pair = _pair(["t", "u1", "u2"], val_refs=[("v", "x")], test_refs=[("t", "y")])
+    assert judgeable_ranked_lists(pair, _JUDGE_LISTS) == _JUDGE_LISTS
+
+
+def test_partial_reference_keeps_only_predictions_that_touch_the_gold_standard() -> None:
+    pair = _partial(_pair([], val_refs=[("v", "x")], test_refs=[("t", "y")],
+                          train_refs=[("q", "r")]))
+    kept = judgeable_ranked_lists(pair, _JUDGE_LISTS)
+    assert [ranked[0][0] for ranked in kept] == ["t", "u2", "u3"]

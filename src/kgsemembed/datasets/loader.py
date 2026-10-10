@@ -14,7 +14,7 @@ from __future__ import annotations
 import logging
 import random
 import xml.etree.ElementTree as ET
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Callable
 from urllib.parse import unquote, urlparse
@@ -89,6 +89,12 @@ class AlignmentPair:
         individual entities are always resolved to one of the first three.
     kgstore : object | None
         Optional Phase 3 graph store handle; unused in Phase 2.
+    reference_complete : bool
+        ``True`` when the reference alignment lists every correct match, so a
+        prediction for an unreferenced source is a false positive.  ``False``
+        for the OAEI Knowledge Graph track (D4), whose gold standard is
+        partial: a prediction is judged only when it conflicts with a gold
+        mapping.
     """
 
     dataset_id: str
@@ -103,6 +109,7 @@ class AlignmentPair:
     target_id: str = ""
     entity_type: str = "class"
     kgstore: object | None = None
+    reference_complete: bool = True
 
 
 def _detect_rdflib_format(path: Path) -> str:
@@ -743,7 +750,7 @@ def _load_d4(data_dir: Path) -> list[AlignmentPair]:
 
     graphs = (source_graph, target_graph)
     ids = ("memoryalpha", "stexpanded")
-    return [
+    pairs = [
         _build_pair(
             "D4_schema", "memoryalpha-stexpanded-schema", graphs, ids, "mixed",
             _split_val_test_20_80(schema_refs),
@@ -753,6 +760,7 @@ def _load_d4(data_dir: Path) -> list[AlignmentPair]:
             _split_val_test_20_80(instance_refs),
         ),
     ]
+    return [replace(pair, reference_complete=False) for pair in pairs]
 
 
 def _load_d5(data_dir: Path) -> list[AlignmentPair]:

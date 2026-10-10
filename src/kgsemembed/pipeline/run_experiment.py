@@ -50,6 +50,7 @@ from kgsemembed.evaluation import (
 from kgsemembed.evaluation.population import (
     EvaluationPopulations,
     build_populations,
+    judgeable_ranked_lists,
     restrict_ranked_lists,
 )
 from kgsemembed.pipeline.conditions import (
@@ -498,7 +499,8 @@ def _population_record(
     Returns
     -------
     Dict[str, int]
-        Reference counts, ranked-source counts, and unmatched-source counts.
+        Reference counts, ranked-source counts (after partial-reference
+        filtering), unmatched-source counts, and ``reference_complete``.
     """
     return {
         "n_train_refs": len(pair.train_refs),
@@ -508,6 +510,7 @@ def _population_record(
         "n_test_ranked_sources": len(split_lists[_TEST]),
         "n_val_unmatched_sources": populations.n_unmatched_val,
         "n_test_unmatched_sources": populations.n_unmatched_test,
+        "reference_complete": pair.reference_complete,
     }
 
 
@@ -564,7 +567,8 @@ def _evaluate_pair(
         the population summary under ``"population"``.
     """
     populations = build_populations(pair)
-    split_lists = _split_ranked_lists(ranked_lists, populations)
+    judgeable = judgeable_ranked_lists(pair, ranked_lists)
+    split_lists = _split_ranked_lists(judgeable, populations)
     threshold = _resolve_threshold(split_lists[_VAL], pair.val_refs)
     metrics = compute_all_metrics(split_lists[_TEST], pair.test_refs, threshold=threshold)
     metrics[_PER_ENTITY_TYPE_KEY] = _per_entity_type_metrics(pair, split_lists, threshold)

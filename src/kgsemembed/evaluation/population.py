@@ -15,6 +15,11 @@ Assignment rules
   test in proportion to the reference sources of each slice, using a stable
   ``zlib.crc32`` draw per URI, so tuning faces the same false-positive pressure
   that the test population does.
+* When the pair's reference is partial (``reference_complete`` is ``False``,
+  the OAEI Knowledge Graph track), an unmatched source's prediction is judged
+  only if its target appears in the reference, where it conflicts with a gold
+  mapping and is a false positive; otherwise it is ignored, as the track's
+  own evaluation does.  See :func:`judgeable_ranked_lists`.
 """
 
 import zlib
@@ -142,3 +147,38 @@ def restrict_ranked_lists(
         The non-empty ranked lists of the population, in their original order.
     """
     return [ranked for ranked in ranked_lists if ranked and ranked[0][0] in sources]
+
+
+
+def judgeable_ranked_lists(
+    pair: AlignmentPair, ranked_lists: List[RankedList]
+) -> List[RankedList]:
+    """
+    Drop the predictions a partial reference alignment cannot judge.
+
+    Under a complete reference every ranked list is kept.  Under a partial
+    one, an unreferenced source's list is kept only when its top-ranked
+    target is a reference target, i.e. its prediction contradicts a gold
+    mapping.  Reference sources are always kept.
+
+    Parameters
+    ----------
+    pair : AlignmentPair
+        Alignment pair supplying the references and ``reference_complete``.
+    ranked_lists : List[RankedList]
+        One ranked candidate list per source entity, best candidate first.
+
+    Returns
+    -------
+    List[RankedList]
+        The ranked lists whose predictions the reference can judge.
+    """
+    if pair.reference_complete:
+        return ranked_lists
+    refs = [*pair.train_refs, *pair.val_refs, *pair.test_refs]
+    sources = _reference_sources(refs)
+    targets = {target for _, target in refs}
+    return [
+        ranked for ranked in ranked_lists
+        if ranked and (ranked[0][0] in sources or ranked[0][1] in targets)
+    ]

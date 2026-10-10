@@ -387,6 +387,13 @@ with version 2 and are rejected by `evaluation/stats.py`.
   between validation and test at the slice's reference-source ratio by a
   stable `zlib.crc32` draw; their predictions are false positives (the OAEI
   complete-reference convention), so tuning sees the same FP pressure as test.
+- **Partial references (D4)**: the KG track's gold standard is partial, so
+  both D4 pairs set `AlignmentPair.reference_complete=False`. An unmatched
+  source's prediction is then judged only when its target is a reference
+  target (it contradicts a gold mapping → FP); otherwise it is ignored
+  (`judgeable_ranked_lists()`), following the track's own evaluation.
+- **D5 unreachable references**: 167 D5 test links have a source with no
+  triples, so it is never ranked; they stay in the recall denominator as FNs.
 - **Prediction**: each source predicts only its top-ranked candidate, kept if
   its score reaches the threshold (BERTMapLt's one-mapping-per-source rule).
 - **Threshold**: tuned on the validation population over 0.10–0.99 in steps
@@ -434,7 +441,8 @@ Every file written by `run_experiment.py` contains:
   },
   "population": {"n_train_refs", "n_val_refs", "n_test_refs",
                  "n_val_ranked_sources", "n_test_ranked_sources",
-                 "n_val_unmatched_sources", "n_test_unmatched_sources"},
+                 "n_val_unmatched_sources", "n_test_unmatched_sources",
+                 "reference_complete"},
   "n_source_entities", "n_candidates_per_entity", "candidates_sha256",
   "hf_revision", "kgsemembed_version",
   "python_version", "run_timestamp",

@@ -347,6 +347,8 @@ def test_d4_dispatch_to_20_80_val_test_split(tmp_path: Path) -> None:
 
     schema, instance = load_dataset("D4", tmp_path)
     assert schema.train_refs == [] and instance.train_refs == []
+    assert schema.reference_complete is False and instance.reference_complete is False
+    assert schema.source_graph is instance.source_graph
     assert len(schema.val_refs) == 20
     assert len(schema.test_refs) == 80
 
