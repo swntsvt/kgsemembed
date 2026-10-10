@@ -486,6 +486,14 @@ batch_size for long sequences to prevent MPS OOM (observed on C14/D5
 with bge-m3 at batch_size=16 and uncapped 8192-token texts).
 Do not override batch_size manually in encoding loops.
 
+MPS keeps driver memory per distinct batch shape (~130 MB each on
+bge-large) and torch.mps.empty_cache() does not release it, so a corpus
+whose batches take hundreds of padded lengths (C3/D4_instance) exhausts
+device memory mid-encode. load_sentence_transformer() therefore pads
+every batch to a multiple of PAD_TO_MULTIPLE_OF (64) tokens via
+bucket_sequence_padding(). Padded positions are masked: embeddings move
+by at most 7.2e-7 across M1-M5.
+
 V2+V8 does not invoke PPAS under any model. V2 (AnnotationVerbaliser)
 and V8 (RelationalSignatureVerbaliser) have no budget logic.
 apply_ppas=False on a V2+V8 condition has no effect on output.
