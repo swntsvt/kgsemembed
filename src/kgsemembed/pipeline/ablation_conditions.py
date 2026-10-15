@@ -61,6 +61,12 @@ class AblationCondition:
         Datasets the condition runs on.
     model_key : str
         Embedding model, shared by every ablation condition.
+    filter_mode : str
+        Predicate filtering mode ("all" or "covered"), default "all" (Issue #126).
+    order_mode : str
+        Predicate ordering mode ("ppas", "deterministic", "random", "full"), default same as policy.
+    predicate_config : str
+        Name of predicate vocabulary config ("base", "covered_only", "fma_extended"), default "base".
     """
 
     condition_id: str
@@ -69,6 +75,9 @@ class AblationCondition:
     seed: Optional[int]
     datasets: Tuple[str, ...]
     model_key: str = ABLATION_MODEL_KEY
+    filter_mode: str = "all"
+    order_mode: str = ""
+    predicate_config: str = "base"
 
 
 def _budget_family(budget: int, datasets: Tuple[str, ...]) -> List[AblationCondition]:
@@ -84,11 +93,110 @@ def _budget_family(budget: int, datasets: Tuple[str, ...]) -> List[AblationCondi
     return family
 
 
+def _controlled_policy_family(
+    filter_mode: str,
+    order_mode: str,
+    predicate_config: str,
+    budget: int,
+    datasets: Tuple[str, ...],
+) -> List[AblationCondition]:
+    """Create a controlled policy condition (Issue #126).
+
+    Parameters
+    ----------
+    filter_mode : str
+        "all" or "covered".
+    order_mode : str
+        "ppas", "deterministic", "random", or "full".
+    predicate_config : str
+        "base", "covered_only", or "fma_extended".
+    budget : int
+        Token budget.
+    datasets : Tuple[str, ...]
+        Datasets to run on.
+
+    Returns
+    -------
+    List[AblationCondition]
+        A single controlled policy condition (no random seeds; one only).
+        Or multiple if order_mode is "random" (one per seed).
+    """
+    # Map order_mode to a policy equivalent for display
+    if order_mode == "ppas":
+        policy_label = "ppas"
+        policy = PPAS
+    elif order_mode == "deterministic":
+        policy_label = "det"
+        policy = DETERMINISTIC
+    elif order_mode == "random":
+        policy_label = "rand"
+        policy = RANDOM
+    elif order_mode == "full":
+        policy_label = "full"
+        policy = FULL
+    else:
+        raise ValueError(f"Unknown order_mode {order_mode!r}.")
+
+    # Construct condition ID: PA-cp-{filter}{config}{order}_{budget}[-s{seed}]
+    config_label = predicate_config[:3] if predicate_config != "base" else ""
+    filter_label = filter_mode[:3] if filter_mode != "all" else ""
+
+    base_id = f"PA-cp-{filter_label}{config_label}{policy_label}-{budget}".replace("--", "-").lstrip("-")
+    if not base_id.startswith("PA-"):
+        base_id = f"PA-{base_id}"
+
+    if order_mode == "random":
+        return [
+            AblationCondition(
+                f"{base_id}-s{seed}",
+                policy,
+                budget,
+                seed,
+                datasets,
+                filter_mode=filter_mode,
+                order_mode=order_mode,
+                predicate_config=predicate_config,
+            )
+            for seed in RANDOM_SEEDS
+        ]
+    else:
+        return [
+            AblationCondition(
+                base_id,
+                policy,
+                budget,
+                None,
+                datasets,
+                filter_mode=filter_mode,
+                order_mode=order_mode,
+                predicate_config=predicate_config,
+            )
+        ]
+
+
 ABLATION_CONDITIONS: List[AblationCondition] = [
     AblationCondition("PA-full", FULL, None, None, ("D5", "D1")),
     *_budget_family(PRIMARY_BUDGET, ("D5",)),
     *_budget_family(STRESS_BUDGETS["D5"], ("D5",)),
     *_budget_family(STRESS_BUDGETS["D1"], ("D1",)),
+    # Controlled policy conditions (Issue #126)
+    # Only add NEW policy combinations; P1 (all-det) and P2 (all-ppas) already exist above
+    # P3: covered-det
+    *_controlled_policy_family("covered", "deterministic", "base", PRIMARY_BUDGET, ("D5",)),
+    *_controlled_policy_family("covered", "deterministic", "base", STRESS_BUDGETS["D5"], ("D5",)),
+    *_controlled_policy_family("covered", "deterministic", "base", STRESS_BUDGETS["D1"], ("D1",)),
+    # P4: covered-ppas
+    *_controlled_policy_family("covered", "ppas", "base", PRIMARY_BUDGET, ("D5",)),
+    *_controlled_policy_family("covered", "ppas", "base", STRESS_BUDGETS["D5"], ("D5",)),
+    *_controlled_policy_family("covered", "ppas", "base", STRESS_BUDGETS["D1"], ("D1",)),
+    # P5: fma_extended-ppas
+    *_controlled_policy_family("all", "ppas", "fma_extended", PRIMARY_BUDGET, ("D5",)),
+    *_controlled_policy_family("all", "ppas", "fma_extended", STRESS_BUDGETS["D5"], ("D5",)),
+    *_controlled_policy_family("all", "ppas", "fma_extended", STRESS_BUDGETS["D1"], ("D1",)),
+    # P5-det: fma_extended-det (bonus control)
+    *_controlled_policy_family("all", "deterministic", "fma_extended", PRIMARY_BUDGET, ("D5",)),
+    *_controlled_policy_family("all", "deterministic", "fma_extended", STRESS_BUDGETS["D5"], ("D5",)),
+    *_controlled_policy_family("all", "deterministic", "fma_extended", STRESS_BUDGETS["D1"], ("D1",)),
 ]
 
 

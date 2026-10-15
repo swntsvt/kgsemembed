@@ -38,15 +38,18 @@ _CONDITIONS = ["PA-full", "PA-ppas-80", "PA-det-80", "PA-rand-80-s0", "PA-rand-8
 
 def test_registry_ids_are_unique_and_share_one_model():
     ids = [c.condition_id for c in ABLATION_CONDITIONS]
-    assert len(ids) == len(set(ids)) == 22
+    # 22 historical + 12 controlled policy conditions (P3, P4, P5, P5-det at 3 budgets each)
+    assert len(ids) == len(set(ids)) == 34
     assert {c.model_key for c in ABLATION_CONDITIONS} == {ABLATION_MODEL_KEY} == {"M2"}
 
 
 def test_each_budget_has_ppas_deterministic_and_every_random_seed():
-    budgets = {c.token_budget for c in ABLATION_CONDITIONS} - {None}
+    # Only check historical conditions (filter_mode == "all" and predicate_config == "base")
+    historical = [c for c in ABLATION_CONDITIONS if c.filter_mode == "all" and c.predicate_config == "base"]
+    budgets = {c.token_budget for c in historical} - {None}
     assert budgets == {PRIMARY_BUDGET, *STRESS_BUDGETS.values()}
     for budget in budgets:
-        family = [c for c in ABLATION_CONDITIONS if c.token_budget == budget]
+        family = [c for c in historical if c.token_budget == budget]
         assert sorted(c.policy for c in family if c.policy != RANDOM) == [DETERMINISTIC, PPAS]
         assert sorted(c.seed for c in family if c.policy == RANDOM) == list(RANDOM_SEEDS)
         assert len({c.datasets for c in family}) == 1
