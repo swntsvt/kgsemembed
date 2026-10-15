@@ -340,3 +340,21 @@ def test_factory_buckets_sequence_padding(monkeypatch: pytest.MonkeyPatch) -> No
     assert model[0].processing_kwargs == {
         "text": {"pad_to_multiple_of": models.PAD_TO_MULTIPLE_OF}
     }
+
+
+def test_only_m5_needs_bidirectional_attention() -> None:
+    flagged = {key for key, config in MODEL_REGISTRY.items() if config.bidirectional_attention}
+    assert flagged == {"M5"}
+
+
+@pytest.mark.parametrize("key,expected", [("M1", 0), ("M5", 1)])
+def test_factory_enables_bidirectional_attention_only_when_flagged(
+    monkeypatch: pytest.MonkeyPatch, key: str, expected: int
+) -> None:
+    _patch_cpu_and_mock_transformer(monkeypatch)
+    enable = MagicMock(name="enable_bidirectional_attention")
+    monkeypatch.setattr(models, "enable_bidirectional_attention", enable)
+    model, _ = load_sentence_transformer(key)
+    assert enable.call_count == expected
+    if expected:
+        enable.assert_called_once_with(model)

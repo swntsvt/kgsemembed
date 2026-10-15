@@ -280,10 +280,13 @@ Registered in `src/kgsemembed/embeddings/models.py` as `MODEL_REGISTRY`.
 | M4 | `FremyCompany/BioLORD-2023` | 512 | 420 | 32 |
 | M5 | `dunzhang/stella_en_1.5B_v5` | 512 | 420 | 8 |
 
-- Every registered model is a stock `transformers` architecture, so
-  `SentenceTransformer()` is called with `model_id` and `device` only. No
+- `SentenceTransformer()` is called with `model_id` and `device` only, so no
   model executes custom modelling code at load time. Adding a model that
-  would need to is a design decision, not a config change.
+  would need to is a design decision, not a config change. Every model loads
+  as a stock `transformers` architecture, but that is not the same as running
+  as trained: M5 publishes custom code (`auto_map` in its `config.json`) that
+  the loader never runs, and its trained behaviour is restored in-repo
+  instead (see **M5 bidirectional attention** below).
 - M3 replaces `Alibaba-NLP/gte-large-en-v1.5` and
   `jinaai/jina-embeddings-v2-base-en`, both incompatible with transformers 5.x
   due to custom remote code. `bge-m3` is a stock XLM-RoBERTa architecture and
@@ -291,6 +294,18 @@ Registered in `src/kgsemembed/embeddings/models.py` as `MODEL_REGISTRY`.
 - **M2_uncapped**: same weights as M2, `ppas_budget=None`. Used only for the
   controlled PPAS ablation (C19). V2+V8 does not invoke PPAS under any model,
   so C19 is bit-for-bit identical to C10 (both record `ppas_effective: false`).
+- **M5 bidirectional attention**: stella_en_1.5B_v5 is Qwen2 fine-tuned with
+  the causal mask removed; its repository restores that via custom
+  `modeling_qwen.Qwen2Model` (`is_causal=False`). Loaded without that code,
+  the stock Qwen2 decoder is causal, so mean pooling sees each token only
+  through earlier ones. That silently degraded every C13 result before
+  #123: the model card's example scored 0.396 where 0.818 is published, and
+  D3 R@1 was 0.130 instead of 0.529. `ModelConfig.bidirectional_attention=True`
+  makes `load_sentence_transformer()` call
+  `enable_bidirectional_attention()` (`embeddings/attention.py`), which marks
+  every attention layer non-causal and passes the decoder a bidirectional
+  padding mask. `tests/test_attention.py` checks the model card's
+  similarities to 1e-3 (`--runslow`).
 - **M5 asymmetric**: source side gets the instruction prefix
   (`query_prefix="Instruct: Retrieve semantically similar text.\nQuery: {}"`),
   candidate side gets no prefix. Apply the prefix only via `encode_source()` /
@@ -503,6 +518,12 @@ hash() is salted per process by PYTHONHASHSEED; crc32 is stable.
 
 float64 arithmetic throughout ngram.py scoring.
 float32 causes tie-breaking inconsistency on real data (observed on D3).
+
+Before registering a model, check its config.json for auto_map.
+A repository that maps AutoModel to custom code may depend on it for
+trained behaviour (attention direction, pooling) that the stock
+architecture silently lacks. Reproduce the model card's published
+example output before trusting any result (see M5, #123).
 
 Threshold is tuned on the validation population only.
 Never pass test-population pairs to tune_threshold(); pass

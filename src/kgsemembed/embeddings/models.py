@@ -14,6 +14,8 @@ from typing import Dict, Optional, Tuple
 import torch
 from sentence_transformers import SentenceTransformer
 
+from kgsemembed.embeddings.attention import enable_bidirectional_attention
+
 PAD_TO_MULTIPLE_OF = 64
 
 
@@ -38,6 +40,9 @@ class ModelConfig:
         Instruction prepended to document text, or ``None`` when unused.
     batch_size : int
         Recommended encoding batch size for this model.
+    bidirectional_attention : bool
+        Whether the model is a decoder fine-tuned without a causal mask, whose
+        trained attention must be restored after loading (default ``False``).
     """
 
     model_key: str
@@ -47,6 +52,7 @@ class ModelConfig:
     query_prefix: Optional[str]
     doc_prefix: Optional[str]
     batch_size: int
+    bidirectional_attention: bool = False
 
 
 MODEL_REGISTRY: Dict[str, ModelConfig] = {
@@ -114,6 +120,10 @@ MODEL_REGISTRY: Dict[str, ModelConfig] = {
         query_prefix="Instruct: Retrieve semantically similar text.\nQuery: {}",
         doc_prefix=None,
         batch_size=8,
+        # Stella is Qwen2 fine-tuned with bidirectional attention, restored by
+        # the repository's custom modelling code (auto_map).  The stock Qwen2
+        # decoder is causal, so attention must be made bidirectional here.
+        bidirectional_attention=True,
     ),
 }
 
@@ -235,6 +245,8 @@ def load_sentence_transformer(
     print(f"Loading model {config.model_id} on device {device}")
     model = SentenceTransformer(config.model_id, device=device)
     bucket_sequence_padding(model)
+    if config.bidirectional_attention:
+        enable_bidirectional_attention(model)
     model_info = {
         "model_key": model_key,
         "model_id": config.model_id,
