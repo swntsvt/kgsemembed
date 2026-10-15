@@ -359,6 +359,17 @@ selection policy (and random seed) is the only difference.
 - `ppas_effective` in ablation results is `true` only when the policy is PPAS
   and sampling was invoked for at least one entity. In C1–C20 results it still
   means "strategy and model *can* sample", not that sampling occurred.
+- **Results (be06539, one pair per dataset, no significance tests)**: D5 at
+  420 — every policy equals the full reference (MRR 0.1777; 1.8% of
+  candidates sampled). D5 at 80 — PPAS = deterministic (MRR 0.1497), above
+  random (0.1355 ± 0.0009, 5 seeds), below full (0.1777). D1 at 48 — PPAS
+  0.4932, random 0.4050 ± 0.0013, deterministic 0.3566, full 0.4525.
+- **Read D1 with care**: the gain comes from what the tiers *exclude*. FMA's
+  `preferred_name`/`synonym`/`FMAID` are untiered, so PPAS keeps candidates'
+  `rdfs:label` + `subClassOf` and drops synonym lists that deterministic
+  order keeps. PPAS beating full text says the full V6 key-value text is
+  noisy, not that less text is better in general: this representation's full
+  MRR (0.4525) is far below C3 V2+V6/M2 (0.8036) on D1.
 
 ## Datasets
 
