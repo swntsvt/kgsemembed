@@ -270,6 +270,23 @@ def test_split_is_independent_of_input_order(split_fn) -> None:
     assert split_fn(list(reversed(refs))) == split_fn(refs)
 
 
+def test_split_keeps_every_reference_of_a_source_in_one_slice() -> None:
+    refs = [(f"s{i:02d}", f"t{i:02d}{suffix}") for i in range(30) for suffix in "ab"]
+    _, val, test = _split_val_test_20_80(refs)
+    val_sources = {source for source, _ in val}
+    test_sources = {source for source, _ in test}
+    assert val_sources.isdisjoint(test_sources)
+    assert len(val_sources) == 6
+    assert sorted(val + test) == sorted(refs)
+
+
+def test_split_sizes_count_sources_not_pairs() -> None:
+    refs = [("hub", f"t{i}") for i in range(8)] + [(f"s{i}", f"u{i}") for i in range(4)]
+    _, val, test = _split_val_test_20_80(refs)
+    assert len({source for source, _ in val}) == 1
+    assert len({source for source, _ in test}) == 4
+
+
 def test_split_shuffles_rather_than_slicing_sorted_order() -> None:
     refs = [(f"s{i:02d}", f"t{i:02d}") for i in range(50)]
     _, val, _ = _split_val_test_20_80(refs)
@@ -330,6 +347,8 @@ def test_d4_dispatch_to_20_80_val_test_split(tmp_path: Path) -> None:
 
     schema, instance = load_dataset("D4", tmp_path)
     assert schema.train_refs == [] and instance.train_refs == []
+    assert schema.reference_complete is False and instance.reference_complete is False
+    assert schema.source_graph is instance.source_graph
     assert len(schema.val_refs) == 20
     assert len(schema.test_refs) == 80
 
@@ -342,15 +361,16 @@ def test_d5_links_are_used_verbatim_without_shuffling(tmp_path: Path) -> None:
         (dataset_dir / name).write_text(
             "http://ex/a\thttp://ex/p\thttp://ex/b\n", encoding="utf-8"
         )
+    train = [(f"http://ex/r{i}", f"http://ex/q{i}") for i in range(7)]
     valid = [(f"http://ex/v{i}", f"http://ex/w{i}") for i in range(5)]
     test = [(f"http://ex/s{i}", f"http://ex/t{i}") for i in range(20)]
-    for name, rows in (("valid_links", valid), ("test_links", test)):
+    for name, rows in (("train_links", train), ("valid_links", valid), ("test_links", test)):
         (fold_dir / name).write_text(
             "".join(f"{s}\t{t}\n" for s, t in rows), encoding="utf-8"
         )
 
     pair = load_dataset("D5", tmp_path)[0]
-    assert pair.train_refs == []
+    assert pair.train_refs == train
     assert pair.val_refs == valid
     assert pair.test_refs == test
 
@@ -578,5 +598,6 @@ def test_load_dataset_d5_builds_graphs_from_triple_files() -> None:
     assert len(pair.source_graph) > 0
     assert len(pair.val_refs) > 0
     assert len(pair.test_refs) > 0
-    assert pair.train_refs == []
+    assert len(pair.train_refs) == 3000
+    assert not {s for s, _ in pair.train_refs} & {s for s, _ in pair.test_refs}
     _assert_str_pairs(pair.val_refs)

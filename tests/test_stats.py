@@ -12,16 +12,23 @@ from typing import Dict, List, Optional
 from unittest import mock
 
 import pytest
+from scipy.stats import PermutationMethod
 
 import kgsemembed.evaluation as evaluation
 from kgsemembed.evaluation import (
+    EVALUATION_PROTOCOL_VERSION,
     collect_f1_scores,
     export_stats_table,
     load_results_for_condition,
     run_group_comparisons,
     wilcoxon_comparison,
 )
-from kgsemembed.evaluation.stats import _GROUP_COMPARISONS, _MIN_PAIRED_OBSERVATIONS
+from kgsemembed.evaluation.stats import (
+    _GROUP_COMPARISONS,
+    _MIN_PAIRED_OBSERVATIONS,
+    expand_dataset_ids,
+    minimum_attainable_p,
+)
 from kgsemembed.utils.errors import DataError
 
 
@@ -34,6 +41,7 @@ def _write_result(
     dataset_id: str,
     pair_name: str,
     f1: Optional[float],
+    protocol: Optional[int] = EVALUATION_PROTOCOL_VERSION,
 ) -> None:
     directory = results_dir / condition_id / dataset_id
     directory.mkdir(parents=True, exist_ok=True)
@@ -46,6 +54,8 @@ def _write_result(
         "pair_name": pair_name,
         "metrics": metrics,
     }
+    if protocol is not None:
+        payload["evaluation_protocol"] = protocol
     (directory / f"{pair_name}_results.json").write_text(
         json.dumps(payload, indent=2), encoding="utf-8"
     )
@@ -63,6 +73,30 @@ def _write_condition(
 
 def _pairs(dataset_id: str, count: int, base: float) -> Dict[str, float]:
     return {f"{dataset_id}_p{index}": base + index * 0.01 for index in range(count)}
+
+
+_UNITS = ("D1", "D2", "D3", "D4_schema", "D4_instance", "D5")
+_ALL_DATASETS = ["D1", "D2", "D3", "D4", "D5"]
+
+
+def _write_units(results_dir: Path, condition_id: str, values: List[float]) -> None:
+    """Write one single-pair result per dataset column, in ``_UNITS`` order."""
+    for unit, f1 in zip(_UNITS, values):
+        _write_result(results_dir, condition_id, unit, f"{unit}_pair", f1)
+
+
+def _compare_units(tmp_path: Path, values_a: List[float], values_b: List[float]) -> dict:
+    """Compare C1 against C2 over the six dataset columns."""
+    _write_units(tmp_path, "C1", values_a)
+    _write_units(tmp_path, "C2", values_b)
+    return wilcoxon_comparison("C1", "C2", _ALL_DATASETS, str(tmp_path))
+
+
+_BASE = [0.30, 0.40, 0.50, 0.20, 0.60, 0.10]
+
+
+def _shifted(differences: List[float]) -> List[float]:
+    return [base + difference for base, difference in zip(_BASE, differences)]
 
 
 # ---------------------------------------------------------------------------
@@ -158,6 +192,12 @@ def test_collect_spans_multiple_datasets(tmp_path: Path) -> None:
     assert len(scores) == 5
 
 
+def test_collect_expands_d4_into_schema_and_instance(tmp_path: Path) -> None:
+    _write_result(tmp_path, "C1", "D4_schema", "schema", 0.3)
+    _write_result(tmp_path, "C1", "D4_instance", "instance", 0.7)
+    assert collect_f1_scores("C1", ["D4"], str(tmp_path)) == [0.3, 0.7]
+
+
 def test_collect_deterministic_ordering(tmp_path: Path) -> None:
     _write_result(tmp_path, "C1", "D1", "D1_p1", 0.2)
     _write_result(tmp_path, "C1", "D1", "D1_p0", 0.1)
@@ -180,7 +220,11 @@ def test_collect_missing_f1_raises(tmp_path: Path) -> None:
 def test_collect_non_numeric_f1_raises(tmp_path: Path) -> None:
     directory = tmp_path / "C1" / "D1"
     directory.mkdir(parents=True)
-    payload = {"pair_name": "D1_p0", "metrics": {"f1": "not-a-number"}}
+    payload = {
+        "pair_name": "D1_p0",
+        "metrics": {"f1": "not-a-number"},
+        "evaluation_protocol": EVALUATION_PROTOCOL_VERSION,
+    }
     (directory / "D1_p0_results.json").write_text(json.dumps(payload), encoding="utf-8")
     with pytest.raises(DataError):
         collect_f1_scores("C1", ["D1"], str(tmp_path))
@@ -193,185 +237,228 @@ def test_collect_duplicate_pair_across_datasets_raises(tmp_path: Path) -> None:
         collect_f1_scores("C1", ["D1", "D2"], str(tmp_path))
 
 
+@pytest.mark.parametrize("protocol", [None, 1])
+def test_collect_rejects_results_from_an_older_protocol(
+    tmp_path: Path, protocol: Optional[int]
+) -> None:
+    _write_result(tmp_path, "C1", "D1", "D1_p0", 0.5, protocol=protocol)
+    with pytest.raises(DataError, match="evaluation protocol"):
+        collect_f1_scores("C1", ["D1"], str(tmp_path))
+
+
+def test_expand_dataset_ids_replaces_d4_in_place() -> None:
+    assert expand_dataset_ids(["D1", "D4", "D5"]) == [
+        "D1", "D4_schema", "D4_instance", "D5",
+    ]
+
+
+# ---------------------------------------------------------------------------
+# Experimental unit
+# ---------------------------------------------------------------------------
+def test_d3_pairs_collapse_into_one_unit(tmp_path: Path) -> None:
+    _write_units(tmp_path, "C1", _BASE)
+    _write_units(tmp_path, "C2", _shifted([0.1] * 6))
+    for name, value in _pairs("D3", 20, 0.3).items():
+        _write_result(tmp_path, "C1", "D3", name, value)
+        _write_result(tmp_path, "C2", "D3", name, value + 0.1)
+    result = wilcoxon_comparison("C1", "C2", _ALL_DATASETS, str(tmp_path))
+    assert result["n_units"] == 6
+    assert result["n_pairs"] == 26
+    assert result["units"] == list(_UNITS)
+
+
+def test_d4_columns_take_part_in_comparisons(tmp_path: Path) -> None:
+    result = _compare_units(tmp_path, _BASE, _shifted([0.1] * 6))
+    assert {"D4_schema", "D4_instance"} <= set(result["units"])
+
+
+def test_unit_value_is_the_mean_of_its_pairs(tmp_path: Path) -> None:
+    _write_units(tmp_path, "C1", _BASE)
+    _write_units(tmp_path, "C2", _BASE)
+    _write_result(tmp_path, "C2", "D3", "D3_pair", 0.2)
+    _write_result(tmp_path, "C1", "D3", "D3_extra", 0.5)
+    _write_result(tmp_path, "C2", "D3", "D3_extra", 0.4)
+    result = wilcoxon_comparison("C1", "C2", _ALL_DATASETS, str(tmp_path))
+    assert result["delta_f1"] == pytest.approx(((0.2 + 0.4) / 2 - (0.5 + 0.5) / 2) / 6)
+
+
+def test_pair_outcomes_count_every_alignment_pair(tmp_path: Path) -> None:
+    result = _compare_units(tmp_path, _BASE, _shifted([0.1, 0.0, -0.1, 0.2, 0.0, 0.3]))
+    assert (result["pair_wins"], result["pair_ties"], result["pair_losses"]) == (3, 2, 1)
+
+
 # ---------------------------------------------------------------------------
 # Wilcoxon comparison
 # ---------------------------------------------------------------------------
-def test_wilcoxon_identical_lists_pvalue_near_one(tmp_path: Path) -> None:
-    pairs = _pairs("D1", 6, 0.4)
-    _write_condition(tmp_path, "C1", "D1", pairs)
-    _write_condition(tmp_path, "C2", "D1", pairs)
-    result = wilcoxon_comparison("C1", "C2", ["D1"], str(tmp_path))
-    assert result["p_value"] == pytest.approx(1.0)
+def test_wilcoxon_identical_lists_pvalue_is_one(tmp_path: Path) -> None:
+    result = _compare_units(tmp_path, _BASE, _BASE)
+    assert result["p_value"] == 1.0
     assert result["significant"] is False
     assert result["delta_f1"] == pytest.approx(0.0)
+    assert result["effect_size_r"] == 0.0
+    assert "zero" in result["wilcoxon_warning"]
 
 
-def test_wilcoxon_fewer_than_five_pairs_raises(tmp_path: Path) -> None:
-    pairs = _pairs("D1", 4, 0.4)
-    _write_condition(tmp_path, "C1", "D1", pairs)
-    _write_condition(tmp_path, "C2", "D1", pairs)
-    with pytest.raises(ValueError):
-        wilcoxon_comparison("C1", "C2", ["D1"], str(tmp_path))
+def test_wilcoxon_floating_point_noise_counts_as_a_zero_difference(tmp_path: Path) -> None:
+    result = _compare_units(tmp_path, [0.1 + 0.2] * 6, [0.3] * 6)
+    assert result["n_nonzero"] == 0
+    assert result["p_value"] == 1.0
+
+
+def test_wilcoxon_all_units_improved_reaches_exact_minimum(tmp_path: Path) -> None:
+    result = _compare_units(tmp_path, _BASE, _shifted([0.01, 0.02, 0.03, 0.04, 0.05, 0.06]))
+    assert result["p_value"] == pytest.approx(2 / 64)
+    assert result["min_attainable_p"] == pytest.approx(2 / 64)
+    assert result["effect_size_r"] == 1.0
+
+
+def test_wilcoxon_fewer_than_five_units_is_reported_untested(tmp_path: Path) -> None:
+    _write_units(tmp_path, "C1", _BASE)
+    _write_units(tmp_path, "C2", _shifted([0.1] * 6))
+    result = wilcoxon_comparison("C1", "C2", ["D1", "D2"], str(tmp_path))
+    assert result["testable"] is False
+    assert result["p_value"] is None and result["statistic"] is None
+    assert result["significant"] is False
+    assert result["n_units"] == 2
+    assert "Not tested" in result["wilcoxon_warning"]
+    assert result["delta_f1"] == pytest.approx(0.1)
+
+
+def test_wilcoxon_minimum_units_constant_is_five() -> None:
+    assert _MIN_PAIRED_OBSERVATIONS == 5
 
 
 def test_wilcoxon_delta_is_mean_b_minus_mean_a(tmp_path: Path) -> None:
-    _write_condition(tmp_path, "C1", "D1", _pairs("D1", 6, 0.30))
-    _write_condition(tmp_path, "C2", "D1", _pairs("D1", 6, 0.50))
-    result = wilcoxon_comparison("C1", "C2", ["D1"], str(tmp_path))
-    assert result["delta_f1"] == pytest.approx(
-        result["mean_f1_b"] - result["mean_f1_a"]
-    )
+    result = _compare_units(tmp_path, _BASE, _shifted([0.2] * 6))
+    assert result["delta_f1"] == pytest.approx(result["mean_f1_b"] - result["mean_f1_a"])
     assert result["delta_f1"] == pytest.approx(0.20)
 
 
-def test_wilcoxon_uses_two_sided_alternative(tmp_path: Path) -> None:
-    _write_condition(tmp_path, "C1", "D1", _pairs("D1", 6, 0.30))
-    _write_condition(tmp_path, "C2", "D1", _pairs("D1", 6, 0.50))
+def test_wilcoxon_uses_two_sided_permutation_test(tmp_path: Path) -> None:
+    _write_units(tmp_path, "C1", _BASE)
+    _write_units(tmp_path, "C2", _shifted([0.2] * 6))
     with mock.patch("kgsemembed.evaluation.stats.wilcoxon") as mocked:
         mocked.return_value = mock.Mock(statistic=1.0, pvalue=0.5)
-        wilcoxon_comparison("C1", "C2", ["D1"], str(tmp_path))
+        wilcoxon_comparison("C1", "C2", _ALL_DATASETS, str(tmp_path))
     assert mocked.call_args.kwargs["alternative"] == "two-sided"
+    assert isinstance(mocked.call_args.kwargs["method"], PermutationMethod)
+
+
+def test_wilcoxon_is_deterministic(tmp_path: Path) -> None:
+    differences = [0.1, 0.2, -0.05, 0.3, 0.4, -0.15]
+    first = _compare_units(tmp_path / "a", _BASE, _shifted(differences))
+    second = _compare_units(tmp_path / "b", _BASE, _shifted(differences))
+    assert first == second
 
 
 def test_wilcoxon_matches_by_pair_name_not_order(tmp_path: Path) -> None:
-    _write_condition(
-        tmp_path, "C1", "D1", {"a": 0.9, "b": 0.8, "c": 0.7, "d": 0.6, "e": 0.5}
-    )
-    _write_condition(
-        tmp_path, "C2", "D1", {"e": 0.5, "d": 0.6, "c": 0.7, "b": 0.8, "a": 0.9}
-    )
-    with mock.patch("kgsemembed.evaluation.stats.wilcoxon") as mocked:
-        mocked.return_value = mock.Mock(statistic=0.0, pvalue=1.0)
-        wilcoxon_comparison("C1", "C2", ["D1"], str(tmp_path))
-    scores_a, scores_b = mocked.call_args.args
-    assert scores_a == scores_b
+    _write_units(tmp_path, "C1", _BASE)
+    _write_units(tmp_path, "C2", _BASE)
+    _write_condition(tmp_path, "C1", "D3", {"a": 0.9, "b": 0.8, "c": 0.7})
+    _write_condition(tmp_path, "C2", "D3", {"c": 0.7, "b": 0.8, "a": 0.9})
+    result = wilcoxon_comparison("C1", "C2", _ALL_DATASETS, str(tmp_path))
+    assert result["pair_ties"] == result["n_pairs"]
 
 
 def test_wilcoxon_mismatched_pair_names_raise(tmp_path: Path) -> None:
-    _write_condition(tmp_path, "C1", "D1", _pairs("D1", 6, 0.4))
-    _write_condition(
-        tmp_path, "C2", "D1", {f"other_{i}": 0.4 for i in range(6)}
-    )
+    _write_units(tmp_path, "C1", _BASE)
+    _write_units(tmp_path, "C2", _BASE)
+    _write_result(tmp_path, "C2", "D3", "other", 0.4)
     with pytest.raises(DataError):
-        wilcoxon_comparison("C1", "C2", ["D1"], str(tmp_path))
+        wilcoxon_comparison("C1", "C2", _ALL_DATASETS, str(tmp_path))
+
+
+def test_wilcoxon_mismatched_dataset_columns_raise(tmp_path: Path) -> None:
+    _write_units(tmp_path, "C1", _BASE)
+    _write_units(tmp_path, "C2", _BASE[:5])
+    with pytest.raises(DataError, match="columns"):
+        wilcoxon_comparison("C1", "C2", _ALL_DATASETS, str(tmp_path))
+
+
+def test_wilcoxon_without_any_results_raises(tmp_path: Path) -> None:
+    with pytest.raises(DataError):
+        wilcoxon_comparison("C1", "C2", _ALL_DATASETS, str(tmp_path))
 
 
 def test_wilcoxon_return_keys(tmp_path: Path) -> None:
-    _write_condition(tmp_path, "C1", "D1", _pairs("D1", 6, 0.30))
-    _write_condition(tmp_path, "C2", "D1", _pairs("D1", 6, 0.50))
-    result = wilcoxon_comparison("C1", "C2", ["D1"], str(tmp_path))
+    result = _compare_units(tmp_path, _BASE, _shifted([0.2] * 6))
     assert set(result) == {
         "condition_a",
         "condition_b",
+        "units",
+        "n_units",
         "n_pairs",
+        "n_nonzero",
+        "testable",
         "statistic",
         "p_value",
         "significant",
+        "min_attainable_p",
         "mean_f1_a",
         "mean_f1_b",
         "delta_f1",
         "effect_size_r",
+        "pair_wins",
+        "pair_ties",
+        "pair_losses",
         "wilcoxon_warning",
     }
-    assert result["n_pairs"] == 6
+    assert result["n_units"] == 6
 
 
 # ---------------------------------------------------------------------------
 # Rank-biserial effect size
 # ---------------------------------------------------------------------------
-def _compare_with_statistic(tmp_path: Path, statistic: float) -> dict:
-    """Compare six-pair conditions with a fixed Wilcoxon statistic."""
-    _write_condition(tmp_path, "C1", "D1", _pairs("D1", 6, 0.30))
-    _write_condition(tmp_path, "C2", "D1", _pairs("D1", 6, 0.50))
-    with mock.patch("kgsemembed.evaluation.stats.wilcoxon") as mocked:
-        mocked.return_value = mock.Mock(statistic=statistic, pvalue=0.5)
-        return wilcoxon_comparison("C1", "C2", ["D1"], str(tmp_path))
+def test_effect_size_follows_matched_pairs_rank_biserial(tmp_path: Path) -> None:
+    # |d| ranks: 0.05->1, 0.1->2, 0.15->3, 0.2->4, 0.3->5, 0.4->6.
+    # R+ = 2 + 4 + 5 + 6 = 17, R- = 1 + 3 = 4, r = (17 - 4) / 21.
+    result = _compare_units(tmp_path, _BASE, _shifted([0.1, 0.2, -0.05, 0.3, 0.4, -0.15]))
+    assert result["effect_size_r"] == pytest.approx(13 / 21)
 
 
-def test_effect_size_follows_rank_biserial_formula(tmp_path: Path) -> None:
-    # n = 6 pairs and W = 3 give r = 1 - (2 * 3) / (6 * 7) = 0.857142...
-    result = _compare_with_statistic(tmp_path, 3.0)
-    assert result["effect_size_r"] == pytest.approx(1.0 - 6.0 / 42.0)
+def test_effect_size_agrees_with_scipy_statistic(tmp_path: Path) -> None:
+    result = _compare_units(tmp_path, _BASE, _shifted([0.1, 0.2, -0.05, 0.3, 0.4, -0.15]))
+    total = 6 * 7 / 2
+    assert result["statistic"] == pytest.approx(4.0)
+    assert result["effect_size_r"] == pytest.approx((total - 2 * result["statistic"]) / total)
 
 
-def test_effect_size_derives_from_returned_statistic_and_n(tmp_path: Path) -> None:
-    result = _compare_with_statistic(tmp_path, 7.0)
-    statistic, n_pairs = result["statistic"], result["n_pairs"]
-    assert result["effect_size_r"] == pytest.approx(
-        1.0 - (2.0 * statistic) / (n_pairs * (n_pairs + 1))
-    )
+def test_effect_size_is_signed_like_delta(tmp_path: Path) -> None:
+    result = _compare_units(tmp_path, _BASE, _shifted([-0.01, -0.02, -0.03, -0.04, -0.05, -0.06]))
+    assert result["effect_size_r"] == -1.0
+    assert result["delta_f1"] < 0
 
 
-def test_effect_size_is_one_when_statistic_is_zero(tmp_path: Path) -> None:
-    result = _compare_with_statistic(tmp_path, 0.0)
-    assert result["effect_size_r"] == pytest.approx(1.0)
+def test_effect_size_drops_zero_differences(tmp_path: Path) -> None:
+    # Non-zero ranks: 0.1->1, 0.2->2, 0.3->3, 0.4->4, 0.5->5; R+ = 10, R- = 5.
+    result = _compare_units(tmp_path, _BASE, _shifted([0.0, 0.1, 0.2, 0.3, 0.4, -0.5]))
+    assert result["effect_size_r"] == pytest.approx(1 / 3)
+    assert result["n_nonzero"] == 5
+    assert result["min_attainable_p"] == pytest.approx(2 / 32)
 
 
-def test_effect_size_is_zero_at_the_full_rank_sum(tmp_path: Path) -> None:
-    # W = n(n + 1) / 2 = 21 is the formula's lower bound for six pairs; a
-    # two-sided test never returns it, so the statistic is injected directly.
-    result = _compare_with_statistic(tmp_path, 21.0)
-    assert result["effect_size_r"] == pytest.approx(0.0)
+def test_effect_size_averages_tied_ranks(tmp_path: Path) -> None:
+    # Three |d| = 0.1 share rank 2; R+ = 2 + 2 + 4 + 5 + 6 = 19, R- = 2.
+    result = _compare_units(tmp_path, _BASE, _shifted([0.1, 0.1, -0.1, 0.2, 0.3, 0.4]))
+    assert result["effect_size_r"] == pytest.approx(17 / 21)
 
 
-def test_effect_size_falls_as_the_statistic_rises(tmp_path: Path) -> None:
-    small = _compare_with_statistic(tmp_path / "small", 2.0)
-    large = _compare_with_statistic(tmp_path / "large", 8.0)
-    assert small["effect_size_r"] > large["effect_size_r"]
+def test_effect_size_is_not_biased_towards_large_values(tmp_path: Path) -> None:
+    result = _compare_units(tmp_path, _BASE, _shifted([0.1, -0.2, 0.3, -0.4, 0.5, -0.6]))
+    assert result["effect_size_r"] == pytest.approx((9 - 12) / 21)
+    assert abs(result["effect_size_r"]) < 0.5
 
 
-def test_effect_size_present_on_group_comparisons(tmp_path: Path) -> None:
-    _seed_group(tmp_path, "D")
-    for result in run_group_comparisons("D", str(tmp_path)):
-        assert isinstance(result["effect_size_r"], float)
-
-
-def _write_diverging_conditions(results_dir: Path, count: int) -> None:
-    """Write two conditions whose paired F1 values differ in both directions."""
-    scores_a = {f"p{index}": 0.10 + index * 0.10 for index in range(count)}
-    scores_b = {"p0": 0.15, "p1": 0.18, "p2": 0.42, "p3": 0.44, "p4": 0.49, "p5": 0.75}
-    _write_condition(results_dir, "C1", "D1", scores_a)
-    _write_condition(results_dir, "C2", "D1", {name: scores_b[name] for name in scores_a})
-
-
-def test_effect_size_matches_unmocked_scipy_statistic(tmp_path: Path) -> None:
-    _write_diverging_conditions(tmp_path, 6)
-    result = wilcoxon_comparison("C1", "C2", ["D1"], str(tmp_path))
-    statistic, n_pairs = result["statistic"], result["n_pairs"]
-    assert result["effect_size_r"] == pytest.approx(
-        1.0 - (2.0 * statistic) / (n_pairs * (n_pairs + 1))
-    )
-    assert 0.5 <= result["effect_size_r"] <= 1.0
-
-
-def test_effect_size_uses_pair_count_not_dataset_count(tmp_path: Path) -> None:
-    # Six pairs spread over two datasets: n must be 6, never 2.
-    _write_condition(tmp_path, "C1", "D1", {"x0": 0.10, "x1": 0.20, "x2": 0.30})
-    _write_condition(tmp_path, "C1", "D2", {"y0": 0.40, "y1": 0.50, "y2": 0.60})
-    _write_condition(tmp_path, "C2", "D1", {"x0": 0.15, "x1": 0.18, "x2": 0.42})
-    _write_condition(tmp_path, "C2", "D2", {"y0": 0.44, "y1": 0.49, "y2": 0.75})
+def test_effect_size_is_computed_for_untested_comparisons(tmp_path: Path) -> None:
+    _write_units(tmp_path, "C1", _BASE)
+    _write_units(tmp_path, "C2", _shifted([0.1, 0.2] + [0.0] * 4))
     result = wilcoxon_comparison("C1", "C2", ["D1", "D2"], str(tmp_path))
-    statistic = result["statistic"]
-    assert result["n_pairs"] == 6
-    assert result["effect_size_r"] == pytest.approx(1.0 - (2.0 * statistic) / 42.0)
-    assert result["effect_size_r"] != pytest.approx(1.0 - (2.0 * statistic) / 6.0)
+    assert result["effect_size_r"] == 1.0
 
 
-def test_effect_size_at_minimum_paired_observations(tmp_path: Path) -> None:
-    _write_diverging_conditions(tmp_path, _MIN_PAIRED_OBSERVATIONS)
-    result = wilcoxon_comparison("C1", "C2", ["D1"], str(tmp_path))
-    assert result["n_pairs"] == 5
-    assert result["effect_size_r"] == pytest.approx(
-        1.0 - (2.0 * result["statistic"]) / 30.0
-    )
-
-
-def test_effect_size_does_not_alter_existing_fields(tmp_path: Path) -> None:
-    result = _compare_with_statistic(tmp_path, 3.0)
-    assert result["statistic"] == pytest.approx(3.0)
-    assert result["p_value"] == pytest.approx(0.5)
-    assert result["significant"] is False
-    assert result["delta_f1"] == pytest.approx(0.20)
+@pytest.mark.parametrize("n_nonzero,expected", [(0, 1.0), (1, 1.0), (5, 0.0625), (6, 0.03125)])
+def test_minimum_attainable_p(n_nonzero: int, expected: float) -> None:
+    assert minimum_attainable_p(n_nonzero) == pytest.approx(expected)
 
 
 # ---------------------------------------------------------------------------
@@ -387,15 +474,19 @@ def _warning_wilcoxon(message: str, category: type = RuntimeWarning):
     return _call
 
 
+def _seed_six_units(tmp_path: Path) -> None:
+    _write_units(tmp_path, "C1", _BASE)
+    _write_units(tmp_path, "C2", _shifted([0.2] * 6))
+
+
 def _compare_with_warning(
     tmp_path: Path, message: str, category: type = RuntimeWarning
 ) -> dict:
-    _write_condition(tmp_path, "C1", "D1", _pairs("D1", 6, 0.30))
-    _write_condition(tmp_path, "C2", "D1", _pairs("D1", 6, 0.50))
+    _seed_six_units(tmp_path)
     with mock.patch(
         "kgsemembed.evaluation.stats.wilcoxon", _warning_wilcoxon(message, category)
     ):
-        return wilcoxon_comparison("C1", "C2", ["D1"], str(tmp_path))
+        return wilcoxon_comparison("C1", "C2", _ALL_DATASETS, str(tmp_path))
 
 
 def test_wilcoxon_warning_is_captured_in_result(tmp_path: Path) -> None:
@@ -409,9 +500,8 @@ def test_wilcoxon_warning_is_preserved_as_string(tmp_path: Path) -> None:
 
 
 def test_wilcoxon_warning_is_none_without_warning(tmp_path: Path) -> None:
-    _write_condition(tmp_path, "C1", "D1", _pairs("D1", 6, 0.30))
-    _write_condition(tmp_path, "C2", "D1", _pairs("D1", 6, 0.50))
-    result = wilcoxon_comparison("C1", "C2", ["D1"], str(tmp_path))
+    _seed_six_units(tmp_path)
+    result = wilcoxon_comparison("C1", "C2", _ALL_DATASETS, str(tmp_path))
     assert result["wilcoxon_warning"] is None
 
 
@@ -422,27 +512,15 @@ def test_wilcoxon_warning_does_not_alter_statistics(tmp_path: Path) -> None:
     assert result["delta_f1"] == pytest.approx(0.20)
 
 
-def test_scipy_runtime_warning_is_no_longer_suppressed(tmp_path: Path) -> None:
-    # Identical score lists make SciPy divide by a zero-valued statistic, which
-    # previously vanished behind a module-level RuntimeWarning filter.
-    pairs = _pairs("D1", 6, 0.4)
-    _write_condition(tmp_path, "C1", "D1", pairs)
-    _write_condition(tmp_path, "C2", "D1", pairs)
-    result = wilcoxon_comparison("C1", "C2", ["D1"], str(tmp_path))
-    assert result["wilcoxon_warning"] is not None
-    assert result["p_value"] == pytest.approx(1.0)
-
-
 def test_repeated_warnings_are_joined_in_order(tmp_path: Path) -> None:
     def _two_warnings(*_args, **_kwargs):
         warnings.warn("first problem", RuntimeWarning)
         warnings.warn("second problem", RuntimeWarning)
         return mock.Mock(statistic=1.0, pvalue=0.5)
 
-    _write_condition(tmp_path, "C1", "D1", _pairs("D1", 6, 0.30))
-    _write_condition(tmp_path, "C2", "D1", _pairs("D1", 6, 0.50))
+    _seed_six_units(tmp_path)
     with mock.patch("kgsemembed.evaluation.stats.wilcoxon", _two_warnings):
-        result = wilcoxon_comparison("C1", "C2", ["D1"], str(tmp_path))
+        result = wilcoxon_comparison("C1", "C2", _ALL_DATASETS, str(tmp_path))
     assert result["wilcoxon_warning"] == "first problem; second problem"
 
 
@@ -452,45 +530,36 @@ def test_user_warning_is_treated_as_a_reliability_warning(tmp_path: Path) -> Non
 
 
 def test_unrelated_warning_is_reissued_not_captured(tmp_path: Path) -> None:
-    _write_condition(tmp_path, "C1", "D1", _pairs("D1", 6, 0.30))
-    _write_condition(tmp_path, "C2", "D1", _pairs("D1", 6, 0.50))
+    _seed_six_units(tmp_path)
     with warnings.catch_warnings(record=True) as escaped:
         warnings.simplefilter("always")
         with mock.patch(
             "kgsemembed.evaluation.stats.wilcoxon",
             _warning_wilcoxon("api change", DeprecationWarning),
         ):
-            result = wilcoxon_comparison("C1", "C2", ["D1"], str(tmp_path))
+            result = wilcoxon_comparison("C1", "C2", _ALL_DATASETS, str(tmp_path))
 
     assert result["wilcoxon_warning"] is None
     assert [str(entry.message) for entry in escaped] == ["api change"]
 
 
 def test_capture_does_not_change_global_warning_filters(tmp_path: Path) -> None:
-    _write_condition(tmp_path, "C1", "D1", _pairs("D1", 6, 0.30))
-    _write_condition(tmp_path, "C2", "D1", _pairs("D1", 6, 0.50))
+    _seed_six_units(tmp_path)
     before = list(warnings.filters)
-    wilcoxon_comparison("C1", "C2", ["D1"], str(tmp_path))
+    wilcoxon_comparison("C1", "C2", _ALL_DATASETS, str(tmp_path))
     assert warnings.filters == before
-
-
-def test_group_comparisons_carry_warning_field(tmp_path: Path) -> None:
-    _seed_group(tmp_path, "D")
-    for result in run_group_comparisons("D", str(tmp_path)):
-        assert "wilcoxon_warning" in result
 
 
 # ---------------------------------------------------------------------------
 # Group comparisons
 # ---------------------------------------------------------------------------
 def _seed_group(results_dir: Path, group: str) -> None:
-    """Write identical six-pair results for every condition used in a group."""
+    """Write one result per column for every condition of a group, B ahead of A."""
     for comparison in _GROUP_COMPARISONS[group]:
-        for condition_id in (comparison.condition_a, comparison.condition_b):
-            for dataset_id in comparison.datasets:
-                _write_condition(
-                    results_dir, condition_id, dataset_id, _pairs(dataset_id, 6, 0.4)
-                )
+        for offset, condition_id in enumerate((comparison.condition_a, comparison.condition_b)):
+            for index, unit in enumerate(expand_dataset_ids(list(comparison.datasets))):
+                f1 = 0.3 + 0.01 * index + 0.1 * offset
+                _write_result(results_dir, condition_id, unit, f"{unit}_pair", f1)
 
 
 @pytest.mark.parametrize(
@@ -503,23 +572,37 @@ def test_group_comparison_counts(tmp_path: Path, group: str, expected: int) -> N
     assert len(results) == expected
 
 
-def test_group_results_contain_corrected_significant(tmp_path: Path) -> None:
+def test_group_comparisons_carry_warning_field(tmp_path: Path) -> None:
+    _seed_group(tmp_path, "D")
+    for result in run_group_comparisons("D", str(tmp_path)):
+        assert "wilcoxon_warning" in result
+
+
+def test_untestable_comparisons_do_not_abort_the_group(tmp_path: Path) -> None:
+    _seed_group(tmp_path, "D")
+    results = run_group_comparisons("D", str(tmp_path))
+    assert [result["testable"] for result in results] == [False, False]
+    assert all(result["corrected_significant"] is False for result in results)
+
+
+def test_group_results_contain_correction_fields(tmp_path: Path) -> None:
     _seed_group(tmp_path, "B")
     results = run_group_comparisons("B", str(tmp_path))
     required = {
         "condition_a",
         "condition_b",
-        "n_pairs",
-        "statistic",
+        "n_units",
         "p_value",
         "significant",
         "corrected_significant",
-        "mean_f1_a",
-        "mean_f1_b",
+        "alpha_corrected",
+        "underpowered",
         "delta_f1",
+        "effect_size_r",
     }
     for result in results:
         assert required.issubset(set(result))
+        assert result["alpha_corrected"] == pytest.approx(0.05 / 4)
 
 
 def test_group_comparisons_match_canonical_matrix(tmp_path: Path) -> None:
@@ -531,10 +614,29 @@ def test_group_comparisons_match_canonical_matrix(tmp_path: Path) -> None:
         "E": [("C20", "C10")],
     }
     for group, pairs in expected.items():
-        _seed_group(tmp_path, group)
-        results = run_group_comparisons(group, str(tmp_path))
+        _seed_group(tmp_path / group, group)
+        results = run_group_comparisons(group, str(tmp_path / group))
         actual = [(r["condition_a"], r["condition_b"]) for r in results]
         assert actual == pairs
+
+
+def test_six_unit_comparison_is_underpowered_under_a_four_way_correction(
+    tmp_path: Path,
+) -> None:
+    _seed_group(tmp_path, "B")
+    c3_vs_c10 = run_group_comparisons("B", str(tmp_path))[0]
+    assert c3_vs_c10["p_value"] == pytest.approx(2 / 64)
+    assert c3_vs_c10["significant"] is True
+    assert c3_vs_c10["underpowered"] is True
+    assert c3_vs_c10["corrected_significant"] is False
+
+
+def test_group_e_alone_can_reach_significance(tmp_path: Path) -> None:
+    _seed_group(tmp_path, "E")
+    (result,) = run_group_comparisons("E", str(tmp_path))
+    assert result["n_units"] == 6
+    assert result["underpowered"] is False
+    assert result["corrected_significant"] is True
 
 
 def _run_group_with_fixed_pvalue(
@@ -543,30 +645,30 @@ def _run_group_with_fixed_pvalue(
     _seed_group(tmp_path, group)
     with mock.patch("kgsemembed.evaluation.stats.wilcoxon") as mocked:
         mocked.return_value = mock.Mock(statistic=1.0, pvalue=p_value)
-        return run_group_comparisons(group, str(tmp_path), alpha=alpha)
+        results = run_group_comparisons(group, str(tmp_path), alpha=alpha)
+    return [result for result in results if result["testable"]]
 
 
 def test_bonferroni_uses_group_comparison_count(tmp_path: Path) -> None:
     # Group B has 4 comparisons; the corrected threshold is 0.05 / 4 = 0.0125.
-    # p=0.012 is below it and p=0.013 above it, so this pair of assertions is
-    # only satisfied when the divisor is exactly the group's comparison count.
+    # Its C12 vs C1 comparison spans three columns and is not tested, yet it
+    # still counts towards the divisor.
     below = _run_group_with_fixed_pvalue(tmp_path / "below", "B", 0.012)
     above = _run_group_with_fixed_pvalue(tmp_path / "above", "B", 0.013)
-    assert len(below) == 4 and len(above) == 4
+    assert len(below) == 3 and len(above) == 3
     assert all(result["corrected_significant"] is True for result in below)
     assert all(result["corrected_significant"] is False for result in above)
 
 
 def test_bonferroni_correction_is_group_local(tmp_path: Path) -> None:
-    # Group D has 2 comparisons; corrected threshold is 0.05 / 2 = 0.025.
-    # p=0.02 is significant here, but would not be under a larger (cross-group)
-    # divisor, confirming correction is applied within the group only.
-    results = _run_group_with_fixed_pvalue(tmp_path, "D", 0.02)
-    assert all(result["corrected_significant"] is True for result in results)
+    # p=0.04 passes group E's alpha / 1 but fails group B's alpha / 4.
+    in_e = _run_group_with_fixed_pvalue(tmp_path / "e", "E", 0.04)
+    in_b = _run_group_with_fixed_pvalue(tmp_path / "b", "B", 0.04)
+    assert all(result["corrected_significant"] is True for result in in_e)
+    assert all(result["corrected_significant"] is False for result in in_b)
 
 
 def test_corrected_significant_does_not_overwrite_significant(tmp_path: Path) -> None:
-    # p=0.03 is significant at alpha=0.05 but not at the corrected 0.05/4.
     results = _run_group_with_fixed_pvalue(tmp_path, "B", 0.03)
     for result in results:
         assert result["significant"] is True
@@ -586,15 +688,23 @@ def _example_results() -> List[dict]:
         {
             "condition_a": "C1",
             "condition_b": "C2",
-            "n_pairs": 5,
+            "units": list(_UNITS),
+            "n_units": 6,
+            "n_pairs": 26,
+            "n_nonzero": 6,
+            "testable": True,
             "statistic": 3.0,
             "p_value": 0.0625,
             "significant": False,
+            "min_attainable_p": 0.03125,
             "corrected_significant": False,
             "mean_f1_a": 0.40,
             "mean_f1_b": 0.42,
             "delta_f1": 0.02,
             "effect_size_r": 0.8,
+            "pair_wins": 20,
+            "pair_ties": 2,
+            "pair_losses": 4,
             "wilcoxon_warning": None,
         }
     ]
@@ -611,8 +721,8 @@ def test_export_header_matches_schema(tmp_path: Path) -> None:
     export_stats_table(_example_results(), str(output))
     content = output.read_text(encoding="utf-8")
     header = (
-        "Condition A | Condition B | n | p-value | Corrected sig. | delta-F1 "
-        "| effect_size_r | Warning"
+        "Condition A | Condition B | n | pairs (W/T/L) | p-value | min p "
+        "| Corrected sig. | delta-F1 | effect_size_r | Warning"
     )
     assert header in content
 
@@ -621,14 +731,25 @@ def test_export_has_dedicated_effect_size_column(tmp_path: Path) -> None:
     output = tmp_path / "stats.md"
     export_stats_table(_example_results(), str(output))
     header = output.read_text(encoding="utf-8").splitlines()[0]
-    assert header.split(" | ").index("effect_size_r") == 6
+    assert header.split(" | ").index("effect_size_r") == 8
 
 
 def test_export_row_maps_values_to_columns(tmp_path: Path) -> None:
     output = tmp_path / "stats.md"
     export_stats_table(_example_results(), str(output))
     lines = output.read_text(encoding="utf-8").strip().splitlines()
-    assert lines[-1] == "| C1 | C2 | 5 | 0.0625 | False | 0.0200 | 0.8000 | - |"
+    assert lines[-1] == (
+        "| C1 | C2 | 6 | 20/2/4 | 0.0625 | 0.0312 | False | 0.0200 | 0.8000 | - |"
+    )
+
+
+def test_export_renders_untested_p_value_as_not_applicable(tmp_path: Path) -> None:
+    output = tmp_path / "stats.md"
+    results = _example_results()
+    results[0].update(testable=False, p_value=None, statistic=None)
+    export_stats_table(results, str(output))
+    row = output.read_text(encoding="utf-8").strip().splitlines()[-1]
+    assert row.split(" | ")[4] == "n/a"
 
 
 def test_export_one_row_per_comparison(tmp_path: Path) -> None:
@@ -696,7 +817,7 @@ def test_export_renders_effect_size_verbatim(tmp_path: Path, effect_size: float)
     results[0]["effect_size_r"] = effect_size
     export_stats_table(results, str(output))
     row = output.read_text(encoding="utf-8").strip().splitlines()[-1]
-    assert row.split(" | ")[6] == f"{effect_size:.4f}"
+    assert row.split(" | ")[8] == f"{effect_size:.4f}"
 
 
 def test_export_is_deterministic(tmp_path: Path) -> None:

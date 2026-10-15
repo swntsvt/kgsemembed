@@ -27,6 +27,7 @@ import pandas as pd
 from kgsemembed.evaluation.stats import (
     _TABLE_COLUMNS as _STATS_COLUMNS,
     _sanitise_warning,
+    pair_outcome_cell,
 )
 from kgsemembed.pipeline.conditions import get_condition, get_conditions_for_group
 
@@ -888,11 +889,14 @@ def _warning_cell(result: dict) -> str:
 
 def _stats_row(result: dict) -> dict:
     """Project a Wilcoxon comparison result onto the report's stats columns."""
+    p_value = result.get("p_value")
     return {
         "Condition A": result["condition_a"],
         "Condition B": result["condition_b"],
-        "n": result["n_pairs"],
-        "p-value": round(float(result["p_value"]), 4),
+        "n": result["n_units"],
+        "pairs (W/T/L)": pair_outcome_cell(result),
+        "p-value": None if p_value is None else round(float(p_value), 4),
+        "min p": round(float(result["min_attainable_p"]), 4),
         "Corrected sig.": bool(result.get("corrected_significant", False)),
         "delta-F1": round(float(result["delta_f1"]), 4),
         "effect_size_r": _effect_size_cell(result),

@@ -16,10 +16,12 @@ from __future__ import annotations
 
 import argparse
 import gc
+import hashlib
 import json
 import logging
 import platform
 import random
+import subprocess
 import sys
 import time
 from datetime import datetime, timezone
@@ -35,14 +37,21 @@ from tqdm import tqdm
 
 from kgsemembed.candidates import build_candidate_table, generate_candidates, load_candidates
 from kgsemembed.datasets import AlignmentPair, load_dataset, load_oaei_dataset
-from kgsemembed.datasets.loader import _resolve_entity_type
+from kgsemembed.datasets.loader import _SPLIT_SEED, _resolve_entity_type
 from kgsemembed.embeddings import EmbeddingEncoder, MODEL_REGISTRY, load_sentence_transformer
 from kgsemembed.evaluation import (
     EntityPair,
     RankedList,
-    ScoredPair,
+    EVALUATION_PROTOCOL_VERSION,
     compute_all_metrics,
+    top_ranked_pairs,
     tune_threshold,
+)
+from kgsemembed.evaluation.population import (
+    EvaluationPopulations,
+    build_populations,
+    judgeable_ranked_lists,
+    restrict_ranked_lists,
 )
 from kgsemembed.pipeline.conditions import (
     EXPERIMENT_CONDITIONS,
@@ -52,7 +61,7 @@ from kgsemembed.pipeline.conditions import (
 from kgsemembed.utils.errors import DataError
 from kgsemembed.utils.logging import RunContext, get_logger, init_logging
 from kgsemembed.verbalisation.base import VerbaliserBase
-from kgsemembed.verbalisation.ppas import PPAS_BUDGETS
+from kgsemembed.verbalisation.ppas import PPAS_BUDGETS, strategy_uses_ppas
 from kgsemembed.verbalisation.registry import build_verbaliser
 
 _CONFIG_DIR = Path(__file__).resolve().parents[3] / "configs"
@@ -65,6 +74,10 @@ _DEFAULT_THRESHOLD = 0.5
 _RANDOM_SEED = 42
 _FAILURE_KEY = "n_failed_pairs"
 _PER_ENTITY_TYPE_KEY = "per_entity_type"
+_POPULATION_KEY = "population"
+_COUNT_KEYS = ("tp", "fp", "fn")
+_VAL = "val"
+_TEST = "test"
 _REF_COUNT_KEY = "n_refs"
 _MIN_BUCKET_REFS = 3
 _METRIC_KEYS = (
@@ -247,41 +260,20 @@ def _unique_candidate_uris(
     )
 
 
-def _validation_scored_pairs(
-    scored_pairs: List[ScoredPair], val_refs: List[EntityPair]
-) -> List[ScoredPair]:
-    """
-    Restrict scored pairs to sources that appear in the validation references.
-
-    Threshold tuning must never observe a test-source entity, so pairs are
-    filtered by validation source URI before the grid search runs.
-
-    Parameters
-    ----------
-    scored_pairs : List[ScoredPair]
-        Flattened ``(source, target, score)`` triples for every ranked source.
-    val_refs : List[EntityPair]
-        Validation ``(source, target)`` reference pairs.
-
-    Returns
-    -------
-    List[ScoredPair]
-        Scored pairs whose source URI occurs in ``val_refs``.
-    """
-    val_sources = {source for source, _ in val_refs}
-    return [triple for triple in scored_pairs if triple[0] in val_sources]
-
-
 def _resolve_threshold(
-    scored_pairs: List[ScoredPair], val_refs: List[EntityPair]
+    val_ranked_lists: List[RankedList], val_refs: List[EntityPair]
 ) -> float:
     """
-    Tune the decision threshold on validation sources only.
+    Tune the decision threshold on the validation population only.
+
+    The caller restricts ``val_ranked_lists`` to the validation population, so
+    no test source is observed.  Tuning scores the same top-1 predictions the
+    test metrics are computed from.
 
     Parameters
     ----------
-    scored_pairs : List[ScoredPair]
-        Flattened ``(source, target, score)`` triples for every ranked source.
+    val_ranked_lists : List[RankedList]
+        Ranked lists of the validation population's sources.
     val_refs : List[EntityPair]
         Validation ``(source, target)`` reference pairs.
 
@@ -296,8 +288,7 @@ def _resolve_threshold(
             _DEFAULT_THRESHOLD,
         )
         return _DEFAULT_THRESHOLD
-    val_pairs = _validation_scored_pairs(scored_pairs, val_refs)
-    return tune_threshold(val_pairs, val_refs)["best_threshold"]
+    return tune_threshold(top_ranked_pairs(val_ranked_lists), val_refs)["best_threshold"]
 
 
 def _split_refs_by_entity_type(
@@ -333,9 +324,9 @@ def _split_ranked_lists_by_entity_type(
     """
     Group ranked candidate lists by the entity type of their source URI.
 
-    Every source that was ranked is assigned to a bucket, not only the ones
-    carrying a reference, so a bucket's precision is penalised by its own false
-    positives exactly as the pair-level metrics are.
+    Every ranked source of the population is assigned to a bucket, not only the
+    ones carrying a reference, so a bucket's precision is penalised by its own
+    false positives exactly as the pair-level metrics are.
 
     Parameters
     ----------
@@ -397,7 +388,7 @@ def _bucket_threshold(
     Parameters
     ----------
     ranked_lists : List[RankedList]
-        Ranked candidate lists of the bucket's source entities.
+        Ranked candidate lists of the bucket's validation-population sources.
     val_refs : List[EntityPair]
         Validation references falling in the bucket.
     fallback : float
@@ -411,8 +402,7 @@ def _bucket_threshold(
     """
     if not val_refs:
         return fallback
-    scored_pairs = [triple for ranked in ranked_lists for triple in ranked]
-    return _resolve_threshold(scored_pairs, val_refs)
+    return _resolve_threshold(ranked_lists, val_refs)
 
 
 def _bucket_metrics(
@@ -425,7 +415,7 @@ def _bucket_metrics(
 
 
 def _per_entity_type_metrics(
-    pair: AlignmentPair, ranked_lists: List[RankedList], threshold: float
+    pair: AlignmentPair, split_lists: Dict[str, List[RankedList]], threshold: float
 ) -> Dict[str, Dict[str, float]]:
     """
     Evaluate a mixed-type alignment pair separately per source entity type.
@@ -440,8 +430,8 @@ def _per_entity_type_metrics(
     ----------
     pair : AlignmentPair
         Alignment pair being evaluated.
-    ranked_lists : List[RankedList]
-        Ranked candidate lists already computed for the pair.
+    split_lists : Dict[str, List[RankedList]]
+        Ranked lists of the ``"val"`` and ``"test"`` populations.
     threshold : float
         Threshold tuned for the alignment pair as a whole.
 
@@ -453,16 +443,75 @@ def _per_entity_type_metrics(
     if pair.entity_type != _MIXED_ENTITY_TYPE:
         return {}
     graph = pair.source_graph
-    val_buckets = _split_refs_by_entity_type(pair.val_refs, graph)
-    ranked_buckets = _split_ranked_lists_by_entity_type(ranked_lists, graph)
+    val_refs = _split_refs_by_entity_type(pair.val_refs, graph)
+    val_lists = _split_ranked_lists_by_entity_type(split_lists[_VAL], graph)
+    test_lists = _split_ranked_lists_by_entity_type(split_lists[_TEST], graph)
     metrics: Dict[str, Dict[str, float]] = {}
     for entity_type, refs in _split_refs_by_entity_type(pair.test_refs, graph).items():
         if not _has_enough_refs(entity_type, refs):
             continue
-        bucket = ranked_buckets.get(entity_type, [])
-        tuned = _bucket_threshold(bucket, val_buckets.get(entity_type, []), threshold)
-        metrics[entity_type] = _bucket_metrics(bucket, refs, tuned)
+        val_bucket = val_lists.get(entity_type, [])
+        tuned = _bucket_threshold(val_bucket, val_refs.get(entity_type, []), threshold)
+        metrics[entity_type] = _bucket_metrics(test_lists.get(entity_type, []), refs, tuned)
     return metrics
+
+
+def _split_ranked_lists(
+    ranked_lists: List[RankedList], populations: EvaluationPopulations
+) -> Dict[str, List[RankedList]]:
+    """
+    Partition ranked lists into the validation and test populations.
+
+    Parameters
+    ----------
+    ranked_lists : List[RankedList]
+        Ranked candidate lists of every source of the pair.
+    populations : EvaluationPopulations
+        Source assignment returned by :func:`build_populations`.
+
+    Returns
+    -------
+    Dict[str, List[RankedList]]
+        Mapping from ``"val"`` and ``"test"`` to that population's lists.
+    """
+    return {
+        _VAL: restrict_ranked_lists(ranked_lists, populations.val_sources),
+        _TEST: restrict_ranked_lists(ranked_lists, populations.test_sources),
+    }
+
+
+def _population_record(
+    pair: AlignmentPair, split_lists: Dict[str, List[RankedList]],
+    populations: EvaluationPopulations,
+) -> Dict[str, int]:
+    """
+    Summarise the sizes of the populations a pair was tuned and tested on.
+
+    Parameters
+    ----------
+    pair : AlignmentPair
+        Alignment pair being evaluated.
+    split_lists : Dict[str, List[RankedList]]
+        Ranked lists of the ``"val"`` and ``"test"`` populations.
+    populations : EvaluationPopulations
+        Source assignment returned by :func:`build_populations`.
+
+    Returns
+    -------
+    Dict[str, int]
+        Reference counts, ranked-source counts (after partial-reference
+        filtering), unmatched-source counts, and ``reference_complete``.
+    """
+    return {
+        "n_train_refs": len(pair.train_refs),
+        "n_val_refs": len(pair.val_refs),
+        "n_test_refs": len(pair.test_refs),
+        "n_val_ranked_sources": len(split_lists[_VAL]),
+        "n_test_ranked_sources": len(split_lists[_TEST]),
+        "n_val_unmatched_sources": populations.n_unmatched_val,
+        "n_test_unmatched_sources": populations.n_unmatched_test,
+        "reference_complete": pair.reference_complete,
+    }
 
 
 def _process_pair(
@@ -495,10 +544,35 @@ def _process_pair(
     ranked_lists = _build_ranked_lists(
         pair, source_embeddings, candidates, candidate_index, candidate_embeddings
     )
-    scored_pairs = [pair_triple for ranked in ranked_lists for pair_triple in ranked]
-    threshold = _resolve_threshold(scored_pairs, pair.val_refs)
-    metrics = compute_all_metrics(ranked_lists, pair.test_refs, threshold=threshold)
-    metrics[_PER_ENTITY_TYPE_KEY] = _per_entity_type_metrics(pair, ranked_lists, threshold)
+    return _evaluate_pair(pair, ranked_lists)
+
+
+def _evaluate_pair(
+    pair: AlignmentPair, ranked_lists: List[RankedList]
+) -> Dict[str, object]:
+    """
+    Tune on the validation population and score the test population.
+
+    Parameters
+    ----------
+    pair : AlignmentPair
+        Alignment pair being evaluated.
+    ranked_lists : List[RankedList]
+        Ranked candidate lists of every source of the pair.
+
+    Returns
+    -------
+    Dict[str, object]
+        Test metrics with TP/FP/FN counts, the per-entity-type breakdown, and
+        the population summary under ``"population"``.
+    """
+    populations = build_populations(pair)
+    judgeable = judgeable_ranked_lists(pair, ranked_lists)
+    split_lists = _split_ranked_lists(judgeable, populations)
+    threshold = _resolve_threshold(split_lists[_VAL], pair.val_refs)
+    metrics = compute_all_metrics(split_lists[_TEST], pair.test_refs, threshold=threshold)
+    metrics[_PER_ENTITY_TYPE_KEY] = _per_entity_type_metrics(pair, split_lists, threshold)
+    metrics[_POPULATION_KEY] = _population_record(pair, split_lists, populations)
     return metrics
 
 
@@ -522,27 +596,28 @@ def _candidate_count(candidates: Dict[str, List[str]]) -> int:
     return max(len(uris) for uris in candidates.values()) if candidates else 0
 
 
-def _effective_ppas(model_key: str) -> bool:
+def _effective_ppas(condition: ExperimentCondition) -> bool:
     """
-    Return whether verbalisation applies PPAS sampling for ``model_key``.
+    Return whether the condition's verbalisation can apply PPAS sampling.
 
-    Verbalisers gate PPAS on the model token budget alone, so a model without
-    a budget (e.g. ``"M3"``) never samples.  This value is read from the same
-    table the verbalisers consult and is recorded alongside the condition's
-    declared ``apply_ppas`` flag, making any divergence between configured
-    intent and executed behaviour visible in the results.
+    PPAS runs only inside the V3, V4, and V6 verbalisers, and only when the
+    model has a token budget, so V1, V2, and V8 strategies never sample under
+    any model and a model without a budget (e.g. ``"M3"``) never samples under
+    any strategy.  The value is recorded alongside the condition's declared
+    ``apply_ppas`` flag, making any divergence between configured intent and
+    executed behaviour visible in the results.
 
     Parameters
     ----------
-    model_key : str
-        Embedding model key of the condition being run, e.g. ``"M3"``.
+    condition : ExperimentCondition
+        Condition being run.
 
     Returns
     -------
     bool
-        ``True`` when verbalisation applies PPAS sampling.
+        ``True`` when verbalisation can apply PPAS sampling.
     """
-    return PPAS_BUDGETS.get(model_key) is not None
+    return strategy_uses_ppas(condition.strategy_name, condition.model_key)
 
 
 def _log_ppas_configuration(condition: ExperimentCondition) -> None:
@@ -552,7 +627,7 @@ def _log_ppas_configuration(condition: ExperimentCondition) -> None:
         condition.condition_id,
         condition.model_key,
         condition.apply_ppas,
-        _effective_ppas(condition.model_key),
+        _effective_ppas(condition),
     )
 
 
@@ -560,7 +635,12 @@ _PROVENANCE_DISTRIBUTIONS = {
     "torch": "torch",
     "transformers": "transformers",
     "sentence_transformers": "sentence-transformers",
+    "numpy": "numpy",
+    "scipy": "scipy",
+    "rdflib": "rdflib",
 }
+_REPO_ROOT = Path(__file__).resolve().parents[3]
+_GIT_TIMEOUT_SECONDS = 10
 
 _PACKAGE_DISTRIBUTION = "kgsemembed"
 _UNKNOWN_VERSION = "unknown"
@@ -623,6 +703,55 @@ def _model_revision(model_info: Optional[Dict[str, str]]) -> str:
     return model_info.get("hf_revision", _UNKNOWN_VERSION)
 
 
+def _git_output(*args: str) -> Optional[str]:
+    """Return the stripped stdout of a git command in the repository, or ``None``."""
+    try:
+        completed = subprocess.run(
+            ["git", *args], cwd=_REPO_ROOT, capture_output=True, text=True,
+            timeout=_GIT_TIMEOUT_SECONDS, check=True,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return completed.stdout.strip()
+
+
+def _git_state() -> Dict[str, object]:
+    """
+    Report the source revision a result was produced from.
+
+    Returns
+    -------
+    Dict[str, object]
+        ``git_commit`` (``"unknown"`` outside a work tree) and ``git_dirty``,
+        ``True`` when tracked or untracked changes were present, ``None`` when
+        unknown.
+    """
+    commit = _git_output("rev-parse", "HEAD")
+    status = _git_output("status", "--porcelain")
+    return {
+        "git_commit": commit or _UNKNOWN_VERSION,
+        "git_dirty": None if status is None else bool(status),
+    }
+
+
+def _candidate_digest(candidates: Dict[str, List[str]]) -> str:
+    """
+    Fingerprint the candidate lists a result was computed from.
+
+    Parameters
+    ----------
+    candidates : Dict[str, List[str]]
+        Mapping from source URI to its ranked candidate target URIs.
+
+    Returns
+    -------
+    str
+        SHA-256 hex digest of the mapping serialised with sorted keys.
+    """
+    encoded = json.dumps(candidates, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
+
+
 def _utc_timestamp() -> str:
     """Return the current UTC time as an ISO-8601 string ending in ``Z``."""
     return datetime.now(timezone.utc).replace(tzinfo=None).isoformat() + "Z"
@@ -652,6 +781,10 @@ def _provenance(model_info: Optional[Dict[str, str]]) -> Dict[str, object]:
         "python_version": sys.version,
         "run_timestamp": _utc_timestamp(),
         "versions": _library_versions(),
+        "random_seed": _RANDOM_SEED,
+        "split_seed": _SPLIT_SEED,
+        "evaluation_protocol": EVALUATION_PROTOCOL_VERSION,
+        **_git_state(),
     }
 
 
@@ -660,7 +793,7 @@ def _write_result(
     condition: ExperimentCondition,
     pair: AlignmentPair,
     metrics: Dict[str, object],
-    n_candidates: int,
+    candidates: Dict[str, List[str]],
     model_info: Optional[Dict[str, str]],
 ) -> None:
     path = _result_path(results_dir, condition.condition_id, pair.dataset_id, pair.pair_name)
@@ -673,28 +806,56 @@ def _write_result(
         "model_key": condition.model_key,
         "model_id": MODEL_REGISTRY[condition.model_key].model_id,
         "apply_ppas": condition.apply_ppas,
-        "ppas_effective": _effective_ppas(condition.model_key),
+        "ppas_effective": _effective_ppas(condition),
+        "token_budget": PPAS_BUDGETS.get(condition.model_key),
         "metrics": {key: metrics[key] for key in _METRIC_KEYS},
+        "counts": {key: metrics[key] for key in _COUNT_KEYS},
         "per_entity_type": metrics.get(_PER_ENTITY_TYPE_KEY, {}),
+        "population": metrics[_POPULATION_KEY],
         "n_source_entities": len(pair.source_entities),
-        "n_candidates_per_entity": n_candidates,
+        "n_candidates_per_entity": _candidate_count(candidates),
+        "candidates_sha256": _candidate_digest(candidates),
         **_provenance(model_info),
     }
     path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
 
 
 def _read_metrics(path: Path) -> Dict[str, float]:
+    """
+    Read the headline metrics of an existing result file.
+
+    A file written under an older evaluation protocol is still read, since
+    existing results are never overwritten without ``--force_recompute``, but
+    a warning names it so stale metrics cannot pass unnoticed.
+
+    Parameters
+    ----------
+    path : Path
+        Location of the result JSON file.
+
+    Returns
+    -------
+    Dict[str, float]
+        The file's ``metrics`` block.
+    """
     payload = json.loads(path.read_text(encoding="utf-8"))
+    protocol = payload.get("evaluation_protocol")
+    if protocol != EVALUATION_PROTOCOL_VERSION:
+        _LOGGER.warning(
+            "Existing result %s uses evaluation protocol %s, current is %s; "
+            "rerun with --force_recompute",
+            path, protocol, EVALUATION_PROTOCOL_VERSION,
+        )
     return payload["metrics"]
 
 
 def _summary_metrics(metrics: Dict[str, object]) -> Dict[str, float]:
     """
-    Drop the nested per-entity-type block from a pair's computed metrics.
+    Keep only the scalar headline metrics of a pair's computed metrics.
 
-    The breakdown is written to the result JSON only; the runner's in-memory
-    summary stays a flat mapping of scalar metrics, matching what a result file
-    read back from disk supplies.
+    The breakdown, counts, and population summary are written to the result
+    JSON only; the runner's in-memory summary stays a flat mapping of scalar
+    metrics, matching what a result file read back from disk supplies.
 
     Parameters
     ----------
@@ -706,9 +867,7 @@ def _summary_metrics(metrics: Dict[str, object]) -> Dict[str, float]:
     Dict[str, float]
         The scalar metrics of the pair.
     """
-    return {
-        key: value for key, value in metrics.items() if key != _PER_ENTITY_TYPE_KEY
-    }
+    return {key: metrics[key] for key in _METRIC_KEYS}
 
 
 def _run_pair(
@@ -727,14 +886,7 @@ def _run_pair(
             return _read_metrics(path)
         candidates = load_candidates(pair.dataset_id, pair.pair_name, data_dir)
         metrics = _process_pair(pair, condition, encoder, candidates)
-        _write_result(
-            results_dir,
-            condition,
-            pair,
-            metrics,
-            _candidate_count(candidates),
-            model_info,
-        )
+        _write_result(results_dir, condition, pair, metrics, candidates, model_info)
         return _summary_metrics(metrics)
     except Exception as exc:
         _LOGGER.error(

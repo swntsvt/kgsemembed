@@ -14,6 +14,8 @@ from typing import Dict, Optional, Tuple
 import torch
 from sentence_transformers import SentenceTransformer
 
+PAD_TO_MULTIPLE_OF = 64
+
 
 @dataclass(frozen=True)
 class ModelConfig:
@@ -192,6 +194,25 @@ def _resolve_hf_revision(model: SentenceTransformer) -> str:
         return "unknown"
 
 
+def bucket_sequence_padding(model: SentenceTransformer) -> None:
+    """
+    Pad every tokenised batch to a multiple of ``PAD_TO_MULTIPLE_OF`` tokens.
+
+    MPS keeps per-shape driver memory that ``torch.mps.empty_cache()`` does
+    not release, so encoding a corpus whose batches take hundreds of distinct
+    padded lengths (D4 instances under a 420-token budget) exhausts device
+    memory.  Bucketing the length bounds the number of shapes.  Padded
+    positions are masked, so embeddings change only by float32 rounding
+    (observed maximum absolute difference 1.7e-6 on bge-large).
+
+    Parameters
+    ----------
+    model : SentenceTransformer
+        Loaded model whose first module tokenises the input text.
+    """
+    model[0].processing_kwargs = {"text": {"pad_to_multiple_of": PAD_TO_MULTIPLE_OF}}
+
+
 def load_sentence_transformer(
     model_key: str,
 ) -> Tuple[SentenceTransformer, Dict[str, str]]:
@@ -213,6 +234,7 @@ def load_sentence_transformer(
     device = _select_device()
     print(f"Loading model {config.model_id} on device {device}")
     model = SentenceTransformer(config.model_id, device=device)
+    bucket_sequence_padding(model)
     model_info = {
         "model_key": model_key,
         "model_id": config.model_id,

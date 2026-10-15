@@ -151,8 +151,13 @@ def _synthetic_stats(
         {
             "condition_a": "C1",
             "condition_b": "C2",
-            "n_pairs": 5,
+            "n_units": 6,
+            "n_pairs": 26,
+            "pair_wins": 20,
+            "pair_ties": 2,
+            "pair_losses": 4,
             "p_value": 0.0321,
+            "min_attainable_p": 0.03125,
             "delta_f1": 0.0187,
             "corrected_significant": True,
             "effect_size_r": effect_size_r,
@@ -1341,7 +1346,16 @@ def test_stats_columns_match_export_stats_table(tmp_path: Path) -> None:
 
 def test_report_stats_row_carries_effect_size(tmp_path: Path) -> None:
     rows = _report_with_stats(tmp_path, _synthetic_stats(effect_size_r=0.7333))
-    assert rows[-1] == "| C1 | C2 | 5 | 0.0321 | True | 0.0187 | 0.7333 |  |"
+    assert rows[-1] == (
+        "| C1 | C2 | 6 | 20/2/4 | 0.0321 | 0.0312 | True | 0.0187 | 0.7333 |  |"
+    )
+
+
+def test_report_stats_row_marks_untested_p_value(tmp_path: Path) -> None:
+    stats = _synthetic_stats()
+    stats[0]["p_value"] = None
+    rows = _report_with_stats(tmp_path, stats)
+    assert rows[-1].split(" | ")[4] == "N/A"
 
 
 def test_report_stats_warning_is_displayed(tmp_path: Path) -> None:
@@ -1388,14 +1402,14 @@ def test_report_stats_long_warning_collapses_to_one_line(tmp_path: Path) -> None
 @pytest.mark.parametrize("effect_size", [0.0, 0.5, 1.0, -0.25])
 def test_report_stats_renders_effect_size_values(tmp_path: Path, effect_size: float) -> None:
     rows = _report_with_stats(tmp_path, _synthetic_stats(effect_size_r=effect_size))
-    assert rows[-1].split(" | ")[6] == f"{effect_size:.4f}"
+    assert rows[-1].split(" | ")[8] == f"{effect_size:.4f}"
 
 
 def test_report_stats_tolerates_missing_effect_size(tmp_path: Path) -> None:
     stats = _synthetic_stats()
     del stats[0]["effect_size_r"]
     rows = _report_with_stats(tmp_path, stats)
-    assert rows[-1] == "| C1 | C2 | 5 | 0.0321 | True | 0.0187 | N/A |  |"
+    assert rows[-1] == "| C1 | C2 | 6 | 20/2/4 | 0.0321 | 0.0312 | True | 0.0187 | N/A |  |"
 
 
 def test_report_stats_preserves_existing_columns(tmp_path: Path) -> None:
