@@ -64,6 +64,7 @@ from kgsemembed.pipeline.run_experiment import (
     _seed_random_state,
     _unique_candidate_uris,
 )
+from kgsemembed.verbalisation.predicate_config import get_predicate_config
 from kgsemembed.verbalisation.selection import (
     DETERMINISTIC_ORDER,
     ITEM_SEPARATOR,
@@ -267,10 +268,11 @@ def side_summary(selections: List[Selection], max_seq_length: int) -> Dict[str, 
     Dict[str, object]
         Counts of sampled, empty, item-less and model-truncated entities, the
         oversized-item count, and token and eligible-item distributions.
+        For Issue #126 controlled policies, also includes filtering metrics.
     """
     tokens = np.array([s.n_tokens for s in selections], dtype=np.int64)
     eligible = np.array([s.n_eligible for s in selections], dtype=np.int64)
-    return {
+    summary = {
         "n_entities": len(selections),
         "n_sampling_invoked": int(sum(s.sampling_invoked for s in selections)),
         "n_empty_text": int(sum(not s.text for s in selections)),
@@ -282,6 +284,19 @@ def side_summary(selections: List[Selection], max_seq_length: int) -> Dict[str, 
         "model_input_tokens_total": int(np.minimum(tokens, max_seq_length).sum()),
         "eligible_items": _distribution(eligible),
     }
+
+    # Add filtering metrics if present (Issue #126)
+    if selections and selections[0].filter_mode != "all":
+        n_filtered = np.array([s.n_filtered_items for s in selections], dtype=np.int64)
+        coverage = np.array([s.predicate_coverage for s in selections], dtype=np.float64)
+        summary["n_filtered_items"] = int(n_filtered.sum())
+        summary["predicate_coverage"] = {
+            "mean": float(coverage.mean()),
+            "min": float(coverage.min()),
+            "max": float(coverage.max()),
+        }
+
+    return summary
 
 
 def selection_digest(uris: Dict[str, List[str]], selections: Dict[str, List[Selection]]) -> str:
@@ -465,7 +480,7 @@ def ablation_block(
     Dict[str, object]
         The ``"ablation"`` block of the result JSON.
     """
-    return {
+    block = {
         "policy": condition.policy,
         "seed": condition.seed,
         "nominal_token_budget": condition.token_budget,
@@ -483,6 +498,24 @@ def ablation_block(
         "status": "completed",
         **summaries,
     }
+
+    # Add Issue #126 controlled policy fields if present
+    # Conditions with non-default filter_mode or predicate_config are controlled policies
+    if condition.filter_mode != "all" or condition.predicate_config != "base":
+        block["filter_mode"] = condition.filter_mode
+        block["order_mode"] = condition.order_mode
+        block["predicate_config"] = {
+            "name": condition.predicate_config,
+            "config_hash": get_predicate_config(condition.predicate_config).config_hash,
+            "n_covered_predicates": len(
+                get_predicate_config(condition.predicate_config).covered_predicates
+            ),
+            "fma_special_predicates": list(
+                get_predicate_config(condition.predicate_config).fma_special_predicates.keys()
+            ),
+        }
+
+    return block
 
 
 def _result_paths(results_dir: Path, condition_id: str, pair: AlignmentPair) -> Tuple[Path, Path]:
@@ -528,9 +561,27 @@ def _select_and_encode(
     condition: AblationCondition, context: PairContext
 ) -> Tuple[Dict[str, List[Selection]], Dict[str, np.ndarray], Dict[str, object]]:
     """Select both sides under the condition, then embed them through the cache."""
-    selector = PolicySelector(
-        condition.policy, context.count_tokens, condition.token_budget, condition.seed
-    )
+    # Support both legacy (policy only) and new (filter_mode + order_mode) interfaces
+    # Conditions with non-default filter_mode or predicate_config are controlled policies
+    if condition.filter_mode != "all" or condition.predicate_config != "base":
+        # New interface: use explicit filter_mode, order_mode, predicate_config
+        predicate_config = get_predicate_config(condition.predicate_config)
+        selector = PolicySelector(
+            order_mode=condition.order_mode,
+            count_tokens=context.count_tokens,
+            budget=condition.token_budget,
+            seed=condition.seed,
+            filter_mode=condition.filter_mode,
+            predicate_config=predicate_config,
+        )
+    else:
+        # Legacy interface: use policy parameter
+        selector = PolicySelector(
+            policy=condition.policy,
+            count_tokens=context.count_tokens,
+            budget=condition.token_budget,
+            seed=condition.seed,
+        )
     selections, embeddings, runtime = {}, {}, {}
     for side_name, side in ((_SOURCE, context.source), (_CANDIDATE, context.candidate)):
         selections[side_name], seconds = select_side(selector, side)

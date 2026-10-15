@@ -29,6 +29,7 @@ from rdflib import Graph, Literal, URIRef
 
 from kgsemembed.candidates.ngram import _literal_text
 from kgsemembed.verbalisation.base import VerbaliserBase
+from kgsemembed.verbalisation.predicate_config import PredicateVocabulary
 from kgsemembed.verbalisation.ppas import (
     CLASS_TIER_LIST,
     INSTANCE_TIER_LIST,
@@ -90,6 +91,16 @@ class Selection:
         Whether the full text exceeded the budget, so the policy chose items.
     n_oversized : int
         Eligible items whose own text exceeds the budget.
+    filter_mode : str
+        Filter mode used ("all" or "covered"), for ablation tracking.
+    order_mode : str
+        Order mode used ("ppas", "deterministic", "random", "full"), for ablation.
+    predicate_config_name : str
+        Name of the PredicateVocabulary used (e.g., "base", "fma_extended").
+    n_filtered_items : int
+        Number of items removed by predicate filtering (if filter_mode="covered").
+    predicate_coverage : float
+        Fraction of unique predicates retained after filtering (0.0–1.0).
     """
 
     text: str
@@ -98,6 +109,11 @@ class Selection:
     n_tokens: int
     sampling_invoked: bool
     n_oversized: int
+    filter_mode: str = "all"
+    order_mode: str = "ppas"
+    predicate_config_name: str = "base"
+    n_filtered_items: int = 0
+    predicate_coverage: float = 1.0
 
 
 def tier_config_digest() -> str:
@@ -265,34 +281,112 @@ def select_within_budget(
     return sorted(chosen)
 
 
+def filter_by_predicate_config(
+    items: list[EligibleItem],
+    config: PredicateVocabulary,
+    filter_mode: str,
+) -> tuple[list[EligibleItem], int, float]:
+    """
+    Filter items by predicate eligibility and compute coverage metrics.
+
+    Parameters
+    ----------
+    items : list[EligibleItem]
+        Eligible items in canonical order.
+    config : PredicateVocabulary
+        Predicate vocabulary and eligibility configuration.
+    filter_mode : str
+        "all" to keep all items; "covered" to keep only covered predicates.
+
+    Returns
+    -------
+    tuple[list[EligibleItem], int, float]
+        (filtered_items, n_filtered, coverage_fraction)
+        - filtered_items: items that pass the filter, in canonical order
+        - n_filtered: count of items removed by filtering
+        - coverage_fraction: fraction of unique predicates retained (0.0–1.0)
+    """
+    if filter_mode == "all":
+        n_unique_before = len(set(item.predicate for item in items))
+        return items, 0, 1.0
+
+    if filter_mode != "covered":
+        raise ValueError(f"Unknown filter_mode {filter_mode!r}; expected 'all' or 'covered'.")
+
+    filtered = [
+        item for item in items
+        if item.predicate in config.covered_predicates
+    ]
+    n_filtered = len(items) - len(filtered)
+
+    n_unique_before = len(set(item.predicate for item in items))
+    n_unique_after = len(set(item.predicate for item in filtered))
+    coverage = n_unique_after / n_unique_before if n_unique_before > 0 else 1.0
+
+    return filtered, n_filtered, coverage
+
+
 class PolicySelector(VerbaliserBase):
     """
     Build an entity's eligible items and select them under one policy.
 
+    Supports two interfaces:
+
+    1. Legacy (Issue #122): policy + count_tokens + budget + seed
+    2. New (Issue #126): filter_mode + order_mode + predicate_config + count_tokens + budget + seed
+
     Parameters
     ----------
-    policy : str
-        One of :data:`SELECTION_POLICIES`.
+    policy : str, optional
+        Legacy: One of :data:`SELECTION_POLICIES`. Deprecated; use order_mode instead.
     count_tokens : TokenCounter
         Encoded length of a text under the embedding model's tokenizer.
     budget : Optional[int]
         Maximum encoded length; ``None`` only for the ``"full"`` policy.
     seed : Optional[int]
-        Random seed; required by, and only accepted for, ``"random"``.
+        Random seed; required by, and only accepted for, ``"random"`` order mode.
+    filter_mode : str, optional
+        "all" (default) or "covered" for predicate eligibility filtering.
+    order_mode : str, optional
+        "ppas", "deterministic", "random", or "full" for selection ordering.
+    predicate_config : PredicateVocabulary, optional
+        Predicate vocabulary and priority configuration. If None, uses base config.
     """
 
     def __init__(
         self,
-        policy: str,
-        count_tokens: TokenCounter,
+        policy: Optional[str] = None,
+        count_tokens: Optional[TokenCounter] = None,
         budget: Optional[int] = None,
         seed: Optional[int] = None,
+        filter_mode: str = "all",
+        order_mode: Optional[str] = None,
+        predicate_config: Optional[PredicateVocabulary] = None,
     ) -> None:
-        _validate_policy(policy, budget, seed)
-        self.policy = policy
+        # Support legacy interface: policy parameter instead of order_mode
+        if policy is not None and order_mode is None:
+            _validate_policy(policy, budget, seed)
+            self.policy = policy
+            order_mode = policy
+        elif order_mode is not None:
+            _validate_order_and_budget(order_mode, budget, seed)
+            self.policy = order_mode
+        else:
+            raise ValueError("Either policy (legacy) or order_mode must be provided.")
+
+        if count_tokens is None:
+            raise ValueError("count_tokens is required.")
+
         self.count_tokens = count_tokens
         self.budget = budget
         self.seed = seed
+        self.filter_mode = filter_mode
+        self.order_mode = order_mode
+        self.predicate_config = (
+            predicate_config
+            if predicate_config is not None
+            else _get_default_predicate_config()
+        )
 
     def eligible_items(self, graph: Graph, entity_uri: URIRef) -> list[EligibleItem]:
         """
@@ -331,6 +425,8 @@ class PolicySelector(VerbaliserBase):
         """
         Select an entity's items under this policy and budget.
 
+        Applies predicate filtering, ordering, and budget constraints.
+
         Parameters
         ----------
         items : list[EligibleItem]
@@ -345,18 +441,39 @@ class PolicySelector(VerbaliserBase):
         Selection
             The selected representation and its accounting.
         """
-        texts = [item.text for item in items]
-        everything = list(range(len(items)))
+        # Apply predicate filtering
+        filtered_items, n_filtered, coverage = filter_by_predicate_config(
+            items, self.predicate_config, self.filter_mode
+        )
+
+        texts = [item.text for item in filtered_items]
+        everything = list(range(len(filtered_items)))
         full_tokens = self.count_tokens(join_items(texts, everything))
         if self.budget is None or full_tokens <= self.budget:
             return Selection(
-                join_items(texts, everything), tuple(everything), len(items),
-                full_tokens, False, 0,
+                join_items(texts, everything),
+                tuple(everything),
+                len(filtered_items),
+                full_tokens,
+                False,
+                0,
+                filter_mode=self.filter_mode,
+                order_mode=self.order_mode,
+                predicate_config_name=self.predicate_config.name,
+                n_filtered_items=n_filtered,
+                predicate_coverage=coverage,
             )
-        return self._sampled(items, entity_uri, entity_type)
+        return self._sampled(
+            filtered_items, entity_uri, entity_type, n_filtered, coverage
+        )
 
     def _sampled(
-        self, items: list[EligibleItem], entity_uri: str, entity_type: str
+        self,
+        items: list[EligibleItem],
+        entity_uri: str,
+        entity_type: str,
+        n_filtered: int = 0,
+        coverage: float = 1.0,
     ) -> Selection:
         """Select within budget an entity whose full text exceeds it."""
         texts = [item.text for item in items]
@@ -369,7 +486,19 @@ class PolicySelector(VerbaliserBase):
                 f"Selection for {entity_uri} uses {n_tokens} tokens, budget {self.budget}."
             )
         oversized = sum(self.count_tokens(t) > self.budget for t in texts)
-        return Selection(text, tuple(chosen), len(items), n_tokens, True, oversized)
+        return Selection(
+            text,
+            tuple(chosen),
+            len(items),
+            n_tokens,
+            True,
+            oversized,
+            filter_mode=self.filter_mode,
+            order_mode=self.order_mode,
+            predicate_config_name=self.predicate_config.name,
+            n_filtered_items=n_filtered,
+            predicate_coverage=coverage,
+        )
 
     def _order(
         self, items: list[EligibleItem], entity_uri: str, entity_type: str
@@ -413,6 +542,27 @@ def _validate_policy(policy: str, budget: Optional[int], seed: Optional[int]) ->
         raise ValueError(f"Policy {policy!r} takes a seed only when it is 'random'.")
     if budget is not None and budget <= 0:
         raise ValueError(f"Token budget must be positive, got {budget}.")
+
+
+def _validate_order_and_budget(
+    order_mode: str, budget: Optional[int], seed: Optional[int]
+) -> None:
+    """Validate that order_mode, budget, and seed are compatible."""
+    valid_orders = ("ppas", "deterministic", "random", "full")
+    if order_mode not in valid_orders:
+        raise ValueError(f"Unknown order_mode {order_mode!r}; expected {valid_orders}.")
+    if (order_mode == "full") != (budget is None):
+        raise ValueError(f"Order mode {order_mode!r} requires budget to be None only for 'full'.")
+    if (order_mode == "random") != (seed is not None):
+        raise ValueError(f"Order mode {order_mode!r} requires seed only when it is 'random'.")
+    if budget is not None and budget <= 0:
+        raise ValueError(f"Token budget must be positive, got {budget}.")
+
+
+def _get_default_predicate_config() -> PredicateVocabulary:
+    """Retrieve the default (base) predicate configuration."""
+    from kgsemembed.verbalisation.predicate_config import get_predicate_config
+    return get_predicate_config("base")
 
 
 def make_token_counter(tokenizer: object) -> TokenCounter:
