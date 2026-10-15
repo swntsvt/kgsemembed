@@ -17,7 +17,7 @@ Phase 2 datasets: D1 (SNOMED-FMA Body), D2 (Anatomy MA-NCI), D3 (Conference,
 21 pairs), D4 (memoryalpha-stexpanded, schema and instance), D5
 (DBpedia-Wikidata 15K EN, OpenEA). Five datasets total.
 
-**Current focus**: <!-- Update this line when switching issues, e.g. "Issue #12 — verbalisation strategy ablation (Phase 2)" -->
+**Current focus**: Issue #122 — controlled PPAS ablation with fixed token budgets (Phase 2)
 
 ## Git Workflow
 
@@ -147,6 +147,16 @@ python scripts/generate_figure2_model_comparison.py \
 
 # Check dataset presence
 python scripts/download_datasets.py --data_dir data/ --check
+
+# Controlled PPAS ablation (#122): pre-run sampling inventory (tokenizer only,
+# ~4 min), the ablation run itself (loads M2 once; long — run in tmux), and
+# its report. Results go to data/results_ppas_ablation/, never data/results/.
+python scripts/ppas_ablation_inventory.py --datasets D5 D1 --data_dir data/
+python -m kgsemembed.pipeline.ppas_ablation --datasets D5 D1 \
+    --data_dir data/ --results_dir data/results_ppas_ablation/
+python scripts/generate_ppas_ablation_report.py \
+    --results_dir data/results_ppas_ablation/ \
+    --output data/results_ppas_ablation/report.md
 ```
 
 Omitting `--conditions` runs every registered condition; omitting `--datasets`
@@ -320,6 +330,46 @@ PPAS budgets are consulted independently by the verbalisers through
 model keys. Registered verbalisation strategies (`VALID_STRATEGY_NAMES`):
 V1, V2, V3, V4, V5, V6, V7, V8, V2+V6, V2+V8, V2+V7, V2+V8+V7, V6+V3, V4+V6,
 V8+V6.
+
+## Controlled PPAS ablation (#122)
+
+A separate registry (`pipeline/ablation_conditions.py`, 22 `PA-*` conditions)
+and runner (`pipeline/ppas_ablation.py`) keep the ablation out of C1–C20, so
+`_EXPECTED_CONDITION_COUNT`, the main tables and the group statistics are
+unchanged. All conditions use M2 and one representation; within a budget the
+selection policy (and random seed) is the only difference.
+
+- **Representation** (`verbalisation/selection.py`): V6 `key: value` items
+  from `_collect_triples`, OpenEA datatype suffix stripped, empty and
+  duplicate items dropped, selected items always joined in canonical order.
+- **Budget**: real model tokenizer on the final joined text, `[CLS]`/`[SEP]`
+  included. Greedy in policy order; an item that does not fit is skipped, not
+  a stop. An entity whose full text fits is never sampled, so its text — and
+  its cached embedding — is identical under every policy.
+- **Policies**: `ppas` (existing tier lists, untiered last), `deterministic`
+  (lexicographic predicate URI, object), `random` (seeds 0–4, per-entity RNG
+  from `crc32(uri)`), `full` (uncapped; inputs over 512 are model-truncated).
+- **Budgets**: 420 (M2's nominal budget) on D5 only, plus outcome-blind stress
+  budgets fixed before any run: pooled median full length floored to a
+  multiple of 8 — D5 80, D1 48. D1 is not run at 420: nothing exceeds it.
+- **PPAS cannot act on D5**: no D5 source and 35 of 13,656 candidates carry a
+  tier predicate (OpenEA dropped labels/types; Wikidata uses P31), so PPAS
+  selections equal deterministic ones for every sampled D5 entity but one.
+  D1 at 48 is the comparison where the tiers matter.
+- `ppas_effective` in ablation results is `true` only when the policy is PPAS
+  and sampling was invoked for at least one entity. In C1–C20 results it still
+  means "strategy and model *can* sample", not that sampling occurred.
+- **Results (be06539, one pair per dataset, no significance tests)**: D5 at
+  420 — every policy equals the full reference (MRR 0.1777; 1.8% of
+  candidates sampled). D5 at 80 — PPAS = deterministic (MRR 0.1497), above
+  random (0.1355 ± 0.0009, 5 seeds), below full (0.1777). D1 at 48 — PPAS
+  0.4932, random 0.4050 ± 0.0013, deterministic 0.3566, full 0.4525.
+- **Read D1 with care**: the gain comes from what the tiers *exclude*. FMA's
+  `preferred_name`/`synonym`/`FMAID` are untiered, so PPAS keeps candidates'
+  `rdfs:label` + `subClassOf` and drops synonym lists that deterministic
+  order keeps. PPAS beating full text says the full V6 key-value text is
+  noisy, not that less text is better in general: this representation's full
+  MRR (0.4525) is far below C3 V2+V6/M2 (0.8036) on D1.
 
 ## Datasets
 
@@ -524,6 +574,12 @@ A repository that maps AutoModel to custom code may depend on it for
 trained behaviour (attention direction, pooling) that the stock
 architecture silently lacks. Reproduce the model card's published
 example output before trusting any result (see M5, #123).
+
+estimate_tokens() (words x 1.3) is not a tokenizer count. On D5 the real
+bge-large length is 2.6-3.5x the estimate, so V4/V6 under the "420" budget
+emitted texts over 512 tokens (53 D5 sources, 124 candidates under V6) that
+the model silently truncated. Use make_token_counter() in selection.py when
+a budget must hold for the encoded input.
 
 Threshold is tuned on the validation population only.
 Never pass test-population pairs to tune_threshold(); pass
