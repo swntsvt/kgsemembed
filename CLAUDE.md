@@ -486,6 +486,18 @@ Seven conditions vary one dimension at a time on D1 at 48 tokens
 - Results now record `dataset_files_sha256` (source/target/reference digests);
   the #128 reference predates it, so the report compares current digests and
   file mtimes instead.
+- **Results (4a42227; 19/19 full runs; per-pair bootstrap, never pooled)**:
+  covered − all, deterministic (P3−P1) Δ MRR D1 +0.331 / +0.341 / +0.292 at
+  32 / 48 / 64, D2 +0.121 [0.100, 0.141]; under PPAS order (P4−P2) D1 +0.228 /
+  +0.191 / +0.214, D2 +0.093. PPAS − deterministic is positive only with every
+  predicate eligible (P2−P1 D1 +0.089 / +0.137 / +0.076, D2 +0.028) and nil
+  or slightly negative once eligibility is fixed (P4−P3 D1 −0.014 / −0.013 /
+  −0.002; D2 not identifiable). P3 MRR is flat across D1 budgets
+  (0.697 / 0.697 / 0.691). On D2, P5–P7 (`obo_extended`) select almost what P1
+  selects (≤4 sources, ≤109 candidates differ) and score like P1, so
+  re-admitting synonyms and definitions erases the covered gain. Same
+  direction on two pairs; not a generalisation claim. No uncapped
+  all-vs-covered control was run.
 
 ## Datasets
 
