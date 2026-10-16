@@ -1,4 +1,4 @@
-"""Predicate vocabularies for the controlled PPAS ablation (#126, #128).
+"""Predicate vocabularies for the controlled PPAS ablation (#126, #128, #130).
 
 A vocabulary fixes two things independently of each other:
 
@@ -54,6 +54,15 @@ Vocabularies
     the oboInOwl predicates live in
     ``http://www.geneontology.org/formats/oboInOwl#``.  ``base`` is left
     unchanged so that P1-P4 keep their #128 definitions.
+``base_v2`` (#130)
+    ``base`` with its two OBO synonym entries remapped to the OBO-in-OWL
+    predicates they were meant to name (:data:`BASE_V2_CORRECTIONS`):
+    ``obo:hasExactSynonym`` to ``oboInOwl:hasExactSynonym`` and
+    ``obo:hasSynonym`` to ``oboInOwl:hasSynonym``.  Nothing else changes: the
+    other synonym scopes (related, narrow, broad) would be an extension, not a
+    correction, and are not added.  ``base`` itself, and the ``ppas.py`` tier
+    lists it copies, stay as they were, so historical results keep their
+    meaning.
 """
 
 import copy
@@ -284,9 +293,38 @@ def _make_obo_extended() -> PredicateVocabulary:
     ))
 
 
+BASE_V2_CORRECTIONS: dict[str, str] = {
+    expand_predicate("obo:hasExactSynonym"): expand_predicate("oboInOwl:hasExactSynonym"),
+    expand_predicate("obo:hasSynonym"): expand_predicate("oboInOwl:hasSynonym"),
+}
+"""Incorrect ``base`` URI to the OBO-in-OWL predicate it was meant to name."""
+
+
+def _corrected(tier_lists: dict[str, list[list[str]]]) -> dict[str, list[list[str]]]:
+    """Return tier lists with every :data:`BASE_V2_CORRECTIONS` URI remapped in place."""
+    return {
+        entity_type: [[BASE_V2_CORRECTIONS.get(uri, uri) for uri in tier] for tier in tiers]
+        for entity_type, tiers in tier_lists.items()
+    }
+
+
+def _make_base_v2() -> PredicateVocabulary:
+    """Build ``base`` with its OBO synonym URIs corrected; covered = tiered predicates."""
+    tier_lists = _corrected(_legacy_tier_lists())
+    return PredicateVocabulary(
+        name="base_v2",
+        description=(
+            "Base with obo:hasExactSynonym and obo:hasSynonym remapped to "
+            "oboInOwl:hasExactSynonym and oboInOwl:hasSynonym; otherwise identical."
+        ),
+        covered_predicates=frozenset(_tiered(tier_lists)),
+        tier_lists=tier_lists,
+    )
+
+
 PER_PREDICATE_CONFIGS: dict[str, PredicateVocabulary] = {
     vocabulary.name: vocabulary
-    for vocabulary in (_make_base(), _make_fma_extended(), _make_obo_extended())
+    for vocabulary in (_make_base(), _make_fma_extended(), _make_obo_extended(), _make_base_v2())
 }
 
 
@@ -297,7 +335,7 @@ def get_predicate_config(name: str) -> PredicateVocabulary:
     Parameters
     ----------
     name : str
-        Vocabulary name: ``"base"``, ``"fma_extended"`` or ``"obo_extended"``.
+        Vocabulary name: ``"base"``, ``"fma_extended"``, ``"obo_extended"`` or ``"base_v2"``.
 
     Returns
     -------

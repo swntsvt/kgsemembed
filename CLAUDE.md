@@ -476,6 +476,13 @@ Seven conditions vary one dimension at a time on D1 at 48 tokens
   SKOS synonyms (D1 sources) but drops FMA synonyms (D1 candidates) and NCI/MA
   `hasRelatedSynonym`/`hasDefinition` (D2). `base` is deliberately unchanged
   so P1–P4 keep their #128 definitions.
+- **`base_v2`** (#130): `base` with exactly its two wrong synonym URIs remapped
+  (`BASE_V2_CORRECTIONS`: `obo:hasExactSynonym` → `oboInOwl:hasExactSynonym`,
+  `obo:hasSynonym` → `oboInOwl:hasSynonym`); no other scope added. `base`,
+  `fma_extended`, `obo_extended` and `ppas.py` are unchanged and their hashes
+  are pinned in `tests/test_predicate_config.py`. On D1/D2 it covers exactly
+  the same items as `base` (neither uses those two predicates; D2 uses
+  `hasRelatedSynonym`), so no rerun is implied. No condition uses it yet.
 - **`obo_extended`** (D2 only): base plus the oboInOwl synonym family and
   `hasDefinition` in class tier 0 (lexical), `hasAlternativeId`/`hasDbXref`
   covered but untiered (identifier) — the D2 analogue of `fma_extended`.

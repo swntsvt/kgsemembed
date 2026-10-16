@@ -33,8 +33,8 @@ def _tiered(vocabulary: PredicateVocabulary, entity_type: str) -> set[str]:
 # ---------------------------------------------------------------------------
 
 
-def test_registry_holds_base_and_the_two_extended_vocabularies():
-    assert sorted(PER_PREDICATE_CONFIGS) == ["base", "fma_extended", "obo_extended"]
+def test_registry_holds_base_its_correction_and_the_two_extended_vocabularies():
+    assert sorted(PER_PREDICATE_CONFIGS) == ["base", "base_v2", "fma_extended", "obo_extended"]
 
 
 def test_unknown_vocabulary_raises():
@@ -202,3 +202,58 @@ def test_base_still_lists_the_unused_obo_synonym_uris():
     base = get_predicate_config("base")
     assert "http://purl.obolibrary.org/obo/hasExactSynonym" in base.covered_predicates
     assert not any(uri.startswith(OBO) for uri in base.covered_predicates)
+
+
+# ---------------------------------------------------------------------------
+# base_v2: corrected OBO-in-OWL synonym URIs (#130)
+# ---------------------------------------------------------------------------
+
+_HISTORICAL_HASHES = {
+    "base": ("eb299c6ac2d9cc54735618672736ad573ad3c71c725543037a2e86b8457558bb",
+             "34f65847c146167e7356959bfc6fe5717a43a4be05c9993fcc01a898aa12776d"),
+    "fma_extended": ("1ebca7d18c8f2fa2308e4db164401a0f41b819f990504fd187a6f3a3ff52b29d",
+                     "2de92887126e996a83490c58b060121437d56186c2859b0af408bd14b64d0c00"),
+    "obo_extended": ("55448ec69c984b349304e7cd32f4fdcfd0def120424fd258cdf78e7297524592",
+                     "ed5a6e4dd9b9f474cdbba24936161806b1d47b77f71d8ba278d34ae2a02ef0c6"),
+}
+_WRONG = {"http://purl.obolibrary.org/obo/hasExactSynonym", "http://purl.obolibrary.org/obo/hasSynonym"}
+_RIGHT = {f"{OBO}hasExactSynonym", f"{OBO}hasSynonym"}
+_FIXES = {
+    "http://purl.obolibrary.org/obo/hasExactSynonym": f"{OBO}hasExactSynonym",
+    "http://purl.obolibrary.org/obo/hasSynonym": f"{OBO}hasSynonym",
+}
+
+
+@pytest.mark.parametrize("name", sorted(_HISTORICAL_HASHES))
+def test_historical_vocabularies_keep_their_hashes(name):
+    vocabulary = get_predicate_config(name)
+    assert (vocabulary.config_hash, vocabulary.tiers_hash()) == _HISTORICAL_HASHES[name]
+
+
+def test_base_v2_remaps_exactly_the_two_obo_synonym_uris():
+    from kgsemembed.verbalisation.predicate_config import BASE_V2_CORRECTIONS
+
+    assert BASE_V2_CORRECTIONS == _FIXES
+    base, corrected = get_predicate_config("base"), get_predicate_config("base_v2")
+    assert _RIGHT <= corrected.covered_predicates and not _WRONG & corrected.covered_predicates
+    assert corrected.covered_predicates - _RIGHT == base.covered_predicates - _WRONG
+
+
+def test_base_v2_keeps_every_tier_position():
+    base, corrected = get_predicate_config("base"), get_predicate_config("base_v2")
+    for entity_type in ("class", "instance", "predicate"):
+        remapped = [[_FIXES.get(uri, uri) for uri in tier] for tier in base.tier_list_for(entity_type)]
+        assert corrected.tier_list_for(entity_type) == remapped
+
+
+def test_base_v2_adds_no_other_synonym_scope():
+    corrected = get_predicate_config("base_v2")
+    for scope in ("hasRelatedSynonym", "hasNarrowSynonym", "hasBroadSynonym"):
+        assert f"{OBO}{scope}" not in corrected.covered_predicates
+    assert corrected.predicate_roles == {}
+
+
+def test_base_v2_has_its_own_hash_and_leaves_the_ppas_lists_unchanged():
+    assert get_predicate_config("base_v2").config_hash not in {h for h, _ in _HISTORICAL_HASHES.values()}
+    assert set(CLASS_TIER_LIST[0]) & _WRONG == _WRONG
+    assert get_predicate_config("base").tiers_hash() == tier_config_digest()
