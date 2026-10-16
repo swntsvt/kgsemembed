@@ -427,6 +427,21 @@ Seven conditions vary one dimension at a time on D1 at 48 tokens
   set) and never combines groups; missing labels are listed.
 - Selected items are rendered canonically, so a policy changes which items
   are kept, never their order: "same set, different order" is 0 by design.
+  Compare selections by text, never by `Selection.selected`: those are
+  indices into the *filtered* item list, so they differ across filter modes.
+- The contrast table splits test sources into "selection differs for source
+  or a gold target" and its complement. The complement is not unaffected:
+  it moves when a policy changes competing (non-gold) candidates.
+- **Results (56b9f15, D1 at 48, one pair, paired bootstrap over 4605 test
+  sources, no generalisation claim)**: MRR P1 0.3566, P2 0.4932, P3 0.6974,
+  P4 0.6845, P5 0.4972, P6 0.5508, P7 0.5105. Filtering dominates (P3−P1
+  +0.341); with eligibility fixed, PPAS order is slightly *worse* than
+  deterministic (P4−P3 −0.013, all of it on 1276 changed sources, almost
+  entirely SNOMED-side). So the #122 PPAS gain (P2−P1 +0.137) is exclusion of
+  untiered FMA predicates, not prioritisation. The FMA extension does not
+  help: P5−P2 +0.004 [−0.007, 0.015]; P6−P3 −0.147. Lexical items help gold
+  targets but help distractors more (P7−P6: changed +0.061, complement −0.193).
+  P1/P2 reproduce #122's det/PPAS MRR exactly.
 
 ## Datasets
 

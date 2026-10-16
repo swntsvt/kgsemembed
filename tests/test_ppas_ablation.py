@@ -1,6 +1,7 @@
 """Tests for the controlled PPAS ablation registry and runner (#122, #128)."""
 
 import hashlib
+from dataclasses import replace
 import sys
 import json
 from pathlib import Path
@@ -25,7 +26,7 @@ from kgsemembed.pipeline.ablation_conditions import (
     stress_budget,
 )
 from kgsemembed.pipeline.conditions import EXPERIMENT_CONDITIONS
-from kgsemembed.verbalisation.selection import DETERMINISTIC, FULL, PPAS, RANDOM
+from kgsemembed.verbalisation.selection import DETERMINISTIC, FULL, PPAS, RANDOM, Selection
 
 EX = "http://example.org/"
 _DIM = 32
@@ -562,3 +563,24 @@ def test_controlled_bootstrap_pairs_per_source_differences(controlled_run):
     expected = np.mean([a[s][0] - b[s][0] for s in sources])
     row = report._contrast_row("x", a, b, set(sources), np.random.default_rng(0))
     assert row[2].startswith(report._fmt(expected))
+
+
+def test_changed_and_unchanged_strata_partition_the_test_sources(controlled_run):
+    _, results_dir = controlled_run
+    [(_signature, group)] = report.signature_groups(_controlled_runs(results_dir))
+    table = report.controlled_contrast_section(group)
+    for a, b, _effect in report._available_contrasts(group):
+        counts = {
+            cells[2]: int(cells[3])
+            for cells in (line.split(" | ") for line in table.splitlines())
+            if len(cells) > 3 and cells[0].lstrip("| ") == f"{a} − {b}"
+        }
+        assert counts[report._CHANGED] + counts[report._UNCHANGED] == counts[report._ALL]
+
+
+def test_inventory_compares_selected_text_not_filtered_indices():
+    import scripts.ppas_ablation_inventory as inventory
+
+    base = Selection("a: 1", (0,), 1, 4, False, 0)
+    assert inventory._differ([base], [replace(base, selected=(3,))]) == 0
+    assert inventory._differ([base], [replace(base, text="b: 2")]) == 1

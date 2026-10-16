@@ -58,6 +58,7 @@ _METRICS = ("f1", "precision", "recall", "threshold", "mrr", "recall_at_1", "rec
 _DEGREE_BINS = ((0, 0), (1, 5), (6, 10), (11, 20), (21, 10**9))
 _ALL, _SAMPLED, _UNSAMPLED = "all test sources", "sampling invoked", "sampling not invoked"
 _CHANGED = "selection differs for source or a gold target"
+_UNCHANGED = "source and gold targets unchanged"
 _CONTROLLED_LABELS = tuple(f"P{i}" for i in range(1, 8))
 _CONTROLLED_CONTRASTS = (
     ("P3", "P1", "filtering, deterministic order"),
@@ -544,7 +545,8 @@ def controlled_contrast_section(group: Dict[str, Run]) -> str:
     rows = []
     for a, b, effect in _available_contrasts(group):
         every = set(_per_source(group[a]))
-        for stratum, sources in ((_ALL, every), (_CHANGED, _changed_sources(group[a], group[b]))):
+        changed = _changed_sources(group[a], group[b])
+        for stratum, sources in ((_ALL, every), (_CHANGED, changed), (_UNCHANGED, every - changed)):
             rng = np.random.default_rng(_BOOTSTRAP_SEED)
             name = f"{a} − {b}"
             row = _contrast_row(name, _per_source(group[a]), _per_source(group[b]), sources, rng)
@@ -597,6 +599,9 @@ _CONTROLLED_CAVEATS = """## Reading the controlled-policy section (#128)
   their paired per-source differences, 2,000 resamples, one fixed-seed
   generator per contrast.  They quantify uncertainty across source entities
   within this one D1 evaluation, not generalisation to other KG pairs.
+- "Source and gold targets unchanged" is not an unaffected stratum: a
+  source's rank still moves when a policy changes the text of competing
+  (non-gold) candidates in its list.  Read it as the distractor effect.
 - Runs are combined only within one run signature; a smoke run is never
   combined with a full-population run."""
 

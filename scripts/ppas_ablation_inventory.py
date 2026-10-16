@@ -192,8 +192,15 @@ def _percentiles(values: List[int]) -> str:
 
 
 def _differ(first: List[Selection], second: List[Selection]) -> int:
-    """Count entities whose selected item sets differ."""
-    return sum(a.selected != b.selected for a, b in zip(first, second))
+    """
+    Count entities whose selected item sets differ.
+
+    Texts are compared, not ``Selection.selected``: those are indices into
+    the entity's filtered item list, so they are not comparable across
+    filter modes.  Items are distinct and rendered canonically, so equal
+    texts mean equal item sets.
+    """
+    return sum(a.text != b.text for a, b in zip(first, second))
 
 
 def _budget_rows(budget: int, side_name: str, side: SideItems,
