@@ -506,6 +506,25 @@ Seven conditions vary one dimension at a time on D1 at 48 tokens
 - The report gives arm − A0 per budget, the per-source difference-in-differences
   `(R−A0)@b − (R−A0)@none` (four runs resampled jointly), budget costs, C+x −
   A-core, and A0@48 core-first − lexicographic P1@48 (the ordering artefact).
+- **Results (3d5c487; 38/38 full runs, one clean commit; no input exceeded
+  512 tokens, so nothing was truncated; per-pair bootstrap, never pooled)**:
+  A0 without a budget reproduces #122 `full` (D1 0.4525). Core only wins
+  everywhere: A-core − A0 Δ MRR D1 +0.272 (none) / +0.238 (48), D2 +0.136 /
+  +0.093 (48) / +0.070 (24). Single-role removals do not add up to it (sum
+  of R-x − A0 without a budget: D1 +0.077, D2 +0.083), so the covered effect
+  is not one role. D1, no budget: R-nonEn +0.137, R-syn +0.026, R-def +0.005,
+  R-disj −0.001 (n.s.), R-pref −0.037, R-id −0.052; C+pref − A-core +0.028,
+  C+id −0.056, C+def −0.027 (−0.434 on the 305 sources whose own or gold text
+  has a definition), C+syn −0.249. D2, no budget: R-def +0.076 (+0.416 on 234
+  affected sources), R-syn +0.007 [−0.007, 0.021], R-id/R-disj exactly 0;
+  C+def − A-core −0.129, C+syn −0.060. Removing a role behaves differently
+  under a budget: synonym removal gains under it on D2 (DiD +0.063 at 24 / +0.058 at 48)
+  while definition removal loses (−0.076 / −0.066). A budget costs nothing
+  with core only (A-core@48 − A-core@none D1 −0.001, D2 −0.001) and helps A0
+  (D1 +0.033, D2 +0.042 at 48 / +0.053 at 24). Ordering artefact at 48:
+  A0 core-first − P1 lexicographic D1 +0.129, D2 +0.028. On D2, A-core@48 =
+  #128 P3 (0.8705): `base` covers only core there. On D1, A-core@48 0.723 >
+  P3 0.697. One pair per dataset; not a generalisation claim.
 
 ### Validation of the eligibility effect (#128 follow-up)
 
