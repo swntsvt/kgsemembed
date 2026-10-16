@@ -15,28 +15,28 @@ from kgsemembed.verbalisation.predicate_config import expand_predicate  # noqa: 
 from kgsemembed.verbalisation.selection import EligibleItem  # noqa: E402
 
 ITEMS = [
-    EligibleItem(expand_predicate("fma:FMAID"), "FMAID: 56496"),
-    EligibleItem(expand_predicate("fma:synonym"), "synonym: Distolingual cusp"),
+    EligibleItem(expand_predicate("fma:FMAID"), "FMAID: 12345"),
+    EligibleItem(expand_predicate("fma:synonym"), "synonym: Gold synonym"),
     EligibleItem(expand_predicate("rdf:type"), "type: Class"),
-    EligibleItem(expand_predicate("rdfs:label"), "label: Distolingual cusp of tooth"),
+    EligibleItem(expand_predicate("rdfs:label"), "label: Gold label"),
 ]
 
 
 def test_render_keeps_canonical_order_by_default():
     assert diagnostics.render(ITEMS, {"core", "synonym"}) == (
-        "synonym: Distolingual cusp | type: Class | label: Distolingual cusp of tooth"
+        "synonym: Gold synonym | type: Class | label: Gold label"
     )
 
 
 def test_render_moves_last_roles_after_the_rest_without_changing_the_items():
     moved = diagnostics.render(ITEMS, {"core", "synonym"}, last={"synonym"})
-    assert moved == "type: Class | label: Distolingual cusp of tooth | synonym: Distolingual cusp"
+    assert moved == "type: Class | label: Gold label | synonym: Gold synonym"
     assert sorted(moved.split(" | ")) == sorted(diagnostics.render(ITEMS, {"core", "synonym"}).split(" | "))
 
 
 def test_render_masks_only_fmaid_values():
     masked = diagnostics.render(ITEMS, {"core", "identifier"}, mask_id=True)
-    assert masked.startswith("FMAID: 0 | ") and "56496" not in masked and "Distolingual" in masked
+    assert masked.startswith("FMAID: 0 | ") and "12345" not in masked and "Gold label" in masked
 
 
 def test_gold_rank_is_the_best_gold_position_or_none():
