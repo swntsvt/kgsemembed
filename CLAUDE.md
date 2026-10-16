@@ -498,6 +498,29 @@ Seven conditions vary one dimension at a time on D1 at 48 tokens
   re-admitting synonyms and definitions erases the covered gain. Same
   direction on two pairs; not a generalisation claim. No uncapped
   all-vs-covered control was run.
+- **Review amendments (supersede parts of the two Results bullets above)**:
+  deterministic (lexicographic) order drops `rdfs:label` for many trimmed
+  candidates, because `purl.org/fma` and `geneontology.org` predicates sort
+  before `w3.org`: P1 drops it for 17,647 D1 candidates at 48 (44,732 at 32;
+  6,586 at 64) and 548 on D2; P2–P4 for ≤30. `fma_extended`/`obo_extended`
+  put FMA/oboInOwl items in tier 0 *ahead of* the label (canonical order
+  within a tier), so P5/P7 drop it for 5,360 D1 / 439 D2 candidates and P6
+  for 14,369 / 548. Hence:
+  - P3−P1 is eligibility *plus* label restoration; the eligibility estimate
+    with the label kept in both arms is P4−P2 (D1 +0.228 / +0.191 / +0.214,
+    D2 +0.093).
+  - P2−P1 is mostly the label-dropping baseline, not evidence for the tier
+    design: a tier-free core-first order (#131 A0@48) reaches P2 within 0.008
+    on D1 and selects identically on D2.
+  - P5−P2, P6−P3, P7−P6, the "lexical items help distractors more" reading
+    and D2's "re-admitting synonyms erases the gain" all mix vocabulary with
+    label loss; use #131's no-budget C+x arms instead.
+  - Items are *rendered* in canonical order, so FMA annotations precede the
+    label in every candidate text (#131 investigation); on D1 validation
+    sources, rendering annotations after core lifts the full text by +0.165.
+  Selections and contrasts themselves reproduce exactly (0 fingerprint
+  mismatches; `scripts/predicate_role_diagnostics.py label-loss` on
+  `feature/issue-131`).
 
 ## Datasets
 
