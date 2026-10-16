@@ -49,6 +49,7 @@ from typing import Dict, List, Optional, Tuple
 import numpy as np
 from scipy import stats
 
+from kgsemembed.pipeline.ablation_conditions import ABLATION_CONDITIONS
 from kgsemembed.verbalisation.selection import DETERMINISTIC, FULL, PPAS, RANDOM
 
 _BOOTSTRAP_RESAMPLES = 2000
@@ -62,13 +63,15 @@ _UNCHANGED = "source and gold targets unchanged"
 _CONTROLLED_LABELS = tuple(f"P{i}" for i in range(1, 8))
 _CONTROLLED_CONTRASTS = (
     ("P3", "P1", "filtering, deterministic order"),
+    ("P4", "P2", "filtering, PPAS order"),
     ("P4", "P3", "ordering, eligibility fixed (base)"),
     ("P2", "P1", "ordering, all predicates eligible"),
     ("P5", "P2", "vocabulary, PPAS order"),
     ("P6", "P3", "vocabulary, covered eligibility"),
-    ("P7", "P6", "ordering, eligibility fixed (fma_extended)"),
-    ("P7", "P5", "filtering, fma_extended PPAS"),
+    ("P7", "P6", "ordering, eligibility fixed ({extended})"),
+    ("P7", "P5", "filtering, {extended} PPAS"),
 )
+"""(a, b, effect): a − b; ``{extended}`` names the group's extended vocabulary."""
 _RANKING_METRICS = ("mrr", "recall_at_1", "recall_at_5", "recall_at_10", "f1", "precision", "recall", "threshold")
 
 Run = Dict[str, object]
@@ -429,8 +432,8 @@ def signature_groups(runs: List[Run]) -> List[Tuple[Tuple, Dict[str, Run]]]:
 
 def _signature_lines(signature: Tuple, group: Dict[str, Run]) -> List[str]:
     model, revision, tokenizer_rev, candidates, protocol, budget, smoke, sources = signature
-    missing = [label for label in _CONTROLLED_LABELS if label not in group]
     first = next(iter(group.values()))
+    missing = [label for label in expected_labels(first["dataset_id"], budget) if label not in group]
     return [
         f"- Model `{model}` revision `{revision}`; tokenizer revision `{tokenizer_rev}`",
         f"- Candidates sha256 `{candidates[:16]}…`; evaluation protocol {protocol}; budget {budget}",
@@ -514,8 +517,36 @@ def changed_entities(a: Run, b: Run, side: str) -> set:
     return {uri for uri in first if first[uri] != second.get(uri)}
 
 
+def _extended_vocabulary(group: Dict[str, Run]) -> str:
+    """Name the non-base vocabulary of a group, or a placeholder when it has none."""
+    names = {r["ablation"]["predicate_config"]["name"] for r in group.values()} - {"base"}
+    return ", ".join(sorted(names)) or "extended"
+
+
 def _available_contrasts(group: Dict[str, Run]) -> List[Tuple[str, str, str]]:
-    return [(a, b, effect) for a, b, effect in _CONTROLLED_CONTRASTS if a in group and b in group]
+    extended = _extended_vocabulary(group)
+    return [(a, b, effect.format(extended=extended))
+            for a, b, effect in _CONTROLLED_CONTRASTS if a in group and b in group]
+
+
+def expected_labels(dataset_id: str, budget: Optional[int]) -> List[str]:
+    """
+    Return the controlled labels registered for a dataset at a budget.
+
+    Parameters
+    ----------
+    dataset_id : str
+        Dataset identifier.
+    budget : Optional[int]
+        Token budget.
+
+    Returns
+    -------
+    List[str]
+        Registered policy labels, in label order.
+    """
+    return sorted({c.policy_label for c in ABLATION_CONDITIONS
+                   if c.is_controlled and dataset_id in c.datasets and c.token_budget == budget})
 
 
 def change_section(group: Dict[str, Run]) -> str:
@@ -595,10 +626,10 @@ _CONTROLLED_CAVEATS = """## Reading the controlled-policy section (#128)
   can therefore change *which* items are kept but never their presentation
   order: "same set, different order" is zero by construction, and the
   selection-change counts capture the whole effect of a policy.
-- Bootstrap intervals resample D1 test sources (the unit of resampling) with
-  their paired per-source differences, 2,000 resamples, one fixed-seed
-  generator per contrast.  They quantify uncertainty across source entities
-  within this one D1 evaluation, not generalisation to other KG pairs.
+- Bootstrap intervals resample the test sources of one pair (the unit of
+  resampling) with their paired per-source differences, 2,000 resamples, one
+  fixed-seed generator per contrast.  They quantify uncertainty across source
+  entities within that one evaluation, not generalisation to other KG pairs.
 - "Source and gold targets unchanged" is not an unaffected stratum: a
   source's rank still moves when a policy changes the text of competing
   (non-gold) candidates in its list.  Read it as the distractor effect.

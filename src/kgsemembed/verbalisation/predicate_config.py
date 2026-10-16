@@ -35,6 +35,25 @@ Vocabularies
     annotation properties, ``http://purl.org/sig/ont/fma/``.  FMA class URIs use
     a different namespace (``http://purl.org/sig/ont/fma.owl#``), which is why
     predicate URIs are matched in full and never by prefix name.
+``obo_extended``
+    ``base`` plus the OBO-in-OWL annotation predicates D2 (MA-NCI) uses,
+    assigned by their declared meaning in the oboInOwl vocabulary, never by
+    alignment outcomes:
+
+    * the synonym family (``hasExactSynonym``, ``hasRelatedSynonym``,
+      ``hasNarrowSynonym``, ``hasBroadSynonym``, ``hasSynonym``) -- alternative
+      names, the role ``skos:altLabel`` plays elsewhere: class tier 0 (lexical);
+    * ``hasDefinition`` -- a textual definition, the role ``IAO_0000115`` and
+      ``skos:definition`` play in ``base``: class tier 0 (lexical);
+    * ``hasAlternativeId`` and ``hasDbXref`` -- identifiers and cross-references
+      with no counterpart on the other side: covered but untiered, like
+      ``fma:FMAID``.
+
+    ``base`` already lists ``obo:hasExactSynonym`` and ``obo:hasSynonym``, but
+    under ``http://purl.obolibrary.org/obo/``, which neither D1 nor D2 uses;
+    the oboInOwl predicates live in
+    ``http://www.geneontology.org/formats/oboInOwl#``.  ``base`` is left
+    unchanged so that P1-P4 keep their #128 definitions.
 """
 
 import copy
@@ -57,6 +76,7 @@ PREFIXES: dict[str, str] = {
     "skos": "http://www.w3.org/2004/02/skos/core#",
     "obo": "http://purl.obolibrary.org/obo/",
     "fma": "http://purl.org/sig/ont/fma/",
+    "oboInOwl": "http://www.geneontology.org/formats/oboInOwl#",
 }
 
 LEXICAL = "lexical"
@@ -222,25 +242,51 @@ FMA_EXTENSION: dict[str, str] = {
 }
 
 
-def _make_fma_extended() -> PredicateVocabulary:
-    """Build ``base`` plus FMA lexical predicates in class tier 0 and FMAID untiered."""
+OBO_EXTENSION: dict[str, str] = {
+    expand_predicate("oboInOwl:hasExactSynonym"): LEXICAL,
+    expand_predicate("oboInOwl:hasRelatedSynonym"): LEXICAL,
+    expand_predicate("oboInOwl:hasNarrowSynonym"): LEXICAL,
+    expand_predicate("oboInOwl:hasBroadSynonym"): LEXICAL,
+    expand_predicate("oboInOwl:hasSynonym"): LEXICAL,
+    expand_predicate("oboInOwl:hasDefinition"): LEXICAL,
+    expand_predicate("oboInOwl:hasAlternativeId"): IDENTIFIER,
+    expand_predicate("oboInOwl:hasDbXref"): IDENTIFIER,
+}
+
+
+def _make_extended(name: str, extension: dict[str, str], description: str) -> PredicateVocabulary:
+    """Build ``base`` plus lexical predicates in class tier 0 and identifiers untiered."""
     tier_lists = _legacy_tier_lists()
-    lexical = [uri for uri, role in FMA_EXTENSION.items() if role == LEXICAL]
+    lexical = [uri for uri, role in extension.items() if role == LEXICAL]
     tier_lists["class"][0] = tier_lists["class"][0] + lexical
     return PredicateVocabulary(
-        name="fma_extended",
-        description=(
-            "Base plus fma:preferred_name and fma:synonym in class tier 0 (lexical) "
-            "and fma:FMAID covered but untiered (identifier)."
-        ),
-        covered_predicates=frozenset(_tiered(tier_lists) | set(FMA_EXTENSION)),
+        name=name,
+        description=description,
+        covered_predicates=frozenset(_tiered(tier_lists) | set(extension)),
         tier_lists=tier_lists,
-        predicate_roles=dict(FMA_EXTENSION),
+        predicate_roles=dict(extension),
     )
 
 
+def _make_fma_extended() -> PredicateVocabulary:
+    """Build ``base`` plus FMA lexical predicates in class tier 0 and FMAID untiered."""
+    return _make_extended("fma_extended", FMA_EXTENSION, (
+        "Base plus fma:preferred_name and fma:synonym in class tier 0 (lexical) "
+        "and fma:FMAID covered but untiered (identifier)."
+    ))
+
+
+def _make_obo_extended() -> PredicateVocabulary:
+    """Build ``base`` plus oboInOwl synonyms and definition in class tier 0, IDs untiered."""
+    return _make_extended("obo_extended", OBO_EXTENSION, (
+        "Base plus the oboInOwl synonym family and hasDefinition in class tier 0 "
+        "(lexical) and hasAlternativeId/hasDbXref covered but untiered (identifier)."
+    ))
+
+
 PER_PREDICATE_CONFIGS: dict[str, PredicateVocabulary] = {
-    vocabulary.name: vocabulary for vocabulary in (_make_base(), _make_fma_extended())
+    vocabulary.name: vocabulary
+    for vocabulary in (_make_base(), _make_fma_extended(), _make_obo_extended())
 }
 
 
@@ -251,7 +297,7 @@ def get_predicate_config(name: str) -> PredicateVocabulary:
     Parameters
     ----------
     name : str
-        Vocabulary name, ``"base"`` or ``"fma_extended"``.
+        Vocabulary name: ``"base"``, ``"fma_extended"`` or ``"obo_extended"``.
 
     Returns
     -------

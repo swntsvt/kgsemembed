@@ -24,6 +24,8 @@ Usage
 python scripts/ppas_ablation_inventory.py --datasets D5 D1 --data_dir data/
 python scripts/ppas_ablation_inventory.py --datasets D1 \\
     --results_dir data/results_ppas_controlled/
+python scripts/ppas_ablation_inventory.py --datasets D1 D2 \\
+    --results_dir data/results_ppas_validation/
 """
 
 from __future__ import annotations
@@ -60,7 +62,8 @@ from kgsemembed.verbalisation.selection import (
 
 _PERCENTILES = (50, 90, 99, 100)
 _BGE_REVISION = "d4aa6901d3a41ba39fb536a557fa166f842b0e09"
-_CONTRASTS = (("P3", "P1"), ("P4", "P3"), ("P2", "P1"), ("P5", "P2"), ("P6", "P3"), ("P7", "P6"), ("P7", "P5"))
+_CONTRASTS = (("P3", "P1"), ("P4", "P2"), ("P4", "P3"), ("P2", "P1"),
+              ("P5", "P2"), ("P6", "P3"), ("P7", "P6"), ("P7", "P5"))
 
 
 def _selections(policy: str, budget: int | None, seed: int | None,
@@ -84,26 +87,34 @@ def _condition_selections(condition: AblationCondition, side: SideItems,
 
 
 def _controlled_report(dataset_id: str, sides: Dict[str, SideItems], count_tokens: TokenCounter) -> None:
-    """Print sampling, filtering and contrast-level selection changes of P1-P7."""
+    """Print, per budget, sampling, filtering and contrast-level selection changes of P1-P7."""
     controlled = [c for c in ABLATION_CONDITIONS if c.is_controlled and dataset_id in c.datasets]
-    if not controlled:
-        return
-    print("\n### Controlled policies (#128)\n")
-    print("| policy | condition | side | sampled | filtered items | vocab coverage | tiered items | max tokens |")
-    print("|---|---|---|---|---|---|---|---|")
+    for budget in sorted({c.token_budget for c in controlled}):
+        family = [c for c in controlled if c.token_budget == budget]
+        print(f"\n### Controlled policies (#128), budget {budget}\n")
+        print("| policy | condition | side | sampled | filtered items | vocab coverage | tiered items | max tokens |")
+        print("|---|---|---|---|---|---|---|---|")
+        chosen = _controlled_selections(family, sides, count_tokens)
+        print("\n| contrast | side | entities whose selected set changes |")
+        print("|---|---|---|")
+        for a, b in _CONTRASTS:
+            for name in sides:
+                if (a, name) in chosen and (b, name) in chosen:
+                    n = len(chosen[(a, name)])
+                    print(f"| {a} vs {b} | {name} | {_differ(chosen[(a, name)], chosen[(b, name)])} / {n} |")
+
+
+def _controlled_selections(
+    family: List[AblationCondition], sides: Dict[str, SideItems], count_tokens: TokenCounter
+) -> Dict[tuple, List[Selection]]:
+    """Select every side under each condition of one budget, printing its accounting row."""
     chosen: Dict[tuple, List[Selection]] = {}
-    for condition in controlled:
+    for condition in family:
         for name, side in sides.items():
             selections = _condition_selections(condition, side, count_tokens)
             chosen[(condition.policy_label, name)] = selections
             print(_controlled_row(condition, name, selections))
-    print("\n| contrast | side | entities whose selected set changes |")
-    print("|---|---|---|")
-    for a, b in _CONTRASTS:
-        for name in sides:
-            if (a, name) in chosen and (b, name) in chosen:
-                n = len(chosen[(a, name)])
-                print(f"| {a} vs {b} | {name} | {_differ(chosen[(a, name)], chosen[(b, name)])} / {n} |")
+    return chosen
 
 
 def _controlled_row(condition: AblationCondition, side_name: str, selections: List[Selection]) -> str:
@@ -183,7 +194,7 @@ def _print_status(results_dir: Path, dataset_id: str, pair_names: List[str]) -> 
     print("\n" + ", ".join(f"{k}: {v}" for k, v in counts.items()))
 
 
-_PAIR_NAMES = {"D1": ["d1_snomed_fma"], "D5": ["D_W_15K_V2"]}
+_PAIR_NAMES = {"D1": ["d1_snomed_fma"], "D2": ["d2_anatomy"], "D5": ["D_W_15K_V2"]}
 
 
 def _percentiles(values: List[int]) -> str:
@@ -222,7 +233,7 @@ def _budget_rows(budget: int, side_name: str, side: SideItems,
 def _dataset_report(dataset_id: str, data_dir: Path, count_tokens: TokenCounter) -> None:
     """Print the inventory of every pair of one dataset."""
     budgets = sorted({c.token_budget for c in ABLATION_CONDITIONS
-                      if dataset_id in c.datasets and c.token_budget is not None})
+                      if dataset_id in c.datasets and c.token_budget is not None and not c.is_controlled})
     for pair in load_dataset(dataset_id, data_dir):
         context = build_pair_context(pair, None, count_tokens, data_dir)
         sides: Dict[str, SideItems] = {"source": context.source, "candidate": context.candidate}
@@ -236,7 +247,7 @@ def _dataset_report(dataset_id: str, data_dir: Path, count_tokens: TokenCounter)
                   f"{_percentiles(tokens)} | {sum(t > 512 for t in tokens)} |")
         pooled = [s.n_tokens for selections in full.values() for s in selections]
         print(f"\nStress-budget rule (pooled median floored to 8): {stress_budget(pooled)}")
-        print(f"Registered budgets: {budgets}\n")
+        print(f"Registered #122 budgets: {budgets}\n")
         print("| budget | side | entities | sampled | PPAS != det | PPAS != rand s0 | rand s0 != s1 | oversized items | empty |")
         print("|---|---|---|---|---|---|---|---|---|")
         for budget in budgets:

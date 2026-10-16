@@ -33,8 +33,8 @@ def _tiered(vocabulary: PredicateVocabulary, entity_type: str) -> set[str]:
 # ---------------------------------------------------------------------------
 
 
-def test_registry_holds_base_and_fma_extended_only():
-    assert sorted(PER_PREDICATE_CONFIGS) == ["base", "fma_extended"]
+def test_registry_holds_base_and_the_two_extended_vocabularies():
+    assert sorted(PER_PREDICATE_CONFIGS) == ["base", "fma_extended", "obo_extended"]
 
 
 def test_unknown_vocabulary_raises():
@@ -158,3 +158,47 @@ def test_vocabulary_rejects_tiered_predicates_outside_the_covered_set():
     base = get_predicate_config("base")
     with pytest.raises(ValueError):
         PredicateVocabulary("x", "", frozenset(), base.tier_lists)
+
+
+# ---------------------------------------------------------------------------
+# OBO-in-OWL extension (D2)
+# ---------------------------------------------------------------------------
+
+OBO = "http://www.geneontology.org/formats/oboInOwl#"
+
+
+def test_obo_predicates_use_the_namespace_declared_by_d2():
+    extended = get_predicate_config("obo_extended")
+    assert all(uri.startswith(OBO) for uri in extended.predicate_roles)
+    assert f"{OBO}hasRelatedSynonym" in extended.covered_predicates
+
+
+def test_obo_synonyms_and_definition_join_class_tier_zero():
+    extended = get_predicate_config("obo_extended")
+    lexical = {uri for uri, role in extended.predicate_roles.items() if role == LEXICAL}
+    assert lexical == {f"{OBO}{name}" for name in (
+        "hasExactSynonym", "hasRelatedSynonym", "hasNarrowSynonym", "hasBroadSynonym",
+        "hasSynonym", "hasDefinition")}
+    assert lexical <= set(extended.tier_list_for("class")[0])
+
+
+def test_obo_identifiers_are_covered_but_never_tiered():
+    extended = get_predicate_config("obo_extended")
+    identifiers = {uri for uri, role in extended.predicate_roles.items() if role == IDENTIFIER}
+    assert identifiers == {f"{OBO}hasAlternativeId", f"{OBO}hasDbXref"}
+    for entity_type in ("class", "instance", "predicate"):
+        assert not identifiers & _tiered(extended, entity_type)
+
+
+def test_obo_extension_leaves_base_and_fma_extended_unchanged():
+    base, obo = get_predicate_config("base"), get_predicate_config("obo_extended")
+    assert obo.tier_list_for("class")[1:] == base.tier_list_for("class")[1:]
+    assert obo.covered_predicates - base.covered_predicates == set(obo.predicate_roles)
+    assert get_predicate_config("fma_extended").config_hash.startswith("1ebca7d18c8f")
+    assert base.config_hash.startswith("eb299c6ac2d9")
+
+
+def test_base_still_lists_the_unused_obo_synonym_uris():
+    base = get_predicate_config("base")
+    assert "http://purl.obolibrary.org/obo/hasExactSynonym" in base.covered_predicates
+    assert not any(uri.startswith(OBO) for uri in base.covered_predicates)

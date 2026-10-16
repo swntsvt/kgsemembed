@@ -18,7 +18,10 @@ holding per-test-source ranks and sampling flags for stratified analysis.
 
 The #128 controlled policies (P1-P7) must go to a separate directory,
 ``data/results_ppas_controlled/`` by convention; the runner refuses to write
-them beside the #122 results.  Every condition, legacy or controlled, is
+them beside the #122 results.  The validation runs that extend them (P1-P4 on
+D1 at 32 and 64, P1-P7 on D2 at 48) go to ``data/results_ppas_validation/``,
+which in turn refuses D1 at 48, so the #128 reference stays the only copy of
+those results.  Every condition, legacy or controlled, is
 selected through one path: the condition's filter mode, order mode and
 predicate vocabulary.
 
@@ -54,6 +57,7 @@ from kgsemembed.evaluation import RankedList
 from kgsemembed.pipeline.ablation_conditions import (
     ABLATION_CONDITIONS,
     ABLATION_MODEL_KEY,
+    CONTROLLED_BUDGET,
     AblationCondition,
     get_ablation_condition,
 )
@@ -86,6 +90,7 @@ _LOGGER = logging.getLogger("kgsemembed.pipeline.ppas_ablation")
 
 DEFAULT_RESULTS_DIR = "data/results_ppas_ablation/"
 CONTROLLED_RESULTS_DIR = "data/results_ppas_controlled/"
+VALIDATION_RESULTS_DIR = "data/results_ppas_validation/"
 _HISTORICAL_RESULTS_DIR = Path("data/results")
 _ISSUE_122_RESULTS_DIR = Path(DEFAULT_RESULTS_DIR)
 _SOURCE = "source"
@@ -643,9 +648,38 @@ def _result_payload(
         "n_candidates_per_entity": _candidate_count(context.candidates),
         "candidates_sha256": _candidate_digest(context.candidates),
         "candidates_file": str(_candidates_path(pair.dataset_id, pair.pair_name, settings.data_dir)),
+        "dataset_files_sha256": dataset_file_digests(pair.dataset_id, settings.data_dir),
         "ablation": ablation,
         **_provenance(settings.model_info),
     }
+
+
+_DATASET_FILES = {
+    "D1": ("d1_snomed_fma/source.rdf", "d1_snomed_fma/target.rdf", "d1_snomed_fma/reference.rdf"),
+    "D2": ("d2_anatomy/source.rdf", "d2_anatomy/target.rdf", "d2_anatomy/reference.rdf"),
+}
+
+
+def dataset_file_digests(dataset_id: str, data_dir: Path) -> Dict[str, Optional[str]]:
+    """
+    Fingerprint the input files of a dataset, as its version record.
+
+    Parameters
+    ----------
+    dataset_id : str
+        Dataset identifier.
+    data_dir : Path
+        Dataset root.
+
+    Returns
+    -------
+    Dict[str, Optional[str]]
+        Relative path to SHA-256, ``None`` for a missing file; empty for
+        datasets without a registered file list.
+    """
+    paths = {rel: Path(data_dir) / rel for rel in _DATASET_FILES.get(dataset_id, ())}
+    return {rel: hashlib.sha256(path.read_bytes()).hexdigest() if path.exists() else None
+            for rel, path in paths.items()}
 
 
 def _select_and_encode(
@@ -798,9 +832,41 @@ def build_pair_context(
     return PairContext(pair, candidates, source, candidate, EmbeddingCache(encoder), count_tokens)
 
 
-def _guard_results_dir(results_dir: Path, conditions: List[AblationCondition]) -> None:
-    """Refuse the historical tree, and the #122 tree for controlled conditions."""
+def is_reference_run(condition: AblationCondition, dataset_id: str) -> bool:
+    """
+    Tell whether a controlled condition on a dataset belongs to the #128 reference.
+
+    Parameters
+    ----------
+    condition : AblationCondition
+        A registered condition.
+    dataset_id : str
+        Dataset it would run on.
+
+    Returns
+    -------
+    bool
+        True for a controlled condition on D1 at the #128 budget.
+    """
+    return condition.is_controlled and dataset_id == "D1" and condition.token_budget == CONTROLLED_BUDGET
+
+
+def _guard_results_dir(
+    results_dir: Path, conditions: List[AblationCondition], dataset_ids: List[str]
+) -> None:
+    """Refuse the historical tree, and controlled runs outside their own tree."""
     resolved = results_dir.resolve()
+    runs = [(c, d) for c in conditions for d in dataset_ids if d in c.datasets and c.is_controlled]
+    if resolved == Path(CONTROLLED_RESULTS_DIR).resolve() and not all(is_reference_run(c, d) for c, d in runs):
+        raise ValueError(
+            f"{CONTROLLED_RESULTS_DIR} holds only the #128 D1 runs at {CONTROLLED_BUDGET} tokens; "
+            f"write validation runs to {VALIDATION_RESULTS_DIR}."
+        )
+    if resolved == Path(VALIDATION_RESULTS_DIR).resolve() and any(is_reference_run(c, d) for c, d in runs):
+        raise ValueError(
+            f"D1 controlled runs at {CONTROLLED_BUDGET} tokens are the #128 reference in "
+            f"{CONTROLLED_RESULTS_DIR}; they must not be rerun into {VALIDATION_RESULTS_DIR}."
+        )
     if resolved == _HISTORICAL_RESULTS_DIR.resolve():
         raise ValueError(
             f"Ablation results must not be written to {_HISTORICAL_RESULTS_DIR}; "
@@ -894,7 +960,7 @@ def run_ablation(
         Result payloads written by the run.
     """
     conditions = _select_conditions(condition_ids)
-    _guard_results_dir(Path(settings_kwargs["results_dir"]), conditions)
+    _guard_results_dir(Path(settings_kwargs["results_dir"]), conditions, dataset_ids)
     model, model_info = load_sentence_transformer(ABLATION_MODEL_KEY)
     encoder = EmbeddingEncoder(ABLATION_MODEL_KEY, model)
     settings = RunSettings(

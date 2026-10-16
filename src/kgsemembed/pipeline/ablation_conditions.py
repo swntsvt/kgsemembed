@@ -25,6 +25,14 @@ P1-P7 vary predicate eligibility (``filter_mode``), predicate vocabulary and
 visiting order one at a time, on D1 at 48 tokens; see
 :data:`CONTROLLED_POLICIES`.  They are identified by ``policy_label`` and their
 condition IDs name every dimension, so no two collide when grouped by policy.
+
+Validation (#128 follow-up)
+---------------------------
+The base-vocabulary policies P1-P4 are also registered on D1 at
+:data:`VALIDATION_BUDGETS` (32 and 64) and on D2 at 48, and P5-P7 on D2 with
+the D2 vocabulary ``obo_extended`` (:data:`EXTENDED_VOCABULARIES`).  A label
+names the same filter/vocabulary-role/order design everywhere; it is unique
+per (dataset, budget), the unit a report groups by.
 """
 
 
@@ -119,9 +127,12 @@ def _budget_family(budget: int, datasets: Tuple[str, ...]) -> List[AblationCondi
 
 CONTROLLED_BUDGET = STRESS_BUDGETS["D1"]
 CONTROLLED_DATASETS: Tuple[str, ...] = ("D1",)
+VALIDATION_BUDGETS: Tuple[int, ...] = (32, 64)
+VALIDATION_DATASET = "D2"
+EXTENDED_VOCABULARIES = {"D1": "fma_extended", "D2": "obo_extended"}
 
 _FILTER_LABELS = {FILTER_ALL: "all", FILTER_COVERED: "cov"}
-_VOCABULARY_LABELS = {"base": "base", "fma_extended": "fmax"}
+_VOCABULARY_LABELS = {"base": "base", "fma_extended": "fmax", "obo_extended": "obox"}
 
 CONTROLLED_POLICIES: Tuple[Tuple[str, str, str, str], ...] = (
     ("P1", FILTER_ALL, "base", DETERMINISTIC),
@@ -140,6 +151,26 @@ filter "all" with deterministic order never consults a vocabulary, so an
 ``all``/``fma_extended``/deterministic condition would equal P1 and is not
 registered; P6 and P7 are the extended-vocabulary controls instead.
 """
+
+BASE_POLICIES = tuple(p for p in CONTROLLED_POLICIES if p[2] == "base")
+"""P1-P4: the base-vocabulary policies, run at every validation budget."""
+
+
+def extended_policies(vocabulary: str) -> Tuple[Tuple[str, str, str, str], ...]:
+    """
+    Return P5-P7 with their extended vocabulary replaced by ``vocabulary``.
+
+    Parameters
+    ----------
+    vocabulary : str
+        A dataset's extended vocabulary, e.g. ``"obo_extended"``.
+
+    Returns
+    -------
+    Tuple[Tuple[str, str, str, str], ...]
+        ``(label, filter mode, vocabulary, order mode)`` of P5-P7.
+    """
+    return tuple((label, f, vocabulary, o) for label, f, v, o in CONTROLLED_POLICIES if v != "base")
 
 
 def controlled_condition_id(filter_mode: str, vocabulary: str, order_mode: str, budget: int) -> str:
@@ -166,8 +197,10 @@ def controlled_condition_id(filter_mode: str, vocabulary: str, order_mode: str, 
     return f"PA-{_FILTER_LABELS[filter_mode]}-{_VOCABULARY_LABELS[vocabulary]}-{order}-{budget}"
 
 
-def _controlled_family(budget: int, datasets: Tuple[str, ...]) -> List[AblationCondition]:
-    """Return the P1-P7 controlled conditions at one budget."""
+def _controlled_family(
+    budget: int, datasets: Tuple[str, ...], policies: Tuple[Tuple[str, str, str, str], ...]
+) -> List[AblationCondition]:
+    """Return the given controlled policies at one budget."""
     return [
         AblationCondition(
             controlled_condition_id(filter_mode, vocabulary, order_mode, budget),
@@ -175,7 +208,7 @@ def _controlled_family(budget: int, datasets: Tuple[str, ...]) -> List[AblationC
             filter_mode=filter_mode, order_mode=order_mode,
             predicate_config=vocabulary, policy_label=label,
         )
-        for label, filter_mode, vocabulary, order_mode in CONTROLLED_POLICIES
+        for label, filter_mode, vocabulary, order_mode in policies
     ]
 
 
@@ -184,7 +217,13 @@ ABLATION_CONDITIONS: List[AblationCondition] = [
     *_budget_family(PRIMARY_BUDGET, ("D5",)),
     *_budget_family(STRESS_BUDGETS["D5"], ("D5",)),
     *_budget_family(STRESS_BUDGETS["D1"], ("D1",)),
-    *_controlled_family(CONTROLLED_BUDGET, CONTROLLED_DATASETS),
+    *_controlled_family(CONTROLLED_BUDGET, (*CONTROLLED_DATASETS, VALIDATION_DATASET), BASE_POLICIES),
+    *_controlled_family(CONTROLLED_BUDGET, CONTROLLED_DATASETS, extended_policies("fma_extended")),
+    *_controlled_family(
+        CONTROLLED_BUDGET, (VALIDATION_DATASET,), extended_policies(EXTENDED_VOCABULARIES[VALIDATION_DATASET])
+    ),
+    *(c for budget in VALIDATION_BUDGETS
+      for c in _controlled_family(budget, CONTROLLED_DATASETS, BASE_POLICIES)),
 ]
 
 
@@ -215,9 +254,13 @@ def _validate_registry(conditions: List[AblationCondition]) -> None:
     duplicates = sorted(cid for cid, count in counts.items() if count > 1)
     if duplicates:
         raise ValueError(f"Duplicate ablation condition identifiers: {duplicates}.")
-    labels = Counter(c.policy_label for c in conditions if c.is_controlled)
-    if any(count > 1 for count in labels.values()):
-        raise ValueError(f"Duplicate controlled policy labels: {sorted(labels)}.")
+    labels = Counter(
+        (c.policy_label, dataset, c.token_budget)
+        for c in conditions if c.is_controlled for dataset in c.datasets
+    )
+    duplicated = sorted(key for key, count in labels.items() if count > 1)
+    if duplicated:
+        raise ValueError(f"Duplicate controlled policy labels per (dataset, budget): {duplicated}.")
     if len({c.model_key for c in conditions}) != 1:
         raise ValueError("Every ablation condition must share one embedding model.")
     for condition in conditions:

@@ -17,7 +17,7 @@ Phase 2 datasets: D1 (SNOMED-FMA Body), D2 (Anatomy MA-NCI), D3 (Conference,
 21 pairs), D4 (memoryalpha-stexpanded, schema and instance), D5
 (DBpedia-Wikidata 15K EN, OpenEA). Five datasets total.
 
-**Current focus**: Issue #128 — controlled PPAS policies P1–P7 (filtering vs ordering vs vocabulary) on D1 at 48 tokens (Phase 2)
+**Current focus**: Issue #128 — controlled PPAS policies P1–P7 (filtering vs ordering vs vocabulary) on D1 at 48 tokens, plus their validation across D1 budgets (32/64) and on D2 at 48 (Phase 2)
 
 ## Git Workflow
 
@@ -170,6 +170,25 @@ python scripts/ppas_ablation_inventory.py --datasets D1 \
 python scripts/generate_ppas_ablation_report.py \
     --results_dir data/results_ppas_controlled/ \
     --output data/results_ppas_controlled/report.md
+
+# Validation of the eligibility effect (#128 follow-up): P1-P4 on D1 at 32/64
+# and P1-P7 on D2 at 48, into their own directory (which refuses D1 at 48: the
+# #128 runs stay the reference). Two invocations, because P1-P4 at 48 are also
+# registered on D1. The report reads the reference read-only and writes
+# report.md plus figures/ into the validation directory.
+python -m kgsemembed.pipeline.ppas_ablation --datasets D1 \
+    --conditions PA-all-base-det-32 PA-all-base-ppas-32 PA-cov-base-det-32 \
+    PA-cov-base-ppas-32 PA-all-base-det-64 PA-all-base-ppas-64 PA-cov-base-det-64 \
+    PA-cov-base-ppas-64 --data_dir data/ --results_dir data/results_ppas_validation/
+python -m kgsemembed.pipeline.ppas_ablation --datasets D2 \
+    --conditions PA-all-base-det-48 PA-all-base-ppas-48 PA-cov-base-det-48 \
+    PA-cov-base-ppas-48 PA-all-obox-ppas-48 PA-cov-obox-det-48 PA-cov-obox-ppas-48 \
+    --data_dir data/ --results_dir data/results_ppas_validation/
+python scripts/ppas_ablation_inventory.py --datasets D1 D2 \
+    --results_dir data/results_ppas_validation/
+python scripts/generate_ppas_validation_report.py \
+    --reference_dir data/results_ppas_controlled/ \
+    --results_dir data/results_ppas_validation/
 ```
 
 Omitting `--conditions` runs every registered condition; omitting `--datasets`
@@ -346,7 +365,7 @@ V8+V6.
 
 ## Controlled PPAS ablation (#122)
 
-A separate registry (`pipeline/ablation_conditions.py`, 29 `PA-*` conditions: 22 from #122 plus P1–P7 from #128)
+A separate registry (`pipeline/ablation_conditions.py`, 40 `PA-*` conditions: 22 from #122, P1–P7 on D1 at 48 from #128, and 11 validation conditions)
 and runner (`pipeline/ppas_ablation.py`) keep the ablation out of C1–C20, so
 `_EXPECTED_CONDITION_COUNT`, the main tables and the group statistics are
 unchanged. All conditions use M2 and one representation; within a budget the
@@ -442,6 +461,31 @@ Seven conditions vary one dimension at a time on D1 at 48 tokens
   help: P5−P2 +0.004 [−0.007, 0.015]; P6−P3 −0.147. Lexical items help gold
   targets but help distractors more (P7−P6: changed +0.061, complement −0.193).
   P1/P2 reproduce #122's det/PPAS MRR exactly.
+
+### Validation of the eligibility effect (#128 follow-up)
+
+- **Matrix**: P1–P4 (base) on D1 at `VALIDATION_BUDGETS` (32, 64) beside the
+  #128 reference at 48, and P1–P7 on D2 at 48, P5–P7 with `obo_extended`
+  (`EXTENDED_VOCABULARIES`). A policy label is unique per (dataset, budget),
+  not globally. Results: `data/results_ppas_validation/`; the runner refuses
+  D1 at 48 there and anything but D1 at 48 in `data/results_ppas_controlled/`.
+- **What "covered" means under `base`**: exactly the PPAS tier predicates.
+  Its synonym entries (`obo:hasExactSynonym`, `obo:hasSynonym`) use
+  `http://purl.obolibrary.org/obo/`, which no dataset uses (oboInOwl is
+  `http://www.geneontology.org/formats/oboInOwl#`). So covered keeps SNOMED's
+  SKOS synonyms (D1 sources) but drops FMA synonyms (D1 candidates) and NCI/MA
+  `hasRelatedSynonym`/`hasDefinition` (D2). `base` is deliberately unchanged
+  so P1–P4 keep their #128 definitions.
+- **`obo_extended`** (D2 only): base plus the oboInOwl synonym family and
+  `hasDefinition` in class tier 0 (lexical), `hasAlternativeId`/`hasDbXref`
+  covered but untiered (identifier) — the D2 analogue of `fma_extended`.
+- **D2 at 48 barely binds** under covered eligibility (0.9% of candidates
+  sampled), so on D2 P4 ≡ P3: that contrast is not identifiable, which the
+  validation report states instead of printing a zero effect. D2's own
+  outcome-blind stress rule would give 24.
+- Results now record `dataset_files_sha256` (source/target/reference digests);
+  the #128 reference predates it, so the report compares current digests and
+  file mtimes instead.
 
 ## Datasets
 
