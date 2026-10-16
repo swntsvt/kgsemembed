@@ -202,6 +202,15 @@ python scripts/predicate_role_inventory.py --datasets D1 D2 \
     --results_dir data/results_predicate_roles/
 python scripts/generate_predicate_role_report.py \
     --results_dir data/results_predicate_roles/
+
+# Diagnostics behind the #131 write-up and the #128 review: label loss and
+# fingerprint reproduction per P1-P7 policy (tokenizer only); entity-level
+# re-ranking of sampled test sources, checked against the sidecars; and
+# rendering-position probes on validation sources only (both load M2).
+python scripts/predicate_role_diagnostics.py label-loss --datasets D1 D2
+python scripts/predicate_role_diagnostics.py examples --n_sample 300 \
+    --pair PR-core-full PR-all-full PR-no-syn-full PR-core-plus-syn-full
+python scripts/predicate_role_diagnostics.py probe --n_sample 400
 ```
 
 Omitting `--conditions` runs every registered condition; omitting `--datasets`
@@ -525,6 +534,42 @@ Seven conditions vary one dimension at a time on D1 at 48 tokens
   A0 core-first − P1 lexicographic D1 +0.129, D2 +0.028. On D2, A-core@48 =
   #128 P3 (0.8705): `base` covers only core there. On D1, A-core@48 0.723 >
   P3 0.697. One pair per dataset; not a generalisation claim.
+- **Rendering position (investigation, `scripts/predicate_role_diagnostics.py`)**:
+  selected items are *rendered* in canonical predicate-URI order whatever the
+  selection order, so FMA annotations (`purl.org/sig/ont/fma/…`) precede
+  `type: Class | label: …` in every candidate text, while SNOMED's SKOS
+  annotations follow the label. The two odd D1 effects are mostly this:
+  - **C+syn −0.249**: the loss is confined to sources whose gold target has
+    synonyms (−0.39/−0.35 per source vs +0.03/+0.02 without). Probe on 400 D1
+    *validation* sources (never test): C+syn − A-core −0.240 [−0.279, −0.204];
+    the same items with synonyms rendered after core −0.045 [−0.074, −0.017].
+    R-syn is small from A0 because A0's candidates already lead with FMAID,
+    non-English and preferred-name items.
+  - **C+id −0.056 vs R-id −0.052**: C+id is position only (FMAID last:
+    −0.002 [−0.023, +0.017]; masking the digits to `FMAID: 0` is worse,
+    −0.093). R-id is *not* position (with every annotation rendered last it is
+    still −0.063 [−0.082, −0.043]) and not the digits (masked A0 +0.002);
+    why the segment helps a full text is unexplained.
+  - **Full text**: rendering all annotations after core lifts A0 by +0.165
+    [0.136, 0.195] (0.478 → 0.642), leaving A-core +0.069 [0.038, 0.103]
+    ahead instead of +0.234. Hypothesis for D1 only; D2 not probed; probes are
+    exploratory renderings, not registered arms.
+  - **Checks**: 3,600 recomputed test-source ranks (300 sources × 4 arms × 3
+    runs) equal the stored sidecar ranks; all four contrasts share population,
+    commit, candidates, data digests, model/tokenizer revision and role map.
+- **Reproduce / access**: results (JSON + `_entities.json` sidecars) are in
+  `data/results_predicate_roles/{condition}/{D1,D2}/`; `report.md`,
+  `figures/` and `diagnostics/` sit beside them. All of `data/` is gitignored
+  (local only); every artefact is regenerated from code at a pinned commit:
+  - configurations: `ROLE_ARMS`/`ROLE_MATRIX` (`ablation_conditions.py`),
+    `roles_v1` (`predicate_roles.py`, hash `d4c5bd86becb…`, recorded in every
+    result); budgets and order in each result's `ablation` block;
+  - runs: the run command above at commit `3d5c487` (~2–3 h; existing results
+    are skipped unless `--force_recompute`);
+  - report and figures: `generate_predicate_role_report.py` (reads results
+    only; regenerates byte-identically apart from file timestamps);
+  - diagnostics: `predicate_role_diagnostics.py label-loss | examples | probe`
+    (label-loss is tokenizer only; examples and probe load M2, ~10–40 min).
 
 ### Validation of the eligibility effect (#128 follow-up)
 

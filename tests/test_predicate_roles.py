@@ -134,6 +134,14 @@ def test_core_first_keeps_the_label_that_lexicographic_order_drops():
     assert "label" in first.text and "label" not in lexical.text
 
 
+def test_canonical_rendering_puts_fma_annotations_before_the_label_whatever_the_order():
+    items = sorted(_items(SYN, LABEL, TYPE), key=lambda i: (i.predicate, i.text))
+    for order in (FULL, CORE_FIRST):
+        selection = PolicySelector(order_mode=order, count_tokens=_words, budget=None if order == FULL else 99,
+                                   role_filter=RoleFilter(ROLES_V1)).select(items, "e", "class")
+        assert selection.text.index("synonym") < selection.text.index("label")
+
+
 def test_core_first_requires_a_role_map():
     with pytest.raises(ValueError):
         PolicySelector(order_mode=CORE_FIRST, count_tokens=_words, budget=48)
