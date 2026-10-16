@@ -17,7 +17,7 @@ Phase 2 datasets: D1 (SNOMED-FMA Body), D2 (Anatomy MA-NCI), D3 (Conference,
 21 pairs), D4 (memoryalpha-stexpanded, schema and instance), D5
 (DBpedia-Wikidata 15K EN, OpenEA). Five datasets total.
 
-**Current focus**: Issue #122 — controlled PPAS ablation with fixed token budgets (Phase 2)
+**Current focus**: Issue #128 — controlled PPAS policies P1–P7 (filtering vs ordering vs vocabulary) on D1 at 48 tokens (Phase 2)
 
 ## Git Workflow
 
@@ -157,6 +157,19 @@ python -m kgsemembed.pipeline.ppas_ablation --datasets D5 D1 \
 python scripts/generate_ppas_ablation_report.py \
     --results_dir data/results_ppas_ablation/ \
     --output data/results_ppas_ablation/report.md
+
+# Controlled policies P1-P7 (#128): D1 only, own results directory (the runner
+# refuses to write them beside the #122 results). The inventory now also
+# covers P1-P7; --results_dir switches it to a run-status table.
+python -m kgsemembed.pipeline.ppas_ablation --datasets D1 \
+    --conditions PA-all-base-det-48 PA-all-base-ppas-48 PA-cov-base-det-48 \
+    PA-cov-base-ppas-48 PA-all-fmax-ppas-48 PA-cov-fmax-det-48 PA-cov-fmax-ppas-48 \
+    --data_dir data/ --results_dir data/results_ppas_controlled/
+python scripts/ppas_ablation_inventory.py --datasets D1 \
+    --results_dir data/results_ppas_controlled/
+python scripts/generate_ppas_ablation_report.py \
+    --results_dir data/results_ppas_controlled/ \
+    --output data/results_ppas_controlled/report.md
 ```
 
 Omitting `--conditions` runs every registered condition; omitting `--datasets`
@@ -333,7 +346,7 @@ V8+V6.
 
 ## Controlled PPAS ablation (#122)
 
-A separate registry (`pipeline/ablation_conditions.py`, 22 `PA-*` conditions)
+A separate registry (`pipeline/ablation_conditions.py`, 29 `PA-*` conditions: 22 from #122 plus P1–P7 from #128)
 and runner (`pipeline/ppas_ablation.py`) keep the ablation out of C1–C20, so
 `_EXPECTED_CONDITION_COUNT`, the main tables and the group statistics are
 unchanged. All conditions use M2 and one representation; within a budget the
@@ -370,6 +383,50 @@ selection policy (and random seed) is the only difference.
   order keeps. PPAS beating full text says the full V6 key-value text is
   noisy, not that less text is better in general: this representation's full
   MRR (0.4525) is far below C3 V2+V6/M2 (0.8036) on D1.
+
+### Controlled policies P1–P7 (#128)
+
+Seven conditions vary one dimension at a time on D1 at 48 tokens
+(`CONTROLLED_POLICIES` in `ablation_conditions.py`), identified by
+`policy_label` and IDs `PA-{all|cov}-{base|fmax}-{det|ppas}-48`:
+
+| Label | Filter | Vocabulary | Order |
+|---|---|---|---|
+| P1 | all | base | deterministic |
+| P2 | all | base | ppas |
+| P3 | covered | base | deterministic |
+| P4 | covered | base | ppas |
+| P5 | all | fma_extended | ppas |
+| P6 | covered | fma_extended | deterministic |
+| P7 | covered | fma_extended | ppas |
+
+- **Vocabularies** (`verbalisation/predicate_config.py`): `base` is a deep
+  copy of the `ppas.py` tier lists (its `tiers_hash()` equals
+  `tier_config_digest()`); its covered set is exactly the tiered predicates.
+  `fma_extended` adds `fma:preferred_name` and `fma:synonym` to class tier 0
+  (lexical) and covers `fma:FMAID` without tiering it (identifier: no SNOMED
+  counterpart). Roles come from predicate semantics, never from alignments.
+- **FMA namespace**: annotation predicates are `http://purl.org/sig/ont/fma/`;
+  FMA *class* URIs use `http://purl.org/sig/ont/fma.owl#`. Match predicates by
+  full URI (`expand_predicate()`), never by prefix name. #126 used a wrong
+  namespace, so its extension matched nothing.
+- **Ordering uses the active vocabulary**: `PolicySelector._order()` reads
+  `predicate_config.tier_list_for()`. Under #126 it read the global lists,
+  so P5 selected exactly what P2 selected. Untiered predicates (unknown or
+  covered-but-untiered) fall back after every tier in canonical order.
+- **Filter "all" + deterministic order never consults a vocabulary**, so an
+  extended deterministic control under "all" would equal P1; P6/P7 are the
+  extended controls instead.
+- Every ablation result now records `policy_label`, `filter_mode`,
+  `order_mode`, the vocabulary (`config_hash`, `tiers_sha256`, covered
+  predicates, roles) and per-side item accounting and budget utilisation;
+  sidecars fingerprint every entity's selection (`selection_fingerprints`)
+  and list each test source's `gold_targets`.
+- The report groups controlled runs by run signature (model/tokenizer
+  revision, candidate hash, protocol, budget, smoke restriction, test-source
+  set) and never combines groups; missing labels are listed.
+- Selected items are rendered canonically, so a policy changes which items
+  are kept, never their order: "same set, different order" is 0 by design.
 
 ## Datasets
 

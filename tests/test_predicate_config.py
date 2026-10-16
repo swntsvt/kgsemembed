@@ -1,149 +1,160 @@
-"""Tests for predicate vocabulary and eligibility configurations (#126)."""
+"""Tests for the predicate vocabularies of the controlled PPAS ablation (#126, #128)."""
 
 import pytest
-from rdflib import URIRef
 
+from kgsemembed.verbalisation.ppas import (
+    CLASS_TIER_LIST,
+    INSTANCE_TIER_LIST,
+    PREDICATE_TIER_LIST,
+)
 from kgsemembed.verbalisation.predicate_config import (
+    IDENTIFIER,
+    LEXICAL,
     PER_PREDICATE_CONFIGS,
     PredicateVocabulary,
+    expand_predicate,
     get_predicate_config,
 )
+from kgsemembed.verbalisation.selection import tier_config_digest
+
+FMA = "http://purl.org/sig/ont/fma/"
+FMA_PREFERRED_NAME = f"{FMA}preferred_name"
+FMA_SYNONYM = f"{FMA}synonym"
+FMA_FMAID = f"{FMA}FMAID"
+RDFS_LABEL = "http://www.w3.org/2000/01/rdf-schema#label"
 
 
-class TestPredicateConfigRegistry:
-    """Test the predicate configuration registry."""
-
-    def test_base_config_exists(self):
-        """Base configuration must be registered."""
-        config = get_predicate_config("base")
-        assert config.name == "base"
-        assert len(config.covered_predicates) > 0
-        assert len(config.tier_lists) == 3
-
-    def test_covered_only_config_exists(self):
-        """Covered-only configuration must be registered."""
-        config = get_predicate_config("covered_only")
-        assert config.name == "covered_only"
-        assert len(config.covered_predicates) > 0
-
-    def test_fma_extended_config_exists(self):
-        """FMA-extended configuration must be registered."""
-        config = get_predicate_config("fma_extended")
-        assert config.name == "fma_extended"
-        assert len(config.covered_predicates) > 0
-        assert len(config.fma_special_predicates) == 3
-
-    def test_get_unknown_config_raises(self):
-        """Requesting a non-existent configuration raises KeyError."""
-        with pytest.raises(KeyError):
-            get_predicate_config("nonexistent")
-
-    def test_all_configs_have_unique_names(self):
-        """All registered configurations have distinct names."""
-        names = [c.name for c in PER_PREDICATE_CONFIGS.values()]
-        assert len(names) == len(set(names))
-
-    def test_all_configs_have_unique_hashes(self):
-        """All registered configurations have distinct config hashes."""
-        hashes = [c.config_hash for c in PER_PREDICATE_CONFIGS.values()]
-        assert len(hashes) == len(set(hashes))
+def _tiered(vocabulary: PredicateVocabulary, entity_type: str) -> set[str]:
+    return {p for tier in vocabulary.tier_list_for(entity_type) for p in tier}
 
 
-class TestPredicateURINormalisation:
-    """Test URI normalisation for predicate comparison."""
-
-    def test_uri_refs_are_normalised(self):
-        """URIRef objects are normalised to strings."""
-        config = get_predicate_config("base")
-        uris = list(config.covered_predicates)
-        assert all(isinstance(uri, str) for uri in uris)
-        assert all(uri.startswith("http://") for uri in uris)
-
-    def test_full_uris_match_predicates(self):
-        """Predicates in tier lists use full URIs."""
-        config = get_predicate_config("base")
-        for entity_type, tiers in config.tier_lists.items():
-            for tier in tiers:
-                for predicate in tier:
-                    assert isinstance(predicate, str)
-                    assert predicate.startswith("http://")
-                    assert predicate in config.covered_predicates
+# ---------------------------------------------------------------------------
+# Registry and provenance
+# ---------------------------------------------------------------------------
 
 
-class TestFMASpecialPredicates:
-    """Test FMA-specific predicate handling."""
-
-    def test_fma_predicates_not_in_base(self):
-        """FMA predicates are absent from base config."""
-        base = get_predicate_config("base")
-        fma_extended = get_predicate_config("fma_extended")
-        # Base should not have FMA special predicates
-        for fma_pred in fma_extended.fma_special_predicates.keys():
-            # Extract full URI from key
-            if fma_pred.startswith("fma:"):
-                fma_uri = f"http://purl.org/oasis/names/tc/ciq/xal/3.0#{fma_pred.split(':')[1]}"
-                assert fma_uri not in base.covered_predicates
-
-    def test_fma_extended_contains_special_predicates(self):
-        """FMA-extended config documents its special predicates."""
-        config = get_predicate_config("fma_extended")
-        assert "fma:preferred_name" in config.fma_special_predicates
-        assert "fma:synonym" in config.fma_special_predicates
-        assert "fma:FMAID" in config.fma_special_predicates
-
-    def test_fma_predicates_have_documented_roles(self):
-        """FMA special predicates have role descriptions."""
-        config = get_predicate_config("fma_extended")
-        for pred, role in config.fma_special_predicates.items():
-            assert isinstance(role, str)
-            assert len(role) > 0
+def test_registry_holds_base_and_fma_extended_only():
+    assert sorted(PER_PREDICATE_CONFIGS) == ["base", "fma_extended"]
 
 
-class TestConfigConsistency:
-    """Test that configurations are internally consistent."""
-
-    def test_all_tiered_predicates_are_covered(self):
-        """Every predicate in tier lists must be in covered_predicates."""
-        for config in PER_PREDICATE_CONFIGS.values():
-            for entity_type, tiers in config.tier_lists.items():
-                for tier in tiers:
-                    for predicate in tier:
-                        assert (
-                            predicate in config.covered_predicates
-                        ), f"{config.name}/{entity_type}: {predicate} not in covered_predicates"
-
-    def test_each_entity_type_has_tier_list(self):
-        """Each config must have tiers for class, instance, predicate."""
-        expected_types = {"class", "instance", "predicate"}
-        for config in PER_PREDICATE_CONFIGS.values():
-            assert set(config.tier_lists.keys()) == expected_types
-
-    def test_base_config_is_complete(self):
-        """Base config must have all three entity types configured."""
-        config = get_predicate_config("base")
-        for entity_type in ("class", "instance", "predicate"):
-            assert entity_type in config.tier_lists
-            assert len(config.tier_lists[entity_type]) > 0
+def test_unknown_vocabulary_raises():
+    with pytest.raises(KeyError):
+        get_predicate_config("covered_only")
 
 
-class TestConfigDifferences:
-    """Test intentional differences between configurations."""
+def test_vocabularies_have_distinct_config_and_tier_hashes():
+    base, extended = get_predicate_config("base"), get_predicate_config("fma_extended")
+    assert base.config_hash != extended.config_hash
+    assert base.tiers_hash() != extended.tiers_hash()
 
-    def test_covered_only_has_same_or_fewer_predicates(self):
-        """Covered-only should have the same or fewer than base."""
-        base = get_predicate_config("base")
-        covered_only = get_predicate_config("covered_only")
-        assert len(covered_only.covered_predicates) <= len(base.covered_predicates)
 
-    def test_fma_extended_has_more_than_base(self):
-        """FMA-extended should have more predicates than base."""
-        base = get_predicate_config("base")
-        fma_extended = get_predicate_config("fma_extended")
-        assert len(fma_extended.covered_predicates) > len(base.covered_predicates)
+def test_base_tiers_hash_equals_the_legacy_tier_digest():
+    assert get_predicate_config("base").tiers_hash() == tier_config_digest()
 
-    def test_fma_extended_has_fma_tier_entries(self):
-        """FMA-extended should add FMA predicates to class tier 0."""
-        fma_extended = get_predicate_config("fma_extended")
-        class_tier_0 = fma_extended.tier_lists["class"][0]
-        fma_preds = {p for p in class_tier_0 if "xal" in p or "preferred_name" in p or "synonym" in p}
-        assert len(fma_preds) > 0
+
+def test_config_hash_tracks_the_tiers_and_cannot_be_passed_in():
+    base = get_predicate_config("base")
+    changed = {**base.tier_lists, "class": [[RDFS_LABEL]]}
+    other = PredicateVocabulary("base", "", base.covered_predicates, changed)
+    assert other.config_hash != base.config_hash
+    with pytest.raises(TypeError):
+        PredicateVocabulary("x", "", base.covered_predicates, base.tier_lists, {}, "forged")
+
+
+# ---------------------------------------------------------------------------
+# Base preserves the legacy PPAS tiers
+# ---------------------------------------------------------------------------
+
+
+def test_base_tiers_equal_the_legacy_ppas_tier_lists():
+    base = get_predicate_config("base")
+    assert base.tier_list_for("class") == CLASS_TIER_LIST
+    assert base.tier_list_for("instance") == INSTANCE_TIER_LIST
+    assert base.tier_list_for("predicate") == PREDICATE_TIER_LIST
+
+
+def test_base_tiers_are_copies_of_the_module_constants():
+    base = get_predicate_config("base")
+    assert base.tier_list_for("class") is not CLASS_TIER_LIST
+    assert base.tier_list_for("class")[0] is not CLASS_TIER_LIST[0]
+
+
+def test_base_covers_exactly_its_tiered_predicates():
+    base = get_predicate_config("base")
+    tiered = set().union(*(_tiered(base, t) for t in ("class", "instance", "predicate")))
+    assert base.covered_predicates == tiered
+
+
+def test_unsupported_entity_type_raises():
+    with pytest.raises(ValueError):
+        get_predicate_config("base").tier_list_for("individual")
+
+
+# ---------------------------------------------------------------------------
+# FMA extension (#128: namespace and roles)
+# ---------------------------------------------------------------------------
+
+
+def test_fma_predicates_use_the_namespace_declared_by_d1():
+    extended = get_predicate_config("fma_extended")
+    assert set(extended.predicate_roles) == {FMA_PREFERRED_NAME, FMA_SYNONYM, FMA_FMAID}
+    assert not any("oasis" in uri for uri in extended.covered_predicates)
+
+
+def test_fma_lexical_predicates_join_class_tier_zero():
+    extended = get_predicate_config("fma_extended")
+    assert {FMA_PREFERRED_NAME, FMA_SYNONYM} <= set(extended.tier_list_for("class")[0])
+    assert extended.predicate_roles[FMA_PREFERRED_NAME] == LEXICAL
+    assert extended.predicate_roles[FMA_SYNONYM] == LEXICAL
+
+
+def test_fmaid_is_covered_but_never_tiered():
+    extended = get_predicate_config("fma_extended")
+    assert extended.predicate_roles[FMA_FMAID] == IDENTIFIER
+    assert FMA_FMAID in extended.covered_predicates
+    for entity_type in ("class", "instance", "predicate"):
+        assert FMA_FMAID not in _tiered(extended, entity_type)
+
+
+def test_fma_extension_leaves_other_tiers_equal_to_base():
+    base, extended = get_predicate_config("base"), get_predicate_config("fma_extended")
+    assert extended.tier_list_for("class")[1:] == base.tier_list_for("class")[1:]
+    assert extended.tier_list_for("instance") == base.tier_list_for("instance")
+    assert extended.covered_predicates - base.covered_predicates == set(extended.predicate_roles)
+
+
+def test_base_covers_no_fma_predicate():
+    base = get_predicate_config("base")
+    assert not any(uri.startswith(FMA) for uri in base.covered_predicates)
+
+
+# ---------------------------------------------------------------------------
+# Prefix expansion and validation
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("name,expected", [
+    ("fma:synonym", FMA_SYNONYM),
+    ("rdfs:label", RDFS_LABEL),
+    (FMA_FMAID, FMA_FMAID),
+])
+def test_expand_predicate_resolves_prefixes_and_keeps_full_uris(name, expected):
+    assert expand_predicate(name) == expected
+
+
+@pytest.mark.parametrize("name", ["xal:synonym", "fma:", "synonym"])
+def test_expand_predicate_rejects_unknown_or_empty_names(name):
+    with pytest.raises(ValueError):
+        expand_predicate(name)
+
+
+def test_vocabulary_rejects_prefixed_names():
+    base = get_predicate_config("base")
+    with pytest.raises(ValueError):
+        PredicateVocabulary("x", "", base.covered_predicates | {"fma:synonym"}, base.tier_lists)
+
+
+def test_vocabulary_rejects_tiered_predicates_outside_the_covered_set():
+    base = get_predicate_config("base")
+    with pytest.raises(ValueError):
+        PredicateVocabulary("x", "", frozenset(), base.tier_lists)
