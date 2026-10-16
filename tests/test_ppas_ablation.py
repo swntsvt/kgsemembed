@@ -46,12 +46,12 @@ _CONDITIONS = ["PA-full", "PA-ppas-80", "PA-det-80", "PA-rand-80-s0", "PA-rand-8
 
 def test_registry_ids_are_unique_and_share_one_model():
     ids = [c.condition_id for c in ABLATION_CONDITIONS]
-    assert len(ids) == len(set(ids)) == 22 + len(CONTROLLED_POLICIES) + 3 + 2 * len(BASE_POLICIES) == 40
+    assert len(ids) == len(set(ids)) == 22 + len(CONTROLLED_POLICIES) + 3 + 2 * len(BASE_POLICIES) + 24 == 64
     assert {c.model_key for c in ABLATION_CONDITIONS} == {ABLATION_MODEL_KEY} == {"M2"}
 
 
 def test_each_budget_has_ppas_deterministic_and_every_random_seed():
-    historical = [c for c in ABLATION_CONDITIONS if not c.is_controlled]
+    historical = [c for c in ABLATION_CONDITIONS if not c.is_controlled and not c.is_role_ablation]
     budgets = {c.token_budget for c in historical} - {None}
     assert budgets == {PRIMARY_BUDGET, *STRESS_BUDGETS.values()}
     for budget in budgets:
@@ -778,3 +778,138 @@ def test_identical_selections_are_reported_as_not_identifiable(validation_dirs):
     assert not validation.identifiable(group["P5"], group["P2"])
     table = validation.contrast_table({48: group}, (("P5", "P2", "vocabulary"),))
     assert validation._NOT_IDENTIFIABLE in table
+
+
+# ---------------------------------------------------------------------------
+# Predicate-role ablation (#131)
+# ---------------------------------------------------------------------------
+
+import scripts.generate_predicate_role_report as role_report  # noqa: E402
+from kgsemembed.pipeline.ablation_conditions import ROLE_MATRIX  # noqa: E402
+from kgsemembed.verbalisation.predicate_roles import UnmappedPredicateError  # noqa: E402
+
+_ROLE_IDS = {d: [c.condition_id for c in ABLATION_CONDITIONS if c.is_role_ablation and d in c.datasets]
+             for d in ("D1", "D2")}
+
+
+def _role_graph(prefix: str, n: int) -> Graph:
+    """Classes with only roles_v1-mapped predicates; definitions on even entities only."""
+    graph = Graph()
+    for i in range(n):
+        entity = URIRef(f"{EX}{prefix}{i}")
+        graph.add((entity, RDF.type, OWL.Class))
+        graph.add((entity, RDFS.label, Literal(f"organ {i}")))
+        graph.add((entity, URIRef(f"{FMA}preferred_name"), Literal(f"organ {i}")))
+        graph.add((entity, URIRef(f"{FMA}FMAID"), Literal(str(7000 + i))))
+        for j in range(6):
+            graph.add((entity, URIRef(f"{FMA}synonym"), Literal(f"organ {i} alias {j} term")))
+        if i % 2 == 0:
+            graph.add((entity, URIRef(f"{FMA}definition"), Literal(f"organ {i} is a structure of the body")))
+    return graph
+
+
+def _role_pair(dataset_id: str) -> AlignmentPair:
+    return replace(_class_pair(), dataset_id=dataset_id, source_graph=_role_graph("s", 8),
+                   target_graph=_role_graph("t", 8))
+
+
+def _run_pair_into(monkeypatch, tmp_path, pair, condition_ids, results_dir):
+    model = _FakeModel()
+    info = {"model_key": "M2", "model_id": "fake/M2", "device": "cpu", "hf_revision": "rev-1"}
+    candidates = {f"{EX}s{i}": [f"{EX}t{j}" for j in range(8)] for i in range(8)}
+    monkeypatch.setattr(ablation, "load_sentence_transformer", lambda _key: (model, info))
+    monkeypatch.setattr(ablation, "load_dataset", lambda _d, _dir: [pair])
+    monkeypatch.setattr(ablation, "load_candidates", lambda _d, _p, _dir: dict(candidates))
+    kwargs = {"data_dir": tmp_path, "results_dir": results_dir, "force_recompute": False, "max_sources": None}
+    return ablation.run_ablation([pair.dataset_id], condition_ids, kwargs)
+
+
+@pytest.fixture
+def role_dirs(monkeypatch, tmp_path):
+    """Run every role condition on toy D1 and D2 pairs, plus a toy lexicographic P1 link at 48."""
+    roles, links = tmp_path / "roles", tmp_path / "links"
+    payloads = []
+    for dataset_id in ("D1", "D2"):
+        payloads += _run_pair_into(monkeypatch, tmp_path, _role_pair(dataset_id), _ROLE_IDS[dataset_id], roles)
+    _run_pair_into(monkeypatch, tmp_path, _role_pair("D1"), ["PA-all-base-det-48"], links)
+    monkeypatch.setattr(role_report, "_LINK_DIRS", {"D1": str(links), "D2": str(tmp_path / "absent")})
+    return payloads, roles
+
+
+def test_role_runs_refuse_unmapped_predicates_before_writing(monkeypatch, tmp_path):
+    with pytest.raises(UnmappedPredicateError):
+        _run_pair_into(monkeypatch, tmp_path, _class_pair(), ["PR-all-full"], tmp_path / "roles")
+    assert not (tmp_path / "roles").exists()
+
+
+@pytest.mark.parametrize("results_dir", [
+    "data/results/", ablation.DEFAULT_RESULTS_DIR, ablation.CONTROLLED_RESULTS_DIR, ablation.VALIDATION_RESULTS_DIR,
+])
+def test_role_conditions_refuse_the_historical_directories(results_dir):
+    with pytest.raises(ValueError):
+        ablation._guard_results_dir(Path(results_dir), [get_ablation_condition("PR-no-syn-full")], ["D1"])
+
+
+def test_the_role_directory_refuses_other_conditions():
+    with pytest.raises(ValueError):
+        ablation._guard_results_dir(Path(ablation.ROLE_RESULTS_DIR), [get_ablation_condition("PA-all-base-det-32")], ["D1"])
+    ablation._guard_results_dir(Path(ablation.ROLE_RESULTS_DIR), [get_ablation_condition("PR-core-48")], ["D1"])
+
+
+def test_role_results_record_arm_roles_removal_and_truncation(role_dirs):
+    payloads, _ = role_dirs
+    assert len(payloads) == 38
+    by_id = {(p["dataset_id"], p["condition_id"]): p for p in payloads}
+    block = by_id[("D1", "PR-no-syn-full")]["ablation"]
+    assert block["role_arm"] == "R-syn" and block["excluded_roles"] == ["synonym"]
+    assert block["role_map"]["name"] == "roles_v1" and len(block["role_map"]["config_hash"]) == 64
+    assert block["candidate"]["role_removal"]["synonym"] == {"n_items": 48, "n_entities": 8, "item_tokens": 288}
+    assert block["candidate"]["n_truncated_tokens"] == 0 and block["candidate"]["n_sampling_invoked"] == 0
+    assert by_id[("D1", "PR-all-full")]["ablation"]["candidate"]["role_removal"] == {}
+
+
+def test_budgeted_role_arms_never_exceed_the_budget(role_dirs):
+    payloads, _ = role_dirs
+    for payload in (p for p in payloads if p["token_budget"] is not None):
+        for side in ("source", "candidate"):
+            assert payload["ablation"][side]["tokens"]["max"] <= payload["token_budget"]
+            assert payload["ablation"][side]["budget"]["n_over_budget"] == 0
+
+
+def test_role_report_covers_the_matrix_and_every_section(role_dirs, tmp_path):
+    _, roles = role_dirs
+    text = role_report.build_report(roles, roles / "figures", tmp_path)
+    assert "Expected full-population runs: 38; complete: 38." in text
+    for heading in ("## D1", "## D2", "difference-in-differences", "Budget cost", "C+x − A-core",
+                    "A0 core-first − P1 lexicographic"):
+        assert heading in text
+    assert (roles / "figures" / "d1_removal_effects.png").stat().st_size > 0
+
+
+def test_absent_roles_are_reported_as_not_identifiable(role_dirs):
+    _, roles = role_dirs
+    groups = role_report.full_groups(role_report.load_role_runs(roles), "D1")
+    assert not validation.identifiable(groups[None]["R-nonEn"], groups[None]["A0"])
+    assert validation.identifiable(groups[None]["R-syn"], groups[None]["A0"])
+
+
+def test_difference_in_differences_pairs_four_runs_per_source(role_dirs):
+    _, roles = role_dirs
+    groups = role_report.full_groups(role_report.load_role_runs(roles), "D1")
+    runs = (groups[48]["R-syn"], groups[48]["A0"], groups[None]["R-syn"], groups[None]["A0"])
+    per = [report._per_source(r) for r in runs]
+    expected = np.mean([(per[0][s][0] - per[1][s][0]) - (per[2][s][0] - per[3][s][0]) for s in per[0]])
+    n, mrr, _r1 = role_report.did_estimate(*runs)
+    assert n == len(per[0]) and mrr[0] == pytest.approx(expected)
+
+
+def test_role_groups_never_mix_budgets_or_smoke_runs(role_dirs):
+    _, roles = role_dirs
+    runs = role_report.load_role_runs(roles)
+    smoke = json.loads(json.dumps([r for r in runs if r["dataset_id"] == "D2"]))
+    for run in smoke:
+        run["ablation"]["smoke_max_sources"] = 3
+    groups = role_report.full_groups(runs + smoke, "D2")
+    assert sorted(groups, key=lambda b: b or 0) == [None, 24, 48]
+    assert all(r["ablation"]["smoke_max_sources"] is None for g in groups.values() for r in g.values())
+    assert set(groups[24]) == set(ROLE_MATRIX["D2"][24])

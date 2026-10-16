@@ -41,6 +41,7 @@ from kgsemembed.verbalisation.ppas import (
     INSTANCE_TIER_LIST,
     PREDICATE_TIER_LIST,
 )
+from kgsemembed.verbalisation.predicate_roles import CORE, PredicateRoleMap, RoleFilter
 
 FILTER_ALL = "all"
 FILTER_COVERED = "covered"
@@ -50,8 +51,9 @@ FULL = "full"
 PPAS = "ppas"
 DETERMINISTIC = "deterministic"
 RANDOM = "random"
-SELECTION_POLICIES = (FULL, PPAS, DETERMINISTIC, RANDOM)
-CAPPED_POLICIES = (PPAS, DETERMINISTIC, RANDOM)
+CORE_FIRST = "core_first"
+SELECTION_POLICIES = (FULL, PPAS, DETERMINISTIC, RANDOM, CORE_FIRST)
+CAPPED_POLICIES = (PPAS, DETERMINISTIC, RANDOM, CORE_FIRST)
 
 ITEM_SEPARATOR = " | "
 DETERMINISTIC_ORDER = "lexicographic (predicate URI, object term)"
@@ -117,6 +119,8 @@ class Selection:
     n_tiered_items : int
         Items, after filtering, whose predicate sits in one of the entity
         type's tiers: the items PPAS ordering can move ahead.
+    n_role_removed_items : int
+        Items removed by the role filter (#131), after vocabulary filtering.
     """
 
     text: str
@@ -132,6 +136,7 @@ class Selection:
     predicate_coverage: float = 1.0
     n_covered_items: int = 0
     n_tiered_items: int = 0
+    n_role_removed_items: int = 0
 
 
 def tier_config_digest() -> str:
@@ -219,6 +224,57 @@ def deterministic_order(items: list[EligibleItem]) -> list[int]:
         ``0 .. len(items) - 1``: lexicographic ``(predicate URI, object)``.
     """
     return list(range(len(items)))
+
+
+def core_first_order(items: list[EligibleItem], role_map: PredicateRoleMap) -> list[int]:
+    """
+    Order item indices with core-role items first, each group canonically.
+
+    No PPAS tier is consulted: the order only guarantees that ``rdfs:label``,
+    ``rdf:type`` and ``rdfs:subClassOf`` are visited before any annotation,
+    so a budget never drops the label in favour of an annotation that sorts
+    earlier by URI.
+
+    Parameters
+    ----------
+    items : list[EligibleItem]
+        Eligible items in canonical order.
+    role_map : PredicateRoleMap
+        Role of every item's predicate.
+
+    Returns
+    -------
+    list[int]
+        Item indices, core items first.
+    """
+    return sorted(range(len(items)), key=lambda i: (role_map.role_of(items[i].predicate) != CORE, i))
+
+
+def filter_by_roles(
+    items: list[EligibleItem], role_filter: Optional[RoleFilter]
+) -> tuple[list[EligibleItem], int]:
+    """
+    Remove items whose predicate's role the filter excludes.
+
+    Every predicate must be mapped, kept or not, so an unmapped predicate
+    fails here instead of silently passing through.
+
+    Parameters
+    ----------
+    items : list[EligibleItem]
+        Items in canonical order.
+    role_filter : Optional[RoleFilter]
+        Roles to remove; ``None`` keeps every item and checks nothing.
+
+    Returns
+    -------
+    tuple[list[EligibleItem], int]
+        Kept items in canonical order, and the number removed.
+    """
+    if role_filter is None:
+        return items, 0
+    kept = [item for item in items if role_filter.keeps(item.predicate)]
+    return kept, len(items) - len(kept)
 
 
 def random_order(n_items: int, seed: int, entity_uri: str) -> list[int]:
@@ -407,6 +463,9 @@ class PolicySelector(VerbaliserBase):
         "ppas", "deterministic", "random", or "full" for selection ordering.
     predicate_config : PredicateVocabulary, optional
         Predicate vocabulary and priority configuration. If None, uses base config.
+    role_filter : RoleFilter, optional
+        Roles removed after vocabulary filtering (#131); also the role map the
+        ``"core_first"`` order reads.  ``None`` removes nothing.
     """
 
     def __init__(
@@ -418,6 +477,7 @@ class PolicySelector(VerbaliserBase):
         filter_mode: str = "all",
         order_mode: Optional[str] = None,
         predicate_config: Optional[PredicateVocabulary] = None,
+        role_filter: Optional[RoleFilter] = None,
     ) -> None:
         # Support legacy interface: policy parameter instead of order_mode
         if policy is not None and order_mode is None:
@@ -443,6 +503,9 @@ class PolicySelector(VerbaliserBase):
         self.predicate_config = (
             predicate_config if predicate_config is not None else get_predicate_config("base")
         )
+        if order_mode == CORE_FIRST and role_filter is None:
+            raise ValueError("Order mode 'core_first' needs a role filter for its role map.")
+        self.role_filter = role_filter
 
     def eligible_items(self, graph: Graph, entity_uri: URIRef) -> list[EligibleItem]:
         """
@@ -501,8 +564,10 @@ class PolicySelector(VerbaliserBase):
         filtered, n_filtered, coverage = filter_by_predicate_config(
             items, self.predicate_config, self.filter_mode
         )
+        filtered, n_role_removed = filter_by_roles(filtered, self.role_filter)
         accounting = self._accounting(items, filtered, entity_type)
-        accounting.update(n_filtered_items=n_filtered, predicate_coverage=coverage)
+        accounting.update(n_filtered_items=n_filtered, predicate_coverage=coverage,
+                          n_role_removed_items=n_role_removed)
         texts = [item.text for item in filtered]
         everything = list(range(len(filtered)))
         full_text = join_items(texts, everything)
@@ -551,6 +616,8 @@ class PolicySelector(VerbaliserBase):
             return ppas_order(items, self.predicate_config.tier_list_for(entity_type))
         if self.order_mode == RANDOM:
             return random_order(len(items), self.seed, entity_uri)
+        if self.order_mode == CORE_FIRST:
+            return core_first_order(items, self.role_filter.role_map)
         return deterministic_order(items)
 
     def verbalise(self, graph: Graph, entity_uri: URIRef, entity_type: str) -> str:
@@ -591,7 +658,7 @@ def _validate_order_and_budget(
     order_mode: str, budget: Optional[int], seed: Optional[int]
 ) -> None:
     """Validate that order_mode, budget, and seed are compatible."""
-    valid_orders = ("ppas", "deterministic", "random", "full")
+    valid_orders = ("ppas", "deterministic", "random", "full", CORE_FIRST)
     if order_mode not in valid_orders:
         raise ValueError(f"Unknown order_mode {order_mode!r}; expected {valid_orders}.")
     if (order_mode == "full") != (budget is None):

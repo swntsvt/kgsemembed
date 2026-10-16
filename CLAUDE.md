@@ -17,7 +17,7 @@ Phase 2 datasets: D1 (SNOMED-FMA Body), D2 (Anatomy MA-NCI), D3 (Conference,
 21 pairs), D4 (memoryalpha-stexpanded, schema and instance), D5
 (DBpedia-Wikidata 15K EN, OpenEA). Five datasets total.
 
-**Current focus**: Issue #128 — controlled PPAS policies P1–P7 (filtering vs ordering vs vocabulary) on D1 at 48 tokens, plus their validation across D1 budgets (32/64) and on D2 at 48 (Phase 2)
+**Current focus**: Issue #131 — predicate-role ablation on D1 and D2 (which annotation roles drive the #128 covered-eligibility effect, with and without a token budget); #128 (PR #129) and #130 (PR #132) await review (Phase 2)
 
 ## Git Workflow
 
@@ -189,6 +189,19 @@ python scripts/ppas_ablation_inventory.py --datasets D1 D2 \
 python scripts/generate_ppas_validation_report.py \
     --reference_dir data/results_ppas_controlled/ \
     --results_dir data/results_ppas_validation/
+
+# Predicate-role ablation (#131): tokenizer-only inventory (checks every
+# predicate has a role), the run (PR-* conditions only, into their own
+# directory), status, and the report (reads the #128/validation P1 at 48
+# read-only for the ordering artefact).
+python scripts/predicate_role_inventory.py --datasets D1 D2 --data_dir data/
+python -m kgsemembed.pipeline.ppas_ablation --datasets D1 D2 \
+    --conditions $(python -c "from kgsemembed.pipeline.ablation_conditions import ABLATION_CONDITIONS as A; print(' '.join(c.condition_id for c in A if c.is_role_ablation))") \
+    --data_dir data/ --results_dir data/results_predicate_roles/
+python scripts/predicate_role_inventory.py --datasets D1 D2 \
+    --results_dir data/results_predicate_roles/
+python scripts/generate_predicate_role_report.py \
+    --results_dir data/results_predicate_roles/
 ```
 
 Omitting `--conditions` runs every registered condition; omitting `--datasets`
@@ -365,7 +378,7 @@ V8+V6.
 
 ## Controlled PPAS ablation (#122)
 
-A separate registry (`pipeline/ablation_conditions.py`, 40 `PA-*` conditions: 22 from #122, P1–P7 on D1 at 48 from #128, and 11 validation conditions)
+A separate registry (`pipeline/ablation_conditions.py`, 64 conditions: 22 `PA-*` from #122, P1–P7 on D1 at 48 from #128, 11 validation conditions, and 24 `PR-*` predicate-role conditions from #131)
 and runner (`pipeline/ppas_ablation.py`) keep the ablation out of C1–C20, so
 `_EXPECTED_CONDITION_COUNT`, the main tables and the group statistics are
 unchanged. All conditions use M2 and one representation; within a budget the
@@ -461,6 +474,38 @@ Seven conditions vary one dimension at a time on D1 at 48 tokens
   help: P5−P2 +0.004 [−0.007, 0.015]; P6−P3 −0.147. Lexical items help gold
   targets but help distractors more (P7−P6: changed +0.061, complement −0.193).
   P1/P2 reproduce #122's det/PPAS MRR exactly.
+
+### Predicate-role ablation (#131)
+
+- **Role map** `roles_v1` (`verbalisation/predicate_roles.py`): one role per
+  full predicate URI for every predicate in D1/D2 — core (`rdfs:label`,
+  `rdf:type`, `rdfs:subClassOf`), preferred_name, synonym, definition,
+  identifier, non_english, disjointness, other — fixed from property
+  declarations, labels and sample values before any run. An unmapped
+  predicate raises `UnmappedPredicateError`; the runner checks every pair
+  before encoding.
+- **Arms** (`ROLE_ARMS`, `ROLE_MATRIX`, 38 runs): A0 (nothing removed), R-x
+  (remove role x), A-core (core only), C+x (core plus x); removal applies to
+  both sides. D1: 8 arms at none and 48, 4 C+x at none. D2: 6 arms at none and
+  48, A0/R-syn/R-def/A-core at 24, C+syn/C+def at none.
+- **No budget** = `full` order: all remaining items, canonical order; only the
+  model's 512-token limit applies, and results record `n_model_truncated` and
+  `n_truncated_tokens` per side. **Budgeted** arms use `core_first` order
+  (core items, then the rest, each canonical; no PPAS tiers), because
+  lexicographic order drops `rdfs:label` for 43% (D1) / 48% (D2) of trimmed
+  candidates at 48 — the `purl.org/fma` and `geneontology.org` predicates sort
+  before `w3.org`. At 24 on D2, 39 candidates' labels do not fit at all, in
+  every arm.
+- `Selection.selected` indexes the *filtered* item list (vocabulary and role
+  filters), so never look items up in the unfiltered list with it; compare
+  texts.
+- Results: `data/results_predicate_roles/` only; the runner refuses `PR-*`
+  conditions in the historical trees and anything else there. Each result
+  records `role_arm`, `excluded_roles`, the role map (hash and roles) and,
+  per side, `role_removal` (entities, items and item tokens per role).
+- The report gives arm − A0 per budget, the per-source difference-in-differences
+  `(R−A0)@b − (R−A0)@none` (four runs resampled jointly), budget costs, C+x −
+  A-core, and A0@48 core-first − lexicographic P1@48 (the ordering artefact).
 
 ### Validation of the eligibility effect (#128 follow-up)
 
