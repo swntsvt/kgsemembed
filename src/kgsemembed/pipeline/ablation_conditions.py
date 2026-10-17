@@ -63,6 +63,7 @@ from kgsemembed.verbalisation.predicate_roles import (
     ROLES,
     SYNONYM,
 )
+from kgsemembed.verbalisation.serialization import RENDER_URI
 from kgsemembed.verbalisation.selection import (
     CORE_FIRST,
     DETERMINISTIC,
@@ -117,6 +118,9 @@ class AblationCondition:
         Roles the arm removes, sorted.
     role_map : str
         Role-map name; empty unless ``role_arm`` is set.
+    render_order : str
+        Order in which selected items are written (#134); ``"uri"``, the
+        canonical order, for every condition in this registry.
     """
 
     condition_id: str
@@ -132,6 +136,7 @@ class AblationCondition:
     role_arm: str = ""
     excluded_roles: Tuple[str, ...] = ()
     role_map: str = ""
+    render_order: str = RENDER_URI
 
     def __post_init__(self) -> None:
         if not self.order_mode:
@@ -380,6 +385,8 @@ def _validate_registry(conditions: List[AblationCondition]) -> None:
         raise ValueError(f"Duplicate role arms per (dataset, budget): {repeated}.")
     if len({c.model_key for c in conditions}) != 1:
         raise ValueError("Every ablation condition must share one embedding model.")
+    if any(c.render_order != RENDER_URI for c in conditions):
+        raise ValueError("Ablation conditions render canonically; non-canonical orders belong to #134.")
     for condition in conditions:
         _validate_condition(condition)
 

@@ -746,7 +746,7 @@ def condition_selector(condition: AblationCondition, count_tokens: TokenCounter)
         order_mode=condition.order_mode, count_tokens=count_tokens, budget=condition.token_budget,
         seed=condition.seed, filter_mode=condition.filter_mode,
         predicate_config=get_predicate_config(condition.predicate_config),
-        role_filter=role_filter_for(condition),
+        role_filter=role_filter_for(condition), render_order=condition.render_order,
     )
 
 

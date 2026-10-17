@@ -15,7 +15,9 @@ between capped representations:
 * Otherwise items are visited in policy order and each is kept when the joined
   text still fits; an item that does not fit is skipped, never ends selection.
 * Selected items are rendered in canonical order, so a policy changes which
-  items appear but not the order in which they are presented.
+  items appear but not the order in which they are presented.  The #134
+  serialization experiment sets a non-canonical ``render_order``; its default,
+  ``"uri"``, is the canonical order every earlier condition used.
 * Eligibility (``filter_mode``) and priority (the PPAS tiers) both come from
   the selector's :class:`PredicateVocabulary`, and are applied independently:
   filtering first, then ordering of whatever remains (#128).
@@ -42,6 +44,13 @@ from kgsemembed.verbalisation.ppas import (
     PREDICATE_TIER_LIST,
 )
 from kgsemembed.verbalisation.predicate_roles import CORE, PredicateRoleMap, RoleFilter
+from kgsemembed.verbalisation.serialization import (
+    RENDER_LABEL,
+    RENDER_ROLE,
+    RENDER_URI,
+    SERIALIZATION_ORDERS,
+    serialization_order,
+)
 
 FILTER_ALL = "all"
 FILTER_COVERED = "covered"
@@ -52,8 +61,12 @@ PPAS = "ppas"
 DETERMINISTIC = "deterministic"
 RANDOM = "random"
 CORE_FIRST = "core_first"
-SELECTION_POLICIES = (FULL, PPAS, DETERMINISTIC, RANDOM, CORE_FIRST)
-CAPPED_POLICIES = (PPAS, DETERMINISTIC, RANDOM, CORE_FIRST)
+LABEL_FIRST = "label_first"
+ROLE_PRIORITY = "role_priority"
+SELECTION_POLICIES = (FULL, PPAS, DETERMINISTIC, RANDOM, CORE_FIRST, LABEL_FIRST, ROLE_PRIORITY)
+CAPPED_POLICIES = (PPAS, DETERMINISTIC, RANDOM, CORE_FIRST, LABEL_FIRST, ROLE_PRIORITY)
+ROLE_MAP_ORDERS = {CORE_FIRST, LABEL_FIRST, ROLE_PRIORITY}
+_SERIALIZATION_OF_ORDER = {LABEL_FIRST: RENDER_LABEL, ROLE_PRIORITY: RENDER_ROLE}
 
 ITEM_SEPARATOR = " | "
 DETERMINISTIC_ORDER = "lexicographic (predicate URI, object term)"
@@ -92,7 +105,7 @@ class Selection:
     Attributes
     ----------
     text : str
-        Selected items joined in canonical order.
+        Selected items joined in the selector's render order (canonical by default).
     selected : tuple[int, ...]
         Canonical indices of the selected items.
     n_eligible : int
@@ -465,7 +478,12 @@ class PolicySelector(VerbaliserBase):
         Predicate vocabulary and priority configuration. If None, uses base config.
     role_filter : RoleFilter, optional
         Roles removed after vocabulary filtering (#131); also the role map the
-        ``"core_first"`` order reads.  ``None`` removes nothing.
+        ``"core_first"``, ``"label_first"`` and ``"role_priority"`` orders and
+        every non-canonical render order read.  ``None`` removes nothing.
+    render_order : str, optional
+        Order in which selected items are written (#134), one of
+        :data:`~kgsemembed.verbalisation.serialization.SERIALIZATION_ORDERS`;
+        the default ``"uri"`` is canonical order.
     """
 
     def __init__(
@@ -478,6 +496,7 @@ class PolicySelector(VerbaliserBase):
         order_mode: Optional[str] = None,
         predicate_config: Optional[PredicateVocabulary] = None,
         role_filter: Optional[RoleFilter] = None,
+        render_order: str = RENDER_URI,
     ) -> None:
         # Support legacy interface: policy parameter instead of order_mode
         if policy is not None and order_mode is None:
@@ -503,9 +522,11 @@ class PolicySelector(VerbaliserBase):
         self.predicate_config = (
             predicate_config if predicate_config is not None else get_predicate_config("base")
         )
-        if order_mode == CORE_FIRST and role_filter is None:
-            raise ValueError("Order mode 'core_first' needs a role filter for its role map.")
+        if order_mode in ROLE_MAP_ORDERS and role_filter is None:
+            raise ValueError(f"Order mode {order_mode!r} needs a role filter for its role map.")
+        _validate_render_order(render_order, role_filter)
         self.role_filter = role_filter
+        self.render_order = render_order
 
     def eligible_items(self, graph: Graph, entity_uri: URIRef) -> list[EligibleItem]:
         """
@@ -568,9 +589,8 @@ class PolicySelector(VerbaliserBase):
         accounting = self._accounting(items, filtered, entity_type)
         accounting.update(n_filtered_items=n_filtered, predicate_coverage=coverage,
                           n_role_removed_items=n_role_removed)
-        texts = [item.text for item in filtered]
         everything = list(range(len(filtered)))
-        full_text = join_items(texts, everything)
+        full_text = self.render(filtered, everything)
         full_tokens = self.count_tokens(full_text)
         if self.budget is None or full_tokens <= self.budget:
             return Selection(full_text, tuple(everything), len(filtered), full_tokens, False, 0, **accounting)
@@ -599,7 +619,7 @@ class PolicySelector(VerbaliserBase):
         texts = [item.text for item in items]
         order = self._order(items, entity_uri, entity_type)
         chosen = select_within_budget(texts, order, self.budget, self.count_tokens)
-        text = join_items(texts, chosen)
+        text = self.render(items, chosen)
         n_tokens = self.count_tokens(text)
         if n_tokens > self.budget:
             raise AssertionError(
@@ -618,7 +638,53 @@ class PolicySelector(VerbaliserBase):
             return random_order(len(items), self.seed, entity_uri)
         if self.order_mode == CORE_FIRST:
             return core_first_order(items, self.role_filter.role_map)
+        if self.order_mode in _SERIALIZATION_OF_ORDER:
+            serialization = _SERIALIZATION_OF_ORDER[self.order_mode]
+            return serialization_order(items, range(len(items)), serialization, self.role_filter.role_map)
         return deterministic_order(items)
+
+    def render(self, items: list[EligibleItem], chosen: list[int]) -> str:
+        """
+        Write the chosen items in this selector's render order.
+
+        Parameters
+        ----------
+        items : list[EligibleItem]
+            Items in canonical order.
+        chosen : list[int]
+            Indices of the items to write, in any order.
+
+        Returns
+        -------
+        str
+            Their texts joined by :data:`ITEM_SEPARATOR`; canonical order under
+            ``"uri"``, exactly as :func:`join_items` writes it.
+        """
+        texts = [item.text for item in items]
+        if self.render_order == RENDER_URI:
+            return join_items(texts, chosen)
+        ordered = serialization_order(items, chosen, self.render_order, self.role_filter.role_map)
+        return ITEM_SEPARATOR.join(texts[i] for i in ordered)
+
+    def kept_items(self, items: list[EligibleItem]) -> list[EligibleItem]:
+        """
+        Return the items left after vocabulary and role filtering.
+
+        ``Selection.selected`` indexes this list, so it maps a selection back
+        to its items.
+
+        Parameters
+        ----------
+        items : list[EligibleItem]
+            The entity's eligible items, from :meth:`eligible_items`.
+
+        Returns
+        -------
+        list[EligibleItem]
+            Filtered items in canonical order.
+        """
+        filtered, _n, _coverage = filter_by_predicate_config(items, self.predicate_config, self.filter_mode)
+        return filter_by_roles(filtered, self.role_filter)[0]
 
     def verbalise(self, graph: Graph, entity_uri: URIRef, entity_type: str) -> str:
         """
@@ -658,7 +724,7 @@ def _validate_order_and_budget(
     order_mode: str, budget: Optional[int], seed: Optional[int]
 ) -> None:
     """Validate that order_mode, budget, and seed are compatible."""
-    valid_orders = ("ppas", "deterministic", "random", "full", CORE_FIRST)
+    valid_orders = ("ppas", "deterministic", "random", "full", CORE_FIRST, LABEL_FIRST, ROLE_PRIORITY)
     if order_mode not in valid_orders:
         raise ValueError(f"Unknown order_mode {order_mode!r}; expected {valid_orders}.")
     if (order_mode == "full") != (budget is None):
@@ -667,6 +733,14 @@ def _validate_order_and_budget(
         raise ValueError(f"Order mode {order_mode!r} requires seed only when it is 'random'.")
     if budget is not None and budget <= 0:
         raise ValueError(f"Token budget must be positive, got {budget}.")
+
+
+def _validate_render_order(render_order: str, role_filter: Optional[RoleFilter]) -> None:
+    """Raise for an unknown render order, or a non-canonical one without a role map."""
+    if render_order not in SERIALIZATION_ORDERS:
+        raise ValueError(f"Unknown render_order {render_order!r}; expected {SERIALIZATION_ORDERS}.")
+    if render_order != RENDER_URI and role_filter is None:
+        raise ValueError(f"Render order {render_order!r} needs a role filter for its role map.")
 
 
 def make_token_counter(tokenizer: object) -> TokenCounter:
