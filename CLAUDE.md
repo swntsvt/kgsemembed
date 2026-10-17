@@ -223,13 +223,15 @@ python scripts/serialization_inventory.py existing --datasets D1 D2
 python -m kgsemembed.pipeline.serialization_order --population validation \
     --datasets D1 D2 --data_dir data/ --results_dir data/results_serialization/
 python scripts/freeze_serialization_order.py --results_dir data/results_serialization/
+python scripts/freeze_serialization_order.py --verify   # recompute; must match the committed record
 python -m kgsemembed.pipeline.serialization_order --population test \
     --datasets D1 D2 --data_dir data/ --results_dir data/results_serialization/
 python scripts/generate_serialization_report.py export --stage validation
 python scripts/generate_serialization_report.py report --stage validation
 python scripts/generate_serialization_report.py verify-rebuild --stage validation
 python scripts/generate_serialization_report.py check-text
-python scripts/generate_serialization_report.py gate-ranks   # test stage only
+python scripts/generate_serialization_report.py examples-local --stage validation  # local text only
+python scripts/generate_serialization_report.py gate-ranks   # test stage; before report --stage test
 ```
 
 Omitting `--conditions` runs every registered condition; omitting `--datasets`
@@ -629,6 +631,26 @@ Seven conditions vary one dimension at a time on D1 at 48 tokens
   #131 probe used (sorted-URI SHA-256 `a773ea69dc13…`) and the 751 it did
   not. `--population test` verifies the freeze record
   (`artifacts/issue-134/serialization_freeze.json`) first.
+- **Frozen**: `label` (2c4f63e, validation at 4809a98). It was chosen by the
+  tie-breaking precedence, not by the highest D2 validation MRR: `core` was
+  highest (0.8291 vs label 0.8257, uri 0.7899), but no interval of
+  `MRR(core) − MRR(o)` excluded 0, so E = {label, core, role}.
+- **Test-stage guards**: besides the freeze checks, `verify_freeze` refuses
+  a changed rule (seed, replicates, precedence), validation files whose
+  digests differ from the record, and any change under `src/kgsemembed/`
+  since the validation commit except the runner itself
+  (`FROZEN_IMPLEMENTATION`). The test stage refuses `--max_sources` and
+  existing test results from another freeze or commit. `export` writes every
+  bundle file once (a different byte refuses), and checks each result's
+  population and, for test, freeze digest and run signature against
+  `PROVENANCE_validation.json`. `report --stage test` refuses to run unless
+  `diagnostics/rank_gate.json` passed on the current test outcomes.
+- **Primary contrasts** (test report only): frozen − uri on D1/S/A0 and
+  D2/S/A0, MRR and Recall@1, 95% and Bonferroni 97.5% intervals (family:
+  the two datasets of one metric, same 2,000 replicates). Examples:
+  5 largest gains and losses of frozen over uri per dataset (ties by URI),
+  `examples/<stage>_examples.csv` (URI-only); readable text via
+  `examples-local` into the gitignored results directory.
 - **Artifacts**: `artifacts/issue-134/` is tracked and URI-only (results
   JSON, per-source outcomes, conditions map, diagnostics, provenance,
   manifest, reports, figures). Readable entity text stays local; dataset
