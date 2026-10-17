@@ -1,12 +1,15 @@
 """Tests for LabelVerbaliser (V1) and AnnotationVerbaliser (V2)."""
 
 from rdflib import Graph, Literal, URIRef
+from rdflib.namespace import XSD
 
 from kgsemembed.verbalisation.base import (
     DEFINITION_PREDICATES,
     LABEL_PREDICATES,
     SYNONYM_PREDICATES,
+    annotation_predicates_digest,
 )
+from kgsemembed.verbalisation.predicate_roles import get_role_map
 from kgsemembed.verbalisation.v1 import LabelVerbaliser
 from kgsemembed.verbalisation.v2 import AnnotationVerbaliser
 
@@ -323,3 +326,123 @@ def test_v2_returns_str_not_none() -> None:
     result = v.verbalise(g, ent, "class")
     assert isinstance(result, str)
     assert len(result) > 0
+
+
+# ---------------------------------------------------------------------------
+# D1/D2 annotation predicates (#136)
+# ---------------------------------------------------------------------------
+
+_FMA = "http://purl.org/sig/ont/fma/"
+_OBO_IN_OWL = "http://www.geneontology.org/formats/oboInOwl#"
+_RDFS_LABEL = URIRef("http://www.w3.org/2000/01/rdf-schema#label")
+
+
+def _roles_v1_predicates(role: str) -> set[str]:
+    roles = get_role_map("roles_v1").roles
+    return {predicate for predicate, assigned in roles.items() if assigned == role}
+
+
+def _fma_class() -> tuple[Graph, URIRef]:
+    g = Graph()
+    ent = URIRef("http://purl.org/sig/ont/fma.owl#fma7088")
+    g.add((ent, _RDFS_LABEL, Literal("Heart", lang="en")))
+    g.add((ent, URIRef(f"{_FMA}synonym"), Literal("Cor", datatype=XSD.string)))
+    g.add((ent, URIRef(f"{_FMA}definition"), Literal("Organ pumping blood", datatype=XSD.string)))
+    return g, ent
+
+
+def _anatomy_class() -> tuple[Graph, URIRef]:
+    g = Graph()
+    ent = URIRef("http://human.owl#NCI_C12611")
+    g.add((ent, _RDFS_LABEL, Literal("Antibody_Producing_Cell", datatype=XSD.string)))
+    for node, predicate, text in [
+        ("genid1", "hasRelatedSynonym", "Immunoglobulin-Producing Cells"),
+        ("genid2", "hasRelatedSynonym", "Plasma Cell"),
+        ("genid3", "hasDefinition", "A cell that secretes antibodies"),
+    ]:
+        node_uri = URIRef(f"http://human.owl#{node}")
+        g.add((ent, URIRef(f"{_OBO_IN_OWL}{predicate}"), node_uri))
+        g.add((node_uri, _RDFS_LABEL, Literal(text, datatype=XSD.string)))
+    return g, ent
+
+
+def test_synonym_predicates_equal_the_roles_v1_synonym_role() -> None:
+    """V1/V2 read exactly the predicates the #131 role map calls synonyms."""
+    assert {str(p) for p in SYNONYM_PREDICATES} == _roles_v1_predicates("synonym")
+
+
+def test_definition_predicates_equal_the_roles_v1_definition_role() -> None:
+    """V2 reads exactly the predicates the #131 role map calls definitions."""
+    assert {str(p) for p in DEFINITION_PREDICATES} == _roles_v1_predicates("definition")
+
+
+def test_definition_priority_keeps_the_original_three_first() -> None:
+    """Appending predicates leaves first-definition-wins unchanged elsewhere."""
+    assert [str(p) for p in DEFINITION_PREDICATES[:3]] == [
+        "http://www.w3.org/2000/01/rdf-schema#comment",
+        "http://www.w3.org/2004/02/skos/core#definition",
+        "http://purl.obolibrary.org/obo/IAO_0000115",
+    ]
+
+
+def test_v1_reads_fma_synonyms() -> None:
+    """An FMA class's fma:synonym literals follow its label."""
+    g, ent = _fma_class()
+    assert LabelVerbaliser().verbalise(g, ent, "class") == "Heart ; Cor"
+
+
+def test_v2_reads_fma_definition_and_synonyms() -> None:
+    """An FMA class's fma:definition and fma:synonym reach V2."""
+    g, ent = _fma_class()
+    assert AnnotationVerbaliser().verbalise(g, ent, "class") == (
+        "Label: Heart. Definition: Organ pumping blood. Synonyms: Cor."
+    )
+
+
+def test_v1_resolves_reified_anatomy_synonyms() -> None:
+    """oboInOwl synonym nodes contribute their rdfs:label, never their URI."""
+    g, ent = _anatomy_class()
+    assert LabelVerbaliser().verbalise(g, ent, "class") == (
+        "Antibody_Producing_Cell ; Immunoglobulin-Producing Cells ; Plasma Cell"
+    )
+
+
+def test_v2_resolves_reified_anatomy_definition_and_synonyms() -> None:
+    """oboInOwl:hasDefinition nodes resolve like synonym nodes."""
+    g, ent = _anatomy_class()
+    assert AnnotationVerbaliser().verbalise(g, ent, "class") == (
+        "Label: Antibody_Producing_Cell. Definition: A cell that secretes antibodies. "
+        "Synonyms: Immunoglobulin-Producing Cells; Plasma Cell."
+    )
+
+
+def test_regional_english_tags_count_as_english() -> None:
+    """SNOMED's en-gb and en-us values are English; other languages are not."""
+    g = Graph()
+    ent = URIRef("http://snomed.info/id/80891009")
+    g.add((ent, LABEL_PREDICATES[0], Literal("Heart structure")))
+    g.add((ent, SYNONYM_PREDICATES[0], Literal("Cardiac structure", lang="en-gb")))
+    g.add((ent, SYNONYM_PREDICATES[0], Literal("Heart, NOS", lang="en-US")))
+    g.add((ent, SYNONYM_PREDICATES[0], Literal("Herz", lang="de")))
+    g.add((ent, SYNONYM_PREDICATES[0], Literal("cœur", lang="fr-ca")))
+    result = LabelVerbaliser().verbalise(g, ent, "class")
+    assert result.startswith("Heart structure ; ")
+    assert set(result.split(" ; ")[1:]) == {"Cardiac structure", "Heart, NOS"}
+
+
+def test_reified_node_labels_follow_the_language_rule() -> None:
+    """A synonym node's non-English labels are dropped."""
+    g = Graph()
+    ent = URIRef("http://example.org/ont#Test")
+    node = URIRef("http://example.org/ont#genid9")
+    g.add((ent, LABEL_PREDICATES[0], Literal("Label")))
+    g.add((ent, SYNONYM_PREDICATES[4], node))
+    g.add((node, _RDFS_LABEL, Literal("Etikett", lang="de")))
+    assert LabelVerbaliser().verbalise(g, ent, "class") == "Label"
+
+
+def test_annotation_predicates_digest_is_pinned() -> None:
+    """A change to the predicate lists or value rules must be deliberate."""
+    assert annotation_predicates_digest() == (
+        "e6c9f1514dfec094f37159d75b26bb24d6993f852b30af7644a1d9adc984bdec"
+    )

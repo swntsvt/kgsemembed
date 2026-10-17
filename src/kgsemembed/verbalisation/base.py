@@ -1,6 +1,8 @@
 """Abstract base class for all verbalisation strategies."""
 
 from abc import ABC, abstractmethod
+import hashlib
+import json
 import re
 
 from rdflib import BNode, Graph, URIRef, Literal
@@ -14,18 +16,36 @@ LABEL_PREDICATES = [
     URIRef("http://www.w3.org/2004/02/skos/core#altLabel"),
 ]
 
+_FMA = "http://purl.org/sig/ont/fma/"
+_OBO_IN_OWL = "http://www.geneontology.org/formats/oboInOwl#"
+
+# The definition and synonym roles of the ``roles_v1`` role map (#131), so the
+# annotation verbalisers read the predicates D1 (SNOMED, FMA) and D2 (MA, NCI)
+# actually use.  New definition predicates follow the original three, keeping
+# the first-definition-wins choice unchanged wherever those three occur.
 DEFINITION_PREDICATES = [
     RDFS.comment,
     SKOS.definition,
     URIRef("http://purl.obolibrary.org/obo/IAO_0000115"),
+    URIRef(f"{_FMA}definition"),
+    URIRef(f"{_OBO_IN_OWL}hasDefinition"),
 ]
 
 SYNONYM_PREDICATES = [
     URIRef("http://www.w3.org/2004/02/skos/core#altLabel"),
-    URIRef("http://purl.obolibrary.org/obo/hasExactSynonym"),
-    URIRef("http://purl.obolibrary.org/obo/hasSynonym"),
-    URIRef("http://purl.obolibrary.org/obo/hasRelatedSynonym"),
+    URIRef(f"{_FMA}synonym"),
+    URIRef(f"{_FMA}slot_synonym"),
+    URIRef(f"{_OBO_IN_OWL}hasExactSynonym"),
+    URIRef(f"{_OBO_IN_OWL}hasRelatedSynonym"),
+    URIRef(f"{_OBO_IN_OWL}hasNarrowSynonym"),
+    URIRef(f"{_OBO_IN_OWL}hasBroadSynonym"),
+    URIRef(f"{_OBO_IN_OWL}hasSynonym"),
 ]
+
+_ANNOTATION_VALUE_RULES = (
+    "literal objects tagged en, en-* or untagged; non-literal objects "
+    "resolve to their own rdfs:label literals under the same language rule"
+)
 
 # Predicates and objects excluded from structured key-value serialisation
 _EXCLUDED_PREDICATES = [
@@ -33,6 +53,48 @@ _EXCLUDED_PREDICATES = [
 ]
 
 _RDF_TYPE = "http://www.w3.org/1999/02/22-rdf-syntax-ns#type"
+
+
+def annotation_predicates_digest() -> str:
+    """
+    Return the SHA-256 of the annotation predicate lists and value rules.
+
+    Recorded in every result so that a change to what V1/V2 read is visible
+    in the results, not only in the code.
+
+    Returns
+    -------
+    str
+        Hex digest of the definition and synonym predicates, in order, and
+        the language and node-resolution rules.
+    """
+    payload = {
+        "definition": [str(p) for p in DEFINITION_PREDICATES],
+        "synonym": [str(p) for p in SYNONYM_PREDICATES],
+        "rules": _ANNOTATION_VALUE_RULES,
+    }
+    encoded = json.dumps(payload, sort_keys=True).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def is_english_or_untagged(literal: Literal) -> bool:
+    """
+    Return whether ``literal`` is untagged or tagged English (``en``, ``en-*``).
+
+    Parameters
+    ----------
+    literal : Literal
+        Literal to test.
+
+    Returns
+    -------
+    bool
+        ``True`` for untagged literals and tags ``en`` or ``en-<region>``.
+    """
+    if literal.language is None:
+        return True
+    language = str(literal.language).lower()
+    return language == "en" or language.startswith("en-")
 
 
 class VerbaliserBase(ABC):
@@ -169,6 +231,48 @@ class VerbaliserBase(ABC):
                             seen.add(val)
                             results.append(val)
         return results
+
+    def get_annotation_values(
+        self, graph: Graph, entity_uri: URIRef, predicates: List[URIRef]
+    ) -> List[str]:
+        """Return English or untagged annotation values for given predicates.
+
+        Unlike :meth:`get_all_literals`, regional English tags (``en-gb``)
+        count as English, and a non-literal object -- such as the reified
+        ``oboInOwl:Synonym`` nodes of the OAEI Anatomy ontologies -- yields
+        its own ``rdfs:label`` values.
+
+        Parameters
+        ----------
+        graph : Graph
+            RDF graph containing entity triples.
+        entity_uri : URIRef
+            URI of the entity.
+        predicates : List[URIRef]
+            Predicate URIs to query, in priority order.
+
+        Returns
+        -------
+        List[str]
+            Deduplicated values preserving first-occurrence order.
+        """
+        values = (
+            value
+            for pred in predicates
+            for obj in graph.objects(entity_uri, pred)
+            for value in self._annotation_literals(graph, obj)
+        )
+        return list(dict.fromkeys(str(value) for value in values))
+
+    @staticmethod
+    def _annotation_literals(graph: Graph, obj: URIRef | BNode | Literal) -> List[Literal]:
+        """Return ``obj`` itself, or a node's labels, when English or untagged."""
+        candidates = [obj] if isinstance(obj, Literal) else list(graph.objects(obj, RDFS.label))
+        return [
+            value
+            for value in candidates
+            if isinstance(value, Literal) and is_english_or_untagged(value)
+        ]
 
     # ------------------------------------------------------------------
     # Structured key-value serialisation helpers (shared by V4 and V6)
