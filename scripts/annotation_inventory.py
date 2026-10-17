@@ -132,8 +132,7 @@ def compare(old_path: Path, new_path: Path, output: Path) -> None:
     rows = [_row(key, counts) for key, counts in compare_counts(old, new).items()]
     lines = [
         "# #136 annotation predicate fix: V1/V2 text inventory", "",
-        f"- Before: `{old['code']['git_commit']}`; after: `{new['code']['git_commit']}` "
-        "(plus the uncommitted fix, if the tree was dirty).",
+        f"- Before: `{old['code']['git_commit']}`; after: `{new['code']['git_commit']}`.",
         "- Entities: each pair's source entities and the union of its candidate targets, "
         "as the main pipeline verbalises them. D3 sums its 21 pairs.",
         "- Words: mean whitespace-separated words per text.", "",
