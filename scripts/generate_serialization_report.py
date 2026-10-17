@@ -40,7 +40,7 @@ Subcommands
     ``diagnostics/gate_attempt_*/`` are listed at the top of the test report.
 
 The test report's primary contrasts are frozen order − ``uri`` on D1/S/A0 and
-D2/S/A0 (MRR and Recall@1), with 95% and Bonferroni 97.5% intervals (two
+D2/S/A0 (MRR and source-level Hit@1), with 95% and Bonferroni 97.5% intervals (two
 datasets per metric).
 
 Intervals are paired source-level bootstraps (2,000 replicates, a fresh
@@ -110,6 +110,12 @@ EXAMPLE_COLUMNS = ("stage", "dataset", "direction", "source", "gold_targets", "r
 EXAMPLES_PER_DIRECTION = 5
 BONFERRONI_FAMILY = 2
 UNENCODED_FINGERPRINTS = ("", str(None))
+HIT1_DEFINITION = (
+    "Source-level Hit@1 (the freeze record's \"Recall@1\"): the fraction of evaluated test reference sources "
+    "whose best-ranked gold target is ranked first, each source counted once (an unranked source is a miss). It "
+    "is not the pipeline's Recall@1 (`metrics.recall_at_1` in the run JSONs), which divides the references "
+    "ranked first by the number of test references, so the two differ where a source has several gold "
+    "targets. `R@1` in the tables below is the same source-level Hit@1.")
 Cell = Dict[str, Dict[str, object]]
 
 
@@ -455,7 +461,7 @@ def changed(a: Cell, b: Cell, sources: List[str]) -> np.ndarray:
 
 
 def contrast(cells: Dict, lmap: Dict, a: str, b: str, subset: Tuple[str, Optional[set]]) -> Dict[str, object]:
-    """Paired Δ MRR and Δ Recall@1 of logical ``a`` − ``b`` on a subset, with strata."""
+    """Paired Δ MRR and Δ source-level Hit@1 of logical ``a`` − ``b`` on a subset, with strata."""
     dataset, keep = subset
     ca, cb = cells[(dataset, lmap[a]["condition_id"])], cells[(dataset, lmap[b]["condition_id"])]
     if set(ca) != set(cb):
@@ -499,7 +505,7 @@ def fmt(interval: Dict[str, float]) -> str:
 
 
 def cell_table(cells: Dict, lmap: Dict, parts: Dict) -> List[str]:
-    """MRR and Recall@1 of every logical condition, per reported subset."""
+    """MRR and source-level Hit@1 of every logical condition, per reported subset."""
     lines = ["| Logical condition | Execution | " + " | ".join(f"{p} MRR / R@1 (n)" for p in parts) + " |",
              "|---|---|" + "---|" * len(parts)]
     for name, row in lmap.items():
@@ -614,7 +620,7 @@ def primary_table(cells: Dict, lmap: Dict, frozen: str) -> List[str]:
              "|---|---|---|---|---|---|---|"]
     for dataset in sorted(PAIR_NAMES):
         a, b = f"{dataset}/S/A0/{frozen}", f"{dataset}/S/A0/{REFERENCE_ORDER}"
-        for field, metric in (("rr", "MRR"), ("hit1", "Recall@1")):
+        for field, metric in (("rr", "MRR"), ("hit1", "Source-level Hit@1")):
             sa, va = per_source_values(cells, lmap, a, (dataset, None), field)
             sb, vb = per_source_values(cells, lmap, b, (dataset, None), field)
             if sa != sb:
@@ -793,9 +799,10 @@ def _preamble(stage: str) -> str:
     notes = ["Paired source-level bootstraps: 2,000 replicates, fresh seed 42 per contrast, 95% percentile "
              "intervals; datasets are never pooled. Two pairs (D1, D2) and one model (M2): no generalisation claim."]
     if stage == "test":
-        notes.append("Primary contrasts: frozen order − uri on D1/S/A0 and D2/S/A0 (MRR, Recall@1), with 95% and "
-                     "Bonferroni-adjusted 97.5% intervals (family: the two datasets of one metric). Every other "
-                     "table is secondary and unadjusted. Written only after `gate-ranks` passed.")
+        notes.append("Primary contrasts: frozen order − uri on D1/S/A0 and D2/S/A0 (MRR, source-level Hit@1), with "
+                     "95% and Bonferroni-adjusted 97.5% intervals (family: the two datasets of one metric). Every "
+                     "other table is secondary and unadjusted. Written only after `gate-ranks` passed.")
+        notes.append(HIT1_DEFINITION)
     if stage == "validation":
         notes.append("Validation stage: descriptive only. D1 validation is exploratory and split into the 400 "
                      "sources the #131 probe used and the 751 it did not; the order is chosen on D2 validation by "

@@ -763,6 +763,7 @@ def test_report_rebuilds_byte_identically_from_the_bundle_alone(tmp_path):
     text = path.read_text()
     assert "Block B" in text and (artifacts / "figures" / "test_order_effects.png").exists()
     assert "Primary contrasts" in text and "Bonferroni 97.5%" in text and "tie-breaking rule" in text
+    assert "| Source-level Hit@1 |" in text and report.HIT1_DEFINITION in text and "Recall@1 |" not in text
     assert report.verify_rebuild("test", artifacts) == 0
 
 
