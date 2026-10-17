@@ -2,6 +2,10 @@
   "status": "pass",
   "n_executions": 13,
   "n_failed": 0,
+  "code": {
+    "commit": "6977bb4053200599251131f2813dc13cf00629bc",
+    "dirty": false
+  },
   "inputs_sha256": {
     "PROVENANCE_test.json": "fc22eb52b62a6374bc1615413a8a4d8250e952f79f99283cd7accf9e0b459bcb",
     "conditions.csv": "6fb41c9055e34ee5cbd58b4d63ca84ebce1e82325372484819a00c837e2a743e",

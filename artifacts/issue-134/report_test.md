@@ -2,6 +2,8 @@
 
 - Paired source-level bootstraps: 2,000 replicates, fresh seed 42 per contrast, 95% percentile intervals; datasets are never pooled. Two pairs (D1, D2) and one model (M2): no generalisation claim.
 - Primary contrasts: frozen order − uri on D1/S/A0 and D2/S/A0 (MRR, Recall@1), with 95% and Bonferroni-adjusted 97.5% intervals (family: the two datasets of one metric). Every other table is secondary and unadjusted. Written only after `gate-ranks` passed.
+- Rank gate: pass, 13 executions, 0 failed; code commit `6977bb4053200599251131f2813dc13cf00629bc` (`diagnostics/rank_gate.json`).
+- Earlier gate attempt kept for audit, superseded: `diagnostics/gate_attempt_1_FAIL/` (FAIL, 13 of 13 failed; same report inputs). See the PR for its diagnosis.
 
 ## How the order was chosen (D2 validation)
 
