@@ -33,6 +33,15 @@ The base-vocabulary policies P1-P4 are also registered on D1 at
 the D2 vocabulary ``obo_extended`` (:data:`EXTENDED_VOCABULARIES`).  A label
 names the same filter/vocabulary-role/order design everywhere; it is unique
 per (dataset, budget), the unit a report groups by.
+
+Predicate-role ablation (#131)
+------------------------------
+The ``PR-*`` conditions (:data:`ROLE_ARMS`, :data:`ROLE_MATRIX`) remove items by
+predicate role (``roles_v1``) with every predicate otherwise eligible, with no
+budget (``full``: every remaining item, only the model's 512-token input limit)
+or at a budget filled in ``core_first`` order.  They are identified by
+``role_arm`` and never carry a ``policy_label``, so the #128 family and its
+reports are unaffected.
 """
 
 
@@ -42,7 +51,20 @@ from typing import List, Optional, Tuple
 
 from kgsemembed.embeddings.models import get_model_config
 from kgsemembed.verbalisation.predicate_config import PER_PREDICATE_CONFIGS
+from kgsemembed.verbalisation.predicate_roles import (
+    CORE,
+    DEFINITION,
+    DISJOINTNESS,
+    IDENTIFIER,
+    NON_CORE_ROLES,
+    NON_ENGLISH,
+    PREFERRED_NAME,
+    ROLE_MAPS,
+    ROLES,
+    SYNONYM,
+)
 from kgsemembed.verbalisation.selection import (
+    CORE_FIRST,
     DETERMINISTIC,
     FILTER_ALL,
     FILTER_COVERED,
@@ -89,6 +111,12 @@ class AblationCondition:
         Predicate vocabulary name, ``"base"`` or ``"fma_extended"``.
     policy_label : str
         Controlled-policy label (``"P1"``-``"P7"``); empty for #122 conditions.
+    role_arm : str
+        Predicate-role arm (#131), e.g. ``"R-syn"``; empty otherwise.
+    excluded_roles : Tuple[str, ...]
+        Roles the arm removes, sorted.
+    role_map : str
+        Role-map name; empty unless ``role_arm`` is set.
     """
 
     condition_id: str
@@ -101,6 +129,9 @@ class AblationCondition:
     order_mode: str = ""
     predicate_config: str = "base"
     policy_label: str = ""
+    role_arm: str = ""
+    excluded_roles: Tuple[str, ...] = ()
+    role_map: str = ""
 
     def __post_init__(self) -> None:
         if not self.order_mode:
@@ -110,6 +141,11 @@ class AblationCondition:
     def is_controlled(self) -> bool:
         """Whether the condition belongs to the #128 controlled-policy family."""
         return bool(self.policy_label)
+
+    @property
+    def is_role_ablation(self) -> bool:
+        """Whether the condition belongs to the #131 predicate-role family."""
+        return bool(self.role_arm)
 
 
 def _budget_family(budget: int, datasets: Tuple[str, ...]) -> List[AblationCondition]:
@@ -212,6 +248,67 @@ def _controlled_family(
     ]
 
 
+ROLE_MAP = "roles_v1"
+ROLE_BUDGETED_ORDER = CORE_FIRST
+_REMOVED_ARMS = {
+    "R-pref": PREFERRED_NAME, "R-syn": SYNONYM, "R-def": DEFINITION, "R-id": IDENTIFIER,
+    "R-nonEn": NON_ENGLISH, "R-disj": DISJOINTNESS,
+}
+_ADDED_ARMS = {"C+pref": PREFERRED_NAME, "C+syn": SYNONYM, "C+def": DEFINITION, "C+id": IDENTIFIER}
+ROLE_ARMS: dict[str, Tuple[str, ...]] = {
+    "A0": (),
+    **{arm: (role,) for arm, role in _REMOVED_ARMS.items()},
+    "A-core": tuple(sorted(NON_CORE_ROLES)),
+    **{arm: tuple(sorted(set(NON_CORE_ROLES) - {role})) for arm, role in _ADDED_ARMS.items()},
+}
+"""Arm to the roles it removes: A0 none, R-x one role, A-core every non-core
+role, C+x every non-core role except x (core plus one role)."""
+
+_D1_BOTH = ("A0", "R-pref", "R-syn", "R-def", "R-id", "R-nonEn", "R-disj", "A-core")
+_D2_BOTH = ("A0", "R-syn", "R-def", "R-id", "R-disj", "A-core")
+ROLE_MATRIX: dict[str, dict[Optional[int], Tuple[str, ...]]] = {
+    "D1": {None: (*_D1_BOTH, "C+pref", "C+syn", "C+def", "C+id"), 48: _D1_BOTH},
+    "D2": {None: (*_D2_BOTH, "C+syn", "C+def"), 48: _D2_BOTH, 24: ("A0", "R-syn", "R-def", "A-core")},
+}
+"""Dataset to budget (``None`` = no budget) to the arms run there: 38 runs."""
+
+_ARM_IDS = {"A0": "all", "A-core": "core"}
+
+
+def role_condition_id(arm: str, budget: Optional[int]) -> str:
+    """
+    Name a predicate-role condition by its arm and budget.
+
+    Parameters
+    ----------
+    arm : str
+        A key of :data:`ROLE_ARMS`.
+    budget : Optional[int]
+        Token budget; ``None`` for no budget.
+
+    Returns
+    -------
+    str
+        E.g. ``"PR-no-syn-full"``, ``"PR-core-48"``, ``"PR-core-plus-def-full"``.
+    """
+    name = _ARM_IDS.get(arm) or arm.replace("R-", "no-").replace("C+", "core-plus-")
+    return f"PR-{name.lower()}-{'full' if budget is None else budget}"
+
+
+def _role_family() -> List[AblationCondition]:
+    """Return one condition per (arm, budget), listing every dataset that runs it."""
+    cells = sorted({(arm, budget) for plan in ROLE_MATRIX.values() for budget, arms in plan.items() for arm in arms},
+                   key=lambda cell: (cell[1] is not None, cell[1] or 0, list(ROLE_ARMS).index(cell[0])))
+    return [
+        AblationCondition(
+            role_condition_id(arm, budget), FULL if budget is None else ROLE_BUDGETED_ORDER, budget, None,
+            tuple(d for d, plan in ROLE_MATRIX.items() if arm in plan.get(budget, ())),
+            role_arm=arm, excluded_roles=ROLE_ARMS[arm], role_map=ROLE_MAP,
+        )
+        for arm, budget in cells
+    ]
+
+
 ABLATION_CONDITIONS: List[AblationCondition] = [
     AblationCondition("PA-full", FULL, None, None, ("D5", "D1")),
     *_budget_family(PRIMARY_BUDGET, ("D5",)),
@@ -224,6 +321,7 @@ ABLATION_CONDITIONS: List[AblationCondition] = [
     ),
     *(c for budget in VALIDATION_BUDGETS
       for c in _controlled_family(budget, CONTROLLED_DATASETS, BASE_POLICIES)),
+    *_role_family(),
 ]
 
 
@@ -241,11 +339,26 @@ def _validate_condition(condition: AblationCondition) -> None:
         raise ValueError(f"{condition.condition_id}: unknown filter mode {condition.filter_mode!r}.")
     if condition.predicate_config not in PER_PREDICATE_CONFIGS:
         raise ValueError(f"{condition.condition_id}: unknown vocabulary {condition.predicate_config!r}.")
+    if condition.is_role_ablation:
+        _validate_role_condition(condition)
     config = get_model_config(condition.model_key)
     if condition.token_budget is not None and condition.token_budget > config.max_tokens:
         raise ValueError(f"{condition.condition_id}: budget exceeds the model limit.")
     if config.query_prefix or config.doc_prefix:
         raise ValueError(f"{condition.condition_id}: model prefixes would escape the budget.")
+
+
+def _validate_role_condition(condition: AblationCondition) -> None:
+    """Raise if a predicate-role condition's map, roles, order or label is inconsistent."""
+    cid = condition.condition_id
+    if condition.role_map not in ROLE_MAPS:
+        raise ValueError(f"{cid}: unknown role map {condition.role_map!r}.")
+    if not set(condition.excluded_roles) <= set(ROLES) - {CORE}:
+        raise ValueError(f"{cid}: excluded roles must be non-core roles.")
+    if condition.policy not in (FULL, ROLE_BUDGETED_ORDER) or condition.policy_label:
+        raise ValueError(f"{cid}: role arms use 'full' or '{ROLE_BUDGETED_ORDER}' and no policy label.")
+    if (condition.filter_mode, condition.predicate_config) != (FILTER_ALL, "base"):
+        raise ValueError(f"{cid}: role arms keep every predicate eligible before role removal.")
 
 
 def _validate_registry(conditions: List[AblationCondition]) -> None:
@@ -261,6 +374,10 @@ def _validate_registry(conditions: List[AblationCondition]) -> None:
     duplicated = sorted(key for key, count in labels.items() if count > 1)
     if duplicated:
         raise ValueError(f"Duplicate controlled policy labels per (dataset, budget): {duplicated}.")
+    arms = Counter((c.role_arm, d, c.token_budget) for c in conditions if c.is_role_ablation for d in c.datasets)
+    repeated = sorted(key for key, count in arms.items() if count > 1)
+    if repeated:
+        raise ValueError(f"Duplicate role arms per (dataset, budget): {repeated}.")
     if len({c.model_key for c in conditions}) != 1:
         raise ValueError("Every ablation condition must share one embedding model.")
     for condition in conditions:

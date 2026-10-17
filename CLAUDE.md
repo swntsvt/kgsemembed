@@ -17,7 +17,7 @@ Phase 2 datasets: D1 (SNOMED-FMA Body), D2 (Anatomy MA-NCI), D3 (Conference,
 21 pairs), D4 (memoryalpha-stexpanded, schema and instance), D5
 (DBpedia-Wikidata 15K EN, OpenEA). Five datasets total.
 
-**Current focus**: Issue #128 — controlled PPAS policies P1–P7 (filtering vs ordering vs vocabulary) on D1 at 48 tokens, plus their validation across D1 budgets (32/64) and on D2 at 48 (Phase 2)
+**Current focus**: Issue #131 — predicate-role ablation on D1 and D2 (which annotation roles drive the #128 covered-eligibility effect, with and without a token budget); #128 and #130 merged (Phase 2)
 
 ## Git Workflow
 
@@ -189,6 +189,28 @@ python scripts/ppas_ablation_inventory.py --datasets D1 D2 \
 python scripts/generate_ppas_validation_report.py \
     --reference_dir data/results_ppas_controlled/ \
     --results_dir data/results_ppas_validation/
+
+# Predicate-role ablation (#131): tokenizer-only inventory (checks every
+# predicate has a role), the run (PR-* conditions only, into their own
+# directory), status, and the report (reads the #128/validation P1 at 48
+# read-only for the ordering artefact).
+python scripts/predicate_role_inventory.py --datasets D1 D2 --data_dir data/
+python -m kgsemembed.pipeline.ppas_ablation --datasets D1 D2 \
+    --conditions $(python -c "from kgsemembed.pipeline.ablation_conditions import ABLATION_CONDITIONS as A; print(' '.join(c.condition_id for c in A if c.is_role_ablation))") \
+    --data_dir data/ --results_dir data/results_predicate_roles/
+python scripts/predicate_role_inventory.py --datasets D1 D2 \
+    --results_dir data/results_predicate_roles/
+python scripts/generate_predicate_role_report.py \
+    --results_dir data/results_predicate_roles/
+
+# Diagnostics behind the #131 write-up and the #128 review: label loss and
+# fingerprint reproduction per P1-P7 policy (tokenizer only); entity-level
+# re-ranking of sampled test sources, checked against the sidecars; and
+# rendering-position probes on validation sources only (both load M2).
+python scripts/predicate_role_diagnostics.py label-loss --datasets D1 D2
+python scripts/predicate_role_diagnostics.py examples --n_sample 300 \
+    --pair PR-core-full PR-all-full PR-no-syn-full PR-core-plus-syn-full
+python scripts/predicate_role_diagnostics.py probe --n_sample 400
 ```
 
 Omitting `--conditions` runs every registered condition; omitting `--datasets`
@@ -365,7 +387,7 @@ V8+V6.
 
 ## Controlled PPAS ablation (#122)
 
-A separate registry (`pipeline/ablation_conditions.py`, 40 `PA-*` conditions: 22 from #122, P1–P7 on D1 at 48 from #128, and 11 validation conditions)
+A separate registry (`pipeline/ablation_conditions.py`, 64 conditions: 22 `PA-*` from #122, P1–P7 on D1 at 48 from #128, 11 validation conditions, and 24 `PR-*` predicate-role conditions from #131)
 and runner (`pipeline/ppas_ablation.py`) keep the ablation out of C1–C20, so
 `_EXPECTED_CONDITION_COUNT`, the main tables and the group statistics are
 unchanged. All conditions use M2 and one representation; within a budget the
@@ -461,6 +483,93 @@ Seven conditions vary one dimension at a time on D1 at 48 tokens
   help: P5−P2 +0.004 [−0.007, 0.015]; P6−P3 −0.147. Lexical items help gold
   targets but help distractors more (P7−P6: changed +0.061, complement −0.193).
   P1/P2 reproduce #122's det/PPAS MRR exactly.
+
+### Predicate-role ablation (#131)
+
+- **Role map** `roles_v1` (`verbalisation/predicate_roles.py`): one role per
+  full predicate URI for every predicate in D1/D2 — core (`rdfs:label`,
+  `rdf:type`, `rdfs:subClassOf`), preferred_name, synonym, definition,
+  identifier, non_english, disjointness, other — fixed from property
+  declarations, labels and sample values before any run. An unmapped
+  predicate raises `UnmappedPredicateError`; the runner checks every pair
+  before encoding.
+- **Arms** (`ROLE_ARMS`, `ROLE_MATRIX`, 38 runs): A0 (nothing removed), R-x
+  (remove role x), A-core (core only), C+x (core plus x); removal applies to
+  both sides. D1: 8 arms at none and 48, 4 C+x at none. D2: 6 arms at none and
+  48, A0/R-syn/R-def/A-core at 24, C+syn/C+def at none.
+- **No budget** = `full` order: all remaining items, canonical order; only the
+  model's 512-token limit applies, and results record `n_model_truncated` and
+  `n_truncated_tokens` per side. **Budgeted** arms use `core_first` order
+  (core items, then the rest, each canonical; no PPAS tiers), because
+  lexicographic order drops `rdfs:label` for 43% (D1) / 48% (D2) of trimmed
+  candidates at 48 — the `purl.org/fma` and `geneontology.org` predicates sort
+  before `w3.org`. At 24 on D2, 39 candidates' labels do not fit at all, in
+  every arm.
+- `Selection.selected` indexes the *filtered* item list (vocabulary and role
+  filters), so never look items up in the unfiltered list with it; compare
+  texts.
+- Results: `data/results_predicate_roles/` only; the runner refuses `PR-*`
+  conditions in the historical trees and anything else there. Each result
+  records `role_arm`, `excluded_roles`, the role map (hash and roles) and,
+  per side, `role_removal` (entities, items and item tokens per role).
+- The report gives arm − A0 per budget, the per-source difference-in-differences
+  `(R−A0)@b − (R−A0)@none` (four runs resampled jointly), budget costs, C+x −
+  A-core, and A0@48 core-first − lexicographic P1@48 (the ordering artefact).
+- **Results (3d5c487; 38/38 full runs, one clean commit; no input exceeded
+  512 tokens, so nothing was truncated; per-pair bootstrap, never pooled)**:
+  A0 without a budget reproduces #122 `full` (D1 0.4525). Core only wins
+  everywhere: A-core − A0 Δ MRR D1 +0.272 (none) / +0.238 (48), D2 +0.136 /
+  +0.093 (48) / +0.070 (24). Single-role removals do not add up to it (sum
+  of R-x − A0 without a budget: D1 +0.077, D2 +0.083), so the covered effect
+  is not one role. D1, no budget: R-nonEn +0.137, R-syn +0.026, R-def +0.005,
+  R-disj −0.001 (n.s.), R-pref −0.037, R-id −0.052; C+pref − A-core +0.028,
+  C+id −0.056, C+def −0.027 (−0.434 on the 305 sources whose own or gold text
+  has a definition), C+syn −0.249. D2, no budget: R-def +0.076 (+0.416 on 234
+  affected sources), R-syn +0.007 [−0.007, 0.021], R-id/R-disj exactly 0;
+  C+def − A-core −0.129, C+syn −0.060. Removing a role behaves differently
+  under a budget: synonym removal gains under it on D2 (DiD +0.063 at 24 / +0.058 at 48)
+  while definition removal loses (−0.076 / −0.066). A budget costs nothing
+  with core only (A-core@48 − A-core@none D1 −0.001, D2 −0.001) and helps A0
+  (D1 +0.033, D2 +0.042 at 48 / +0.053 at 24). Ordering artefact at 48:
+  A0 core-first − P1 lexicographic D1 +0.129, D2 +0.028. On D2, A-core@48 =
+  #128 P3 (0.8705): `base` covers only core there. On D1, A-core@48 0.723 >
+  P3 0.697. One pair per dataset; not a generalisation claim.
+- **Rendering position (investigation, `scripts/predicate_role_diagnostics.py`)**:
+  selected items are *rendered* in canonical predicate-URI order whatever the
+  selection order, so FMA annotations (`purl.org/sig/ont/fma/…`) precede
+  `type: Class | label: …` in every candidate text, while SNOMED's SKOS
+  annotations follow the label. The two odd D1 effects are mostly this:
+  - **C+syn −0.249**: the loss is confined to sources whose gold target has
+    synonyms (−0.39/−0.35 per source vs +0.03/+0.02 without). Probe on 400 D1
+    *validation* sources (never test): C+syn − A-core −0.240 [−0.279, −0.204];
+    the same items with synonyms rendered after core −0.045 [−0.074, −0.017].
+    R-syn is small from A0 because A0's candidates already lead with FMAID,
+    non-English and preferred-name items.
+  - **C+id −0.056 vs R-id −0.052**: C+id is position only (FMAID last:
+    −0.002 [−0.023, +0.017]; masking the digits to `FMAID: 0` is worse,
+    −0.093). R-id is *not* position (with every annotation rendered last it is
+    still −0.063 [−0.082, −0.043]) and not the digits (masked A0 +0.002);
+    why the segment helps a full text is unexplained.
+  - **Full text**: rendering all annotations after core lifts A0 by +0.165
+    [0.136, 0.195] (0.478 → 0.642), leaving A-core +0.069 [0.038, 0.103]
+    ahead instead of +0.234. Hypothesis for D1 only; D2 not probed; probes are
+    exploratory renderings, not registered arms.
+  - **Checks**: 3,600 recomputed test-source ranks (300 sources × 4 arms × 3
+    runs) equal the stored sidecar ranks; all four contrasts share population,
+    commit, candidates, data digests, model/tokenizer revision and role map.
+- **Reproduce / access**: results (JSON + `_entities.json` sidecars) are in
+  `data/results_predicate_roles/{condition}/{D1,D2}/`; `report.md`,
+  `figures/` and `diagnostics/` sit beside them. All of `data/` is gitignored
+  (local only); every artefact is regenerated from code at a pinned commit:
+  - configurations: `ROLE_ARMS`/`ROLE_MATRIX` (`ablation_conditions.py`),
+    `roles_v1` (`predicate_roles.py`, hash `d4c5bd86becb…`, recorded in every
+    result); budgets and order in each result's `ablation` block;
+  - runs: the run command above at commit `3d5c487` (~2–3 h; existing results
+    are skipped unless `--force_recompute`);
+  - report and figures: `generate_predicate_role_report.py` (reads results
+    only; regenerates byte-identically apart from file timestamps);
+  - diagnostics: `predicate_role_diagnostics.py label-loss | examples | probe`
+    (label-loss is tokenizer only; examples and probe load M2, ~10–40 min).
 
 ### Validation of the eligibility effect (#128 follow-up)
 

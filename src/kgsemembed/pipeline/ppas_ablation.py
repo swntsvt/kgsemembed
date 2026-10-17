@@ -21,7 +21,8 @@ The #128 controlled policies (P1-P7) must go to a separate directory,
 them beside the #122 results.  The validation runs that extend them (P1-P4 on
 D1 at 32 and 64, P1-P7 on D2 at 48) go to ``data/results_ppas_validation/``,
 which in turn refuses D1 at 48, so the #128 reference stays the only copy of
-those results.  Every condition, legacy or controlled, is
+those results.  The #131 predicate-role conditions (``PR-*``) go only to
+``data/results_predicate_roles/``, which accepts nothing else.  Every condition, legacy or controlled, is
 selected through one path: the condition's filter mode, order mode and
 predicate vocabulary.
 
@@ -75,6 +76,7 @@ from kgsemembed.pipeline.run_experiment import (
     _unique_candidate_uris,
 )
 from kgsemembed.verbalisation.predicate_config import get_predicate_config
+from kgsemembed.verbalisation.predicate_roles import RoleFilter, UnmappedPredicateError, get_role_map
 from kgsemembed.verbalisation.selection import (
     DETERMINISTIC_ORDER,
     ITEM_SEPARATOR,
@@ -91,6 +93,7 @@ _LOGGER = logging.getLogger("kgsemembed.pipeline.ppas_ablation")
 DEFAULT_RESULTS_DIR = "data/results_ppas_ablation/"
 CONTROLLED_RESULTS_DIR = "data/results_ppas_controlled/"
 VALIDATION_RESULTS_DIR = "data/results_ppas_validation/"
+ROLE_RESULTS_DIR = "data/results_predicate_roles/"
 _HISTORICAL_RESULTS_DIR = Path("data/results")
 _ISSUE_122_RESULTS_DIR = Path(DEFAULT_RESULTS_DIR)
 _SOURCE = "source"
@@ -291,6 +294,7 @@ def side_summary(selections: List[Selection], max_seq_length: int) -> Dict[str, 
         "n_no_eligible_items": int((eligible == 0).sum()),
         "n_oversized_items": int(sum(s.n_oversized for s in selections)),
         "n_model_truncated": int((tokens > max_seq_length).sum()),
+        "n_truncated_tokens": int(np.maximum(tokens - max_seq_length, 0).sum()),
         "n_selected_items": int(sum(len(s.selected) for s in selections)),
         "tokens": _distribution(tokens),
         "model_input_tokens_total": int(np.minimum(tokens, max_seq_length).sum()),
@@ -576,6 +580,9 @@ def ablation_block(
         "item_separator": ITEM_SEPARATOR,
         "deterministic_order": DETERMINISTIC_ORDER,
         "policy_label": condition.policy_label,
+        "role_arm": condition.role_arm,
+        "excluded_roles": list(condition.excluded_roles),
+        "role_map": role_map_record(condition.role_map) if condition.role_map else None,
         "filter_mode": condition.filter_mode,
         "order_mode": condition.order_mode,
         "predicate_config": predicate_config_record(condition.predicate_config),
@@ -588,6 +595,24 @@ def ablation_block(
     }
 
     return block
+
+
+def role_map_record(name: str) -> Dict[str, object]:
+    """
+    Describe the role map a predicate-role condition used.
+
+    Parameters
+    ----------
+    name : str
+        Role-map name.
+
+    Returns
+    -------
+    Dict[str, object]
+        Name, configuration hash and the role of every mapped predicate.
+    """
+    role_map = get_role_map(name)
+    return {"name": role_map.name, "config_hash": role_map.config_hash, "roles": dict(sorted(role_map.roles.items()))}
 
 
 def predicate_config_record(name: str) -> Dict[str, object]:
@@ -682,18 +707,113 @@ def dataset_file_digests(dataset_id: str, data_dir: Path) -> Dict[str, Optional[
             for rel, path in paths.items()}
 
 
+def role_filter_for(condition: AblationCondition) -> Optional[RoleFilter]:
+    """
+    Return the role filter of a predicate-role condition, ``None`` otherwise.
+
+    Parameters
+    ----------
+    condition : AblationCondition
+        A registered condition.
+
+    Returns
+    -------
+    Optional[RoleFilter]
+        The arm's role map and excluded roles.
+    """
+    if not condition.is_role_ablation:
+        return None
+    return RoleFilter(get_role_map(condition.role_map), frozenset(condition.excluded_roles))
+
+
+def condition_selector(condition: AblationCondition, count_tokens: TokenCounter) -> PolicySelector:
+    """
+    Build the selector a condition prescribes: order, budget, seed, vocabulary and roles.
+
+    Parameters
+    ----------
+    condition : AblationCondition
+        A registered condition.
+    count_tokens : TokenCounter
+        Encoded-length counter of the model's tokenizer.
+
+    Returns
+    -------
+    PolicySelector
+        Selector used by the runner and the inventories alike.
+    """
+    return PolicySelector(
+        order_mode=condition.order_mode, count_tokens=count_tokens, budget=condition.token_budget,
+        seed=condition.seed, filter_mode=condition.filter_mode,
+        predicate_config=get_predicate_config(condition.predicate_config),
+        role_filter=role_filter_for(condition),
+    )
+
+
+def role_removal_summary(side: SideItems, role_filter: RoleFilter, count_tokens: TokenCounter) -> Dict[str, object]:
+    """
+    Count, per role, the items and item tokens a role filter removes from a side.
+
+    Item tokens are the item's own encoded length without special tokens, so
+    they approximate, not equal, the change in joined-text length.
+
+    Parameters
+    ----------
+    side : SideItems
+        Eligible items of the side.
+    role_filter : RoleFilter
+        The arm's role filter.
+    count_tokens : TokenCounter
+        Encoded-length counter, special tokens included.
+
+    Returns
+    -------
+    Dict[str, object]
+        ``{role: {"n_items", "n_entities", "item_tokens"}}`` for removed roles.
+    """
+    removed: Dict[str, Dict[str, int]] = {}
+    for items in side.items:
+        touched = set()
+        for item in items:
+            role = role_filter.role_map.role_of(item.predicate)
+            if role in role_filter.excluded_roles:
+                entry = removed.setdefault(role, {"n_items": 0, "n_entities": 0, "item_tokens": 0})
+                entry["n_items"] += 1
+                entry["item_tokens"] += count_tokens(item.text) - 2
+                touched.add(role)
+        for role in touched:
+            removed[role]["n_entities"] += 1
+    return removed
+
+
+def check_role_coverage(context: PairContext, conditions: List[AblationCondition]) -> None:
+    """
+    Raise before any encoding if a role condition meets an unmapped predicate.
+
+    Parameters
+    ----------
+    context : PairContext
+        Items of both sides of the pair.
+    conditions : List[AblationCondition]
+        Conditions about to run on the pair.
+
+    Raises
+    ------
+    UnmappedPredicateError
+        If any item predicate has no role in a condition's role map.
+    """
+    predicates = {i.predicate for side in (context.source, context.candidate) for items in side.items for i in items}
+    for name in sorted({c.role_map for c in conditions if c.is_role_ablation}):
+        missing = get_role_map(name).unmapped(predicates)
+        if missing:
+            raise UnmappedPredicateError(f"{name} has no role for {missing}.")
+
+
 def _select_and_encode(
     condition: AblationCondition, context: PairContext
 ) -> Tuple[Dict[str, List[Selection]], Dict[str, np.ndarray], Dict[str, object]]:
     """Select both sides under the condition, then embed them through the cache."""
-    selector = PolicySelector(
-        order_mode=condition.order_mode,
-        count_tokens=context.count_tokens,
-        budget=condition.token_budget,
-        seed=condition.seed,
-        filter_mode=condition.filter_mode,
-        predicate_config=get_predicate_config(condition.predicate_config),
-    )
+    selector = condition_selector(condition, context.count_tokens)
     selections, embeddings, runtime = {}, {}, {}
     for side_name, side in ((_SOURCE, context.source), (_CANDIDATE, context.candidate)):
         selections[side_name], seconds = select_side(selector, side)
@@ -736,6 +856,10 @@ def run_condition_on_pair(
         }
         for side in selections
     }
+    role_filter = role_filter_for(condition)
+    if role_filter is not None:
+        for side_name, side in ((_SOURCE, context.source), (_CANDIDATE, context.candidate)):
+            summaries[side_name]["role_removal"] = role_removal_summary(side, role_filter, context.count_tokens)
     uris = {_SOURCE: context.source.uris, _CANDIDATE: context.candidate.uris}
     summaries["selection_sha256"] = selection_digest(uris, selections)
     summaries["runtime"] = runtime
@@ -851,11 +975,22 @@ def is_reference_run(condition: AblationCondition, dataset_id: str) -> bool:
     return condition.is_controlled and dataset_id == "D1" and condition.token_budget == CONTROLLED_BUDGET
 
 
+def _guard_role_results_dir(resolved: Path, conditions: List[AblationCondition]) -> None:
+    """Keep #131 role conditions out of every historical tree, and other conditions out of theirs."""
+    historical = {Path(d).resolve() for d in (_HISTORICAL_RESULTS_DIR, DEFAULT_RESULTS_DIR,
+                                              CONTROLLED_RESULTS_DIR, VALIDATION_RESULTS_DIR)}
+    if resolved in historical and any(c.is_role_ablation for c in conditions):
+        raise ValueError(f"Predicate-role conditions must not be written to {resolved}; use {ROLE_RESULTS_DIR}.")
+    if resolved == Path(ROLE_RESULTS_DIR).resolve() and not all(c.is_role_ablation for c in conditions):
+        raise ValueError(f"{ROLE_RESULTS_DIR} holds only predicate-role (PR-*) conditions.")
+
+
 def _guard_results_dir(
     results_dir: Path, conditions: List[AblationCondition], dataset_ids: List[str]
 ) -> None:
     """Refuse the historical tree, and controlled runs outside their own tree."""
     resolved = results_dir.resolve()
+    _guard_role_results_dir(resolved, [c for c in conditions if any(d in c.datasets for d in dataset_ids)])
     runs = [(c, d) for c in conditions for d in dataset_ids if d in c.datasets and c.is_controlled]
     if resolved == Path(CONTROLLED_RESULTS_DIR).resolve() and not all(is_reference_run(c, d) for c, d in runs):
         raise ValueError(
@@ -924,6 +1059,7 @@ def run_dataset(
         if not pending:
             continue
         context = build_pair_context(pair, encoder, count_tokens, settings.data_dir)
+        check_role_coverage(context, pending)
         for condition in pending:
             _seed_random_state()
             _LOGGER.info("Running %s on %s/%s", condition.condition_id, pair.dataset_id, pair.pair_name)
