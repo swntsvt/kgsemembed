@@ -1,6 +1,8 @@
 """Tests for the text-serialization-order experiment (#134)."""
 
+import csv
 import hashlib
+import io
 import json
 import subprocess
 import sys
@@ -567,6 +569,42 @@ def test_rank_gate_fails_on_a_changed_gold_set():
     baseline = _baseline({"s1": 1})
     baseline["test_sources"][0]["gold_targets"] = ["gs1", "gs9"]
     assert _gate(_gate_cells({"s1": 1}), baseline)["n_gold_mismatch"] == 1
+
+
+def _exported_cells(source_fp, gold_fp) -> dict:
+    record = {"source": "s1", "top": "g1", "gold_targets": ["g1"], "best_rank": 1,
+              "source_fp": [source_fp, "set"], "gold_fp": {"g1": [gold_fp, "set"]}}
+    rows = report.outcome_rows("test", "D2", "SO-all-uri-full", {"reference_sources": {"test": [record]}})
+    parsed = csv.DictReader(io.StringIO(report.csv_bytes(report.OUTCOME_COLUMNS, rows).decode()))
+    return {("D2", "SO-all-uri-full"): {r["source"]: r for r in parsed}}
+
+
+def _stored(source_fp, gold_fp) -> dict:
+    fingerprints = {"source": {"s1": source_fp}, "candidate": {"g1": gold_fp}}
+    return {"test_sources": [{"source": "s1", "gold_targets": ["g1"], "best_rank": 1}],
+            "selection_fingerprints": {side: {k: v for k, v in fps.items() if v is not None}
+                                       for side, fps in fingerprints.items()}}
+
+
+@pytest.mark.parametrize("exported, stored, status", [
+    (("t", None), ("t", None), "pass"),
+    ((None, None), (None, None), "pass"),
+    (("t", None), ("t", "c"), "FAIL"),
+    (("t", "c"), ("t", None), "FAIL"),
+    ((None, "c"), ("t", "c"), "FAIL"),
+    (("t", "c"), ("t", "d"), "FAIL"),
+    (("t", "c"), ("t", "c"), "pass"),
+])
+def test_rank_gate_reads_unencoded_targets_in_the_export_format(exported, stored, status):
+    row = _gate(_exported_cells(*exported), _stored(*stored))
+    assert row["status"] == status
+    assert row["n_text_mismatch"] == (status == "FAIL")
+
+
+def test_exported_unencoded_gold_target_is_written_as_none():
+    cells = _exported_cells("t", None)
+    assert cells[("D2", "SO-all-uri-full")]["s1"]["gold_text_fps"] == "g1=None"
+    assert report._fps("g1=None;g2=;g3=abc;g4=none") == {"g1": None, "g2": None, "g3": "abc", "g4": "none"}
 
 
 def test_rank_gate_cannot_pass_without_baseline_records():

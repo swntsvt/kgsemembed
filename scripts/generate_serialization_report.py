@@ -107,6 +107,7 @@ EXAMPLE_COLUMNS = ("stage", "dataset", "direction", "source", "gold_targets", "r
                    "top_uri", "top_frozen")
 EXAMPLES_PER_DIRECTION = 5
 BONFERRONI_FAMILY = 2
+UNENCODED_FINGERPRINTS = ("", str(None))
 Cell = Dict[str, Dict[str, object]]
 
 
@@ -879,9 +880,26 @@ def expected_rank_targets() -> Dict[Tuple[str, str], Tuple[str, str]]:
 
 
 def _fps(field: str) -> Dict[str, Optional[str]]:
-    """Parse ``uri=fingerprint;...`` (empty fingerprint = not encoded)."""
+    """
+    Parse an exported ``uri=fingerprint;...`` field.
+
+    :func:`outcome_rows` writes a gold target that was never encoded as
+    ``uri=None`` (``str(None)``); an empty fingerprint is the same marker in
+    the ``source_text_fp`` form. Only these two exact values mean "not
+    encoded"; every other value is kept as written and compared verbatim.
+
+    Parameters
+    ----------
+    field : str
+        The exported ``gold_text_fps`` (or ``gold_set_fps``) value.
+
+    Returns
+    -------
+    Dict[str, Optional[str]]
+        Fingerprint by target URI; ``None`` for an unencoded target.
+    """
     pairs = (entry.rpartition("=") for entry in field.split(";") if entry)
-    return {uri: fp or None for uri, _sep, fp in pairs}
+    return {uri: None if fp in UNENCODED_FINGERPRINTS else fp for uri, _sep, fp in pairs}
 
 
 def compare_source(ours: Optional[Dict[str, str]], stored: Dict, fingerprints: Dict[str, Dict[str, str]]) -> Dict[str, bool]:
