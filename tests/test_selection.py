@@ -1,10 +1,16 @@
-"""Tests for budgeted triple selection in the controlled PPAS ablation (#122)."""
+"""Tests for budgeted triple selection in the controlled PPAS ablation (#122, #128)."""
 
 import copy
 
 import pytest
 from rdflib import BNode, Graph, Literal, URIRef
 from rdflib.namespace import OWL, RDF, RDFS
+
+from kgsemembed.verbalisation.predicate_config import (
+    PredicateVocabulary,
+    expand_predicate,
+    get_predicate_config,
+)
 
 import kgsemembed.verbalisation.selection as selection
 from kgsemembed.verbalisation.ppas import (
@@ -291,4 +297,195 @@ def test_budget_holds_under_the_real_bge_tokenizer():
         result = PolicySelector(policy, count, 80, seed).select(items, str(ENTITY), "instance")
         encoded = tokenizer(result.text)["input_ids"]
         assert len(encoded) == result.n_tokens <= 80
+        assert encoded[0] == tokenizer.cls_token_id and encoded[-1] == tokenizer.sep_token_id
+
+
+# ---------------------------------------------------------------------------
+# Controlled policies P1-P7 (#128): filtering and ordering are independent
+# ---------------------------------------------------------------------------
+
+FMA = "http://purl.org/sig/ont/fma/"
+HEART = URIRef(f"{EX}heart")
+BGE_REVISION = "d4aa6901d3a41ba39fb536a557fa166f842b0e09"
+
+CONTROLLED = {
+    "P1": ("all", "base", DETERMINISTIC),
+    "P2": ("all", "base", PPAS),
+    "P3": ("covered", "base", DETERMINISTIC),
+    "P4": ("covered", "base", PPAS),
+    "P5": ("all", "fma_extended", PPAS),
+    "P6": ("covered", "fma_extended", DETERMINISTIC),
+    "P7": ("covered", "fma_extended", PPAS),
+}
+
+
+def _fma_graph() -> Graph:
+    """An FMA-style class; canonical order puts every fma: item before rdf/rdfs ones.
+
+    Items, canonically: 0 FMAID, 1 author, 2 preferred name, 3 synonym cardiac
+    pump, 4 synonym cor, 5 type, 6 label, 7 subClassOf.
+    """
+    graph = Graph()
+    for local, value in (("author", "curator one"), ("FMAID", "7088"), ("preferred_name", "heart"),
+                         ("synonym", "cor"), ("synonym", "cardiac pump")):
+        graph.add((HEART, URIRef(f"{FMA}{local}"), Literal(value)))
+    graph.add((HEART, RDF.type, OWL.Class))
+    graph.add((HEART, RDFS.label, Literal("Heart")))
+    graph.add((HEART, RDFS.subClassOf, URIRef(f"{EX}Organ")))
+    graph.add((URIRef(f"{EX}Organ"), RDFS.label, Literal("organ")))
+    return graph
+
+
+def _fma_items() -> list[EligibleItem]:
+    return _selector(FULL).eligible_items(_fma_graph(), HEART)
+
+
+def _controlled(label: str, budget: int, count=count_words, vocabulary=None) -> PolicySelector:
+    filter_mode, name, order_mode = CONTROLLED[label]
+    return PolicySelector(
+        order_mode=order_mode, count_tokens=count, budget=budget, filter_mode=filter_mode,
+        predicate_config=vocabulary or get_predicate_config(name),
+    )
+
+
+def _select(label: str, budget: int, items=None):
+    return _controlled(label, budget).select(items or _fma_items(), str(HEART), "class")
+
+
+def _texts(selection) -> set[str]:
+    return set(selection.text.split(ITEM_SEPARATOR)) if selection.text else set()
+
+
+def test_fma_fixture_items_are_in_the_documented_canonical_order():
+    predicates = [item.predicate for item in _fma_items()]
+    assert predicates[:5] == [f"{FMA}FMAID", f"{FMA}author", f"{FMA}preferred_name",
+                              f"{FMA}synonym", f"{FMA}synonym"]
+    assert predicates[5:] == [str(RDF.type), str(RDFS.label), str(RDFS.subClassOf)]
+
+
+def test_p1_and_p3_order_identically_when_given_the_same_eligible_items():
+    covered = [i for i in _fma_items() if i.predicate in get_predicate_config("base").covered_predicates]
+    for budget in (5, 6, 7, 9, 12):
+        assert _select("P1", budget, covered).text == _select("P3", budget, covered).text
+
+
+def test_p3_and_p4_share_the_eligible_set_but_order_it_differently():
+    p3, p4 = _select("P3", 6), _select("P4", 6)
+    assert (p3.n_eligible, p3.n_filtered_items) == (p4.n_eligible, p4.n_filtered_items) == (3, 5)
+    assert _texts(p3) == {"type: Class"}
+    assert _texts(p4) == {"label: Heart"}
+
+
+def test_p3_excludes_predicates_outside_the_covered_vocabulary():
+    p3 = _select("P3", 512)
+    assert not p3.sampling_invoked
+    assert _texts(p3) == {"type: Class", "label: Heart", "sub Class Of: organ"}
+
+
+def test_p4_selects_only_from_the_items_p3_keeps():
+    eligible = _texts(_select("P3", 512))
+    for budget in (4, 6, 7, 9):
+        assert _texts(_select("P4", budget)) <= eligible
+
+
+@pytest.mark.parametrize("graph_fn,entity", [(_class_graph, ENTITY), (_fma_graph, HEART)])
+@pytest.mark.parametrize("label,policy", [("P1", DETERMINISTIC), ("P2", PPAS)])
+def test_p1_and_p2_reproduce_the_legacy_policies(graph_fn, entity, label, policy):
+    items = _selector(FULL).eligible_items(graph_fn(), entity)
+    for budget in (4, 6, 8, 12, 20):
+        legacy = _selector(policy, budget).select(items, str(entity), "class")
+        controlled = _controlled(label, budget).select(items, str(entity), "class")
+        assert controlled.text == legacy.text
+        assert controlled.selected == legacy.selected
+
+
+def test_p5_uses_its_own_tiers_and_differs_from_p2():
+    p2, p5 = _select("P2", 12), _select("P5", 12)
+    assert _texts(p2) == {"type: Class", "label: Heart", "sub Class Of: organ"}
+    assert _texts(p5) == {"preferred name: heart", "synonym: cardiac pump", "synonym: cor"}
+
+
+def test_p5_order_follows_the_extended_tiers_with_fmaid_after_every_tier():
+    selector = _controlled("P5", 12)
+    assert selector._order(_fma_items(), str(HEART), "class") == [2, 3, 4, 6, 5, 7, 0, 1]
+    base = _controlled("P2", 12)
+    assert base._order(_fma_items(), str(HEART), "class") == [6, 5, 7, 0, 1, 2, 3, 4]
+
+
+def test_a_misnamespaced_fma_vocabulary_selects_exactly_like_p2():
+    extended = get_predicate_config("fma_extended")
+    wrong = "http://purl.org/oasis/names/tc/ciq/xal/3.0#"
+    moved = {t: [[p.replace(FMA, wrong) for p in tier] for tier in tiers]
+             for t, tiers in extended.tier_lists.items()}
+    covered = frozenset(p.replace(FMA, wrong) for p in extended.covered_predicates)
+    misnamed = PredicateVocabulary("misnamed", "", covered, moved)
+    selection = _controlled("P5", 12, vocabulary=misnamed).select(_fma_items(), str(HEART), "class")
+    assert selection.text == _select("P2", 12).text
+
+
+def test_p6_keeps_fma_lexical_and_identifier_items_and_drops_the_rest():
+    p6 = _select("P6", 512)
+    assert p6.n_filtered_items == 1
+    assert "author: curator one" not in _texts(p6)
+    assert {"FMAID: 7088", "preferred name: heart", "synonym: cor"} <= _texts(p6)
+
+
+def test_p6_and_p7_share_the_eligible_set_and_differ_in_order():
+    p6, p7 = _select("P6", 12), _select("P7", 12)
+    assert p6.n_eligible == p7.n_eligible == 7
+    assert "FMAID: 7088" in _texts(p6)
+    assert "FMAID: 7088" not in _texts(p7)
+
+
+def test_fmaid_is_kept_by_the_covered_filter_but_visited_last():
+    selector = _controlled("P7", 512)
+    filtered = [i for i in _fma_items() if i.predicate != f"{FMA}author"]
+    order = selector._order(filtered, str(HEART), "class")
+    assert filtered[order[-1]].predicate == f"{FMA}FMAID"
+
+
+def test_item_predicates_match_prefix_expanded_vocabulary_uris():
+    predicates = {item.predicate for item in _fma_items()}
+    assert expand_predicate("fma:synonym") in predicates
+    assert expand_predicate("rdfs:subClassOf") in predicates
+
+
+def test_equal_priority_ties_keep_canonical_order_and_oversized_items_are_skipped():
+    items = _fma_items()
+    long_synonym = EligibleItem(f"{FMA}synonym", "synonym: " + "very " * 20 + "long")
+    with_oversized = sorted(items + [long_synonym], key=lambda i: (i.predicate, i.text))
+    first = _controlled("P5", 9).select(with_oversized, str(HEART), "class")
+    again = _controlled("P5", 9).select(with_oversized, str(HEART), "class")
+    assert first == again
+    assert first.n_oversized == 1
+    assert _texts(first) == {"preferred name: heart", "synonym: cardiac pump"}
+
+
+def test_controlled_selections_record_their_modes_and_coverage():
+    p5, p6 = _select("P5", 12), _select("P6", 12)
+    assert (p5.filter_mode, p5.order_mode, p5.predicate_config_name) == ("all", PPAS, "fma_extended")
+    assert (p6.filter_mode, p6.order_mode, p6.predicate_config_name) == ("covered", DETERMINISTIC, "fma_extended")
+    assert p5.n_covered_items == p6.n_covered_items == 7
+    assert _select("P1", 12).n_covered_items == 3
+    assert p5.n_tiered_items == 6 and _select("P2", 12).n_tiered_items == 3
+
+
+def test_unknown_filter_mode_raises():
+    with pytest.raises(ValueError):
+        PolicySelector(order_mode=PPAS, count_tokens=count_words, budget=9, filter_mode="some")
+
+
+@pytest.mark.slow
+def test_controlled_policies_hold_the_budget_under_the_real_bge_tokenizer():
+    from transformers import AutoTokenizer
+
+    tokenizer = AutoTokenizer.from_pretrained("BAAI/bge-large-en-v1.5", revision=BGE_REVISION)
+    count = make_token_counter(tokenizer)
+    extra = [EligibleItem(f"{FMA}synonym", f"synonym: cardiac structure variant {i}") for i in range(30)]
+    items = sorted(_fma_items() + extra, key=lambda i: (i.predicate, i.text))
+    for label in CONTROLLED:
+        result = _controlled(label, 48, count).select(items, str(HEART), "class")
+        encoded = tokenizer(result.text)["input_ids"]
+        assert result.sampling_invoked == (label not in ("P3", "P4"))
+        assert len(encoded) == result.n_tokens <= 48
         assert encoded[0] == tokenizer.cls_token_id and encoded[-1] == tokenizer.sep_token_id

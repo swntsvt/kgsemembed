@@ -17,7 +17,7 @@ Phase 2 datasets: D1 (SNOMED-FMA Body), D2 (Anatomy MA-NCI), D3 (Conference,
 21 pairs), D4 (memoryalpha-stexpanded, schema and instance), D5
 (DBpedia-Wikidata 15K EN, OpenEA). Five datasets total.
 
-**Current focus**: Issue #122 — controlled PPAS ablation with fixed token budgets (Phase 2)
+**Current focus**: Issue #128 — controlled PPAS policies P1–P7 (filtering vs ordering vs vocabulary) on D1 at 48 tokens, plus their validation across D1 budgets (32/64) and on D2 at 48 (Phase 2)
 
 ## Git Workflow
 
@@ -157,6 +157,38 @@ python -m kgsemembed.pipeline.ppas_ablation --datasets D5 D1 \
 python scripts/generate_ppas_ablation_report.py \
     --results_dir data/results_ppas_ablation/ \
     --output data/results_ppas_ablation/report.md
+
+# Controlled policies P1-P7 (#128): D1 only, own results directory (the runner
+# refuses to write them beside the #122 results). The inventory now also
+# covers P1-P7; --results_dir switches it to a run-status table.
+python -m kgsemembed.pipeline.ppas_ablation --datasets D1 \
+    --conditions PA-all-base-det-48 PA-all-base-ppas-48 PA-cov-base-det-48 \
+    PA-cov-base-ppas-48 PA-all-fmax-ppas-48 PA-cov-fmax-det-48 PA-cov-fmax-ppas-48 \
+    --data_dir data/ --results_dir data/results_ppas_controlled/
+python scripts/ppas_ablation_inventory.py --datasets D1 \
+    --results_dir data/results_ppas_controlled/
+python scripts/generate_ppas_ablation_report.py \
+    --results_dir data/results_ppas_controlled/ \
+    --output data/results_ppas_controlled/report.md
+
+# Validation of the eligibility effect (#128 follow-up): P1-P4 on D1 at 32/64
+# and P1-P7 on D2 at 48, into their own directory (which refuses D1 at 48: the
+# #128 runs stay the reference). Two invocations, because P1-P4 at 48 are also
+# registered on D1. The report reads the reference read-only and writes
+# report.md plus figures/ into the validation directory.
+python -m kgsemembed.pipeline.ppas_ablation --datasets D1 \
+    --conditions PA-all-base-det-32 PA-all-base-ppas-32 PA-cov-base-det-32 \
+    PA-cov-base-ppas-32 PA-all-base-det-64 PA-all-base-ppas-64 PA-cov-base-det-64 \
+    PA-cov-base-ppas-64 --data_dir data/ --results_dir data/results_ppas_validation/
+python -m kgsemembed.pipeline.ppas_ablation --datasets D2 \
+    --conditions PA-all-base-det-48 PA-all-base-ppas-48 PA-cov-base-det-48 \
+    PA-cov-base-ppas-48 PA-all-obox-ppas-48 PA-cov-obox-det-48 PA-cov-obox-ppas-48 \
+    --data_dir data/ --results_dir data/results_ppas_validation/
+python scripts/ppas_ablation_inventory.py --datasets D1 D2 \
+    --results_dir data/results_ppas_validation/
+python scripts/generate_ppas_validation_report.py \
+    --reference_dir data/results_ppas_controlled/ \
+    --results_dir data/results_ppas_validation/
 ```
 
 Omitting `--conditions` runs every registered condition; omitting `--datasets`
@@ -333,7 +365,7 @@ V8+V6.
 
 ## Controlled PPAS ablation (#122)
 
-A separate registry (`pipeline/ablation_conditions.py`, 22 `PA-*` conditions)
+A separate registry (`pipeline/ablation_conditions.py`, 40 `PA-*` conditions: 22 from #122, P1–P7 on D1 at 48 from #128, and 11 validation conditions)
 and runner (`pipeline/ppas_ablation.py`) keep the ablation out of C1–C20, so
 `_EXPECTED_CONDITION_COUNT`, the main tables and the group statistics are
 unchanged. All conditions use M2 and one representation; within a budget the
@@ -370,6 +402,125 @@ selection policy (and random seed) is the only difference.
   order keeps. PPAS beating full text says the full V6 key-value text is
   noisy, not that less text is better in general: this representation's full
   MRR (0.4525) is far below C3 V2+V6/M2 (0.8036) on D1.
+
+### Controlled policies P1–P7 (#128)
+
+Seven conditions vary one dimension at a time on D1 at 48 tokens
+(`CONTROLLED_POLICIES` in `ablation_conditions.py`), identified by
+`policy_label` and IDs `PA-{all|cov}-{base|fmax}-{det|ppas}-48`:
+
+| Label | Filter | Vocabulary | Order |
+|---|---|---|---|
+| P1 | all | base | deterministic |
+| P2 | all | base | ppas |
+| P3 | covered | base | deterministic |
+| P4 | covered | base | ppas |
+| P5 | all | fma_extended | ppas |
+| P6 | covered | fma_extended | deterministic |
+| P7 | covered | fma_extended | ppas |
+
+- **Vocabularies** (`verbalisation/predicate_config.py`): `base` is a deep
+  copy of the `ppas.py` tier lists (its `tiers_hash()` equals
+  `tier_config_digest()`); its covered set is exactly the tiered predicates.
+  `fma_extended` adds `fma:preferred_name` and `fma:synonym` to class tier 0
+  (lexical) and covers `fma:FMAID` without tiering it (identifier: no SNOMED
+  counterpart). Roles come from predicate semantics, never from alignments.
+- **FMA namespace**: annotation predicates are `http://purl.org/sig/ont/fma/`;
+  FMA *class* URIs use `http://purl.org/sig/ont/fma.owl#`. Match predicates by
+  full URI (`expand_predicate()`), never by prefix name. #126 used a wrong
+  namespace, so its extension matched nothing.
+- **Ordering uses the active vocabulary**: `PolicySelector._order()` reads
+  `predicate_config.tier_list_for()`. Under #126 it read the global lists,
+  so P5 selected exactly what P2 selected. Untiered predicates (unknown or
+  covered-but-untiered) fall back after every tier in canonical order.
+- **Filter "all" + deterministic order never consults a vocabulary**, so an
+  extended deterministic control under "all" would equal P1; P6/P7 are the
+  extended controls instead.
+- Every ablation result now records `policy_label`, `filter_mode`,
+  `order_mode`, the vocabulary (`config_hash`, `tiers_sha256`, covered
+  predicates, roles) and per-side item accounting and budget utilisation;
+  sidecars fingerprint every entity's selection (`selection_fingerprints`)
+  and list each test source's `gold_targets`.
+- The report groups controlled runs by run signature (model/tokenizer
+  revision, candidate hash, protocol, budget, smoke restriction, test-source
+  set) and never combines groups; missing labels are listed.
+- Selected items are rendered canonically, so a policy changes which items
+  are kept, never their order: "same set, different order" is 0 by design.
+  Compare selections by text, never by `Selection.selected`: those are
+  indices into the *filtered* item list, so they differ across filter modes.
+- The contrast table splits test sources into "selection differs for source
+  or a gold target" and its complement. The complement is not unaffected:
+  it moves when a policy changes competing (non-gold) candidates.
+- **Results (56b9f15, D1 at 48, one pair, paired bootstrap over 4605 test
+  sources, no generalisation claim)**: MRR P1 0.3566, P2 0.4932, P3 0.6974,
+  P4 0.6845, P5 0.4972, P6 0.5508, P7 0.5105. Filtering dominates (P3−P1
+  +0.341); with eligibility fixed, PPAS order is slightly *worse* than
+  deterministic (P4−P3 −0.013, all of it on 1276 changed sources, almost
+  entirely SNOMED-side). So the #122 PPAS gain (P2−P1 +0.137) is exclusion of
+  untiered FMA predicates, not prioritisation. The FMA extension does not
+  help: P5−P2 +0.004 [−0.007, 0.015]; P6−P3 −0.147. Lexical items help gold
+  targets but help distractors more (P7−P6: changed +0.061, complement −0.193).
+  P1/P2 reproduce #122's det/PPAS MRR exactly.
+
+### Validation of the eligibility effect (#128 follow-up)
+
+- **Matrix**: P1–P4 (base) on D1 at `VALIDATION_BUDGETS` (32, 64) beside the
+  #128 reference at 48, and P1–P7 on D2 at 48, P5–P7 with `obo_extended`
+  (`EXTENDED_VOCABULARIES`). A policy label is unique per (dataset, budget),
+  not globally. Results: `data/results_ppas_validation/`; the runner refuses
+  D1 at 48 there and anything but D1 at 48 in `data/results_ppas_controlled/`.
+- **What "covered" means under `base`**: exactly the PPAS tier predicates.
+  Its synonym entries (`obo:hasExactSynonym`, `obo:hasSynonym`) use
+  `http://purl.obolibrary.org/obo/`, which no dataset uses (oboInOwl is
+  `http://www.geneontology.org/formats/oboInOwl#`). So covered keeps SNOMED's
+  SKOS synonyms (D1 sources) but drops FMA synonyms (D1 candidates) and NCI/MA
+  `hasRelatedSynonym`/`hasDefinition` (D2). `base` is deliberately unchanged
+  so P1–P4 keep their #128 definitions.
+- **`obo_extended`** (D2 only): base plus the oboInOwl synonym family and
+  `hasDefinition` in class tier 0 (lexical), `hasAlternativeId`/`hasDbXref`
+  covered but untiered (identifier) — the D2 analogue of `fma_extended`.
+- **D2 at 48 barely binds** under covered eligibility (0.9% of candidates
+  sampled), so on D2 P4 ≡ P3: that contrast is not identifiable, which the
+  validation report states instead of printing a zero effect. D2's own
+  outcome-blind stress rule would give 24.
+- Results now record `dataset_files_sha256` (source/target/reference digests);
+  the #128 reference predates it, so the report compares current digests and
+  file mtimes instead.
+- **Results (4a42227; 19/19 full runs; per-pair bootstrap, never pooled)**:
+  covered − all, deterministic (P3−P1) Δ MRR D1 +0.331 / +0.341 / +0.292 at
+  32 / 48 / 64, D2 +0.121 [0.100, 0.141]; under PPAS order (P4−P2) D1 +0.228 /
+  +0.191 / +0.214, D2 +0.093. PPAS − deterministic is positive only with every
+  predicate eligible (P2−P1 D1 +0.089 / +0.137 / +0.076, D2 +0.028) and nil
+  or slightly negative once eligibility is fixed (P4−P3 D1 −0.014 / −0.013 /
+  −0.002; D2 not identifiable). P3 MRR is flat across D1 budgets
+  (0.697 / 0.697 / 0.691). On D2, P5–P7 (`obo_extended`) select almost what P1
+  selects (≤4 sources, ≤109 candidates differ) and score like P1, so
+  re-admitting synonyms and definitions erases the covered gain. Same
+  direction on two pairs; not a generalisation claim. No uncapped
+  all-vs-covered control was run.
+- **Review amendments (supersede parts of the two Results bullets above)**:
+  deterministic (lexicographic) order drops `rdfs:label` for many trimmed
+  candidates, because `purl.org/fma` and `geneontology.org` predicates sort
+  before `w3.org`: P1 drops it for 17,647 D1 candidates at 48 (44,732 at 32;
+  6,586 at 64) and 548 on D2; P2–P4 for ≤30. `fma_extended`/`obo_extended`
+  put FMA/oboInOwl items in tier 0 *ahead of* the label (canonical order
+  within a tier), so P5/P7 drop it for 5,360 D1 / 439 D2 candidates and P6
+  for 14,369 / 548. Hence:
+  - P3−P1 is eligibility *plus* label restoration; the eligibility estimate
+    with the label kept in both arms is P4−P2 (D1 +0.228 / +0.191 / +0.214,
+    D2 +0.093).
+  - P2−P1 is mostly the label-dropping baseline, not evidence for the tier
+    design: a tier-free core-first order (#131 A0@48) reaches P2 within 0.008
+    on D1 and selects identically on D2.
+  - P5−P2, P6−P3, P7−P6, the "lexical items help distractors more" reading
+    and D2's "re-admitting synonyms erases the gain" all mix vocabulary with
+    label loss; use #131's no-budget C+x arms instead.
+  - Items are *rendered* in canonical order, so FMA annotations precede the
+    label in every candidate text (#131 investigation); on D1 validation
+    sources, rendering annotations after core lifts the full text by +0.165.
+  Selections and contrasts themselves reproduce exactly (0 fingerprint
+  mismatches; `scripts/predicate_role_diagnostics.py label-loss` on
+  `feature/issue-131`).
 
 ## Datasets
 

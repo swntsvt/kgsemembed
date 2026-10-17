@@ -16,6 +16,15 @@ historical ``data/results/`` tree.  Each pair writes a result JSON in the main
 schema, extended with an ``"ablation"`` block, and an ``_entities.json`` sidecar
 holding per-test-source ranks and sampling flags for stratified analysis.
 
+The #128 controlled policies (P1-P7) must go to a separate directory,
+``data/results_ppas_controlled/`` by convention; the runner refuses to write
+them beside the #122 results.  The validation runs that extend them (P1-P4 on
+D1 at 32 and 64, P1-P7 on D2 at 48) go to ``data/results_ppas_validation/``,
+which in turn refuses D1 at 48, so the #128 reference stays the only copy of
+those results.  Every condition, legacy or controlled, is
+selected through one path: the condition's filter mode, order mode and
+predicate vocabulary.
+
 Usage
 -----
 python -m kgsemembed.pipeline.ppas_ablation --datasets D5 \\
@@ -48,6 +57,7 @@ from kgsemembed.evaluation import RankedList
 from kgsemembed.pipeline.ablation_conditions import (
     ABLATION_CONDITIONS,
     ABLATION_MODEL_KEY,
+    CONTROLLED_BUDGET,
     AblationCondition,
     get_ablation_condition,
 )
@@ -74,13 +84,15 @@ from kgsemembed.verbalisation.selection import (
     Selection,
     TokenCounter,
     make_token_counter,
-    tier_config_digest,
 )
 
 _LOGGER = logging.getLogger("kgsemembed.pipeline.ppas_ablation")
 
 DEFAULT_RESULTS_DIR = "data/results_ppas_ablation/"
+CONTROLLED_RESULTS_DIR = "data/results_ppas_controlled/"
+VALIDATION_RESULTS_DIR = "data/results_ppas_validation/"
 _HISTORICAL_RESULTS_DIR = Path("data/results")
+_ISSUE_122_RESULTS_DIR = Path(DEFAULT_RESULTS_DIR)
 _SOURCE = "source"
 _CANDIDATE = "candidate"
 _REPRESENTATION = (
@@ -267,8 +279,8 @@ def side_summary(selections: List[Selection], max_seq_length: int) -> Dict[str, 
     -------
     Dict[str, object]
         Counts of sampled, empty, item-less and model-truncated entities, the
-        oversized-item count, and token and eligible-item distributions.
-        For Issue #126 controlled policies, also includes filtering metrics.
+        oversized-item count, token and eligible-item distributions, and the
+        eligibility accounting of :func:`eligibility_summary`.
     """
     tokens = np.array([s.n_tokens for s in selections], dtype=np.int64)
     eligible = np.array([s.n_eligible for s in selections], dtype=np.int64)
@@ -285,18 +297,66 @@ def side_summary(selections: List[Selection], max_seq_length: int) -> Dict[str, 
         "eligible_items": _distribution(eligible),
     }
 
-    # Add filtering metrics if present (Issue #126)
-    if selections and selections[0].filter_mode != "all":
-        n_filtered = np.array([s.n_filtered_items for s in selections], dtype=np.int64)
-        coverage = np.array([s.predicate_coverage for s in selections], dtype=np.float64)
-        summary["n_filtered_items"] = int(n_filtered.sum())
-        summary["predicate_coverage"] = {
-            "mean": float(coverage.mean()),
-            "min": float(coverage.min()),
-            "max": float(coverage.max()),
-        }
-
+    summary.update(eligibility_summary(selections))
     return summary
+
+
+def eligibility_summary(selections: List[Selection]) -> Dict[str, object]:
+    """
+    Account for filtering, vocabulary coverage and skipped items on one side.
+
+    Parameters
+    ----------
+    selections : List[Selection]
+        Selections of every entity on the side.
+
+    Returns
+    -------
+    Dict[str, object]
+        Item totals before filtering, removed by the filter, covered by the
+        vocabulary, tiered, and eligible but skipped by the budget, plus the
+        covered share of all items and the mean per-entity predicate coverage.
+    """
+    before = sum(s.n_eligible + s.n_filtered_items for s in selections)
+    covered = sum(s.n_covered_items for s in selections)
+    coverage = np.array([s.predicate_coverage for s in selections], dtype=np.float64)
+    return {
+        "n_items_before_filter": int(before),
+        "n_filtered_items": int(sum(s.n_filtered_items for s in selections)),
+        "n_covered_items": int(covered),
+        "n_tiered_items": int(sum(s.n_tiered_items for s in selections)),
+        "n_skipped_items": int(sum(s.n_eligible - len(s.selected) for s in selections)),
+        "vocabulary_item_coverage": covered / before if before else 0.0,
+        "predicate_coverage_mean": float(coverage.mean()) if coverage.size else 1.0,
+    }
+
+
+def budget_summary(selections: List[Selection], budget: Optional[int]) -> Dict[str, object]:
+    """
+    Measure budget utilisation and violations of one side.
+
+    Parameters
+    ----------
+    selections : List[Selection]
+        Selections of every entity on the side.
+    budget : Optional[int]
+        The condition's token budget; ``None`` for the uncapped reference.
+
+    Returns
+    -------
+    Dict[str, object]
+        Entities over budget, and the token-to-budget ratio over all entities
+        and over sampled ones; empty when there is no budget.
+    """
+    if budget is None:
+        return {}
+    tokens = np.array([s.n_tokens for s in selections], dtype=np.float64)
+    sampled = np.array([s.sampling_invoked for s in selections], dtype=bool)
+    return {
+        "n_over_budget": int((tokens > budget).sum()),
+        "utilisation_mean": float(tokens.mean() / budget) if tokens.size else 0.0,
+        "utilisation_sampled_mean": float(tokens[sampled].mean() / budget) if sampled.any() else 0.0,
+    }
 
 
 def selection_digest(uris: Dict[str, List[str]], selections: Dict[str, List[Selection]]) -> str:
@@ -355,6 +415,29 @@ def sampled_fingerprints(side: SideItems, selections: List[Selection]) -> Dict[s
     }
 
 
+def selection_fingerprints(side: SideItems, selections: List[Selection]) -> Dict[str, str]:
+    """
+    Fingerprint the selected text of every entity on a side.
+
+    Items have distinct texts and are joined in canonical order, so equal
+    fingerprints mean equal selected item sets.  Under different filters even
+    unsampled entities can differ, hence every entity is recorded.
+
+    Parameters
+    ----------
+    side : SideItems
+        Entities of the side.
+    selections : List[Selection]
+        Their selections under one condition.
+
+    Returns
+    -------
+    Dict[str, str]
+        URI to text fingerprint.
+    """
+    return {uri: _text_fingerprint(s.text) for uri, s in zip(side.uris, selections)}
+
+
 def _best_ranks(ranked_lists: List[RankedList], refs: List[Tuple[str, str]]) -> Dict[str, Optional[int]]:
     """Return each reference source's best 1-based gold rank, ``None`` if unranked."""
     positions = {
@@ -401,6 +484,7 @@ def reference_source_records(
     return [
         {
             "source": source,
+            "gold_targets": sorted(gold),
             "best_rank": best[source],
             "source_degree": source_sel[source].n_eligible if source in source_sel else 0,
             "source_sampled": bool(source in source_sel and source_sel[source].sampling_invoked),
@@ -491,7 +575,11 @@ def ablation_block(
         "representation": _REPRESENTATION,
         "item_separator": ITEM_SEPARATOR,
         "deterministic_order": DETERMINISTIC_ORDER,
-        "tier_config_sha256": tier_config_digest(),
+        "policy_label": condition.policy_label,
+        "filter_mode": condition.filter_mode,
+        "order_mode": condition.order_mode,
+        "predicate_config": predicate_config_record(condition.predicate_config),
+        "tier_config_sha256": get_predicate_config(condition.predicate_config).tiers_hash(),
         "encoder": settings.encoder_settings,
         "threshold_procedure": _THRESHOLD_PROCEDURE,
         "smoke_max_sources": settings.max_sources,
@@ -499,23 +587,31 @@ def ablation_block(
         **summaries,
     }
 
-    # Add Issue #126 controlled policy fields if present
-    # Conditions with non-default filter_mode or predicate_config are controlled policies
-    if condition.filter_mode != "all" or condition.predicate_config != "base":
-        block["filter_mode"] = condition.filter_mode
-        block["order_mode"] = condition.order_mode
-        block["predicate_config"] = {
-            "name": condition.predicate_config,
-            "config_hash": get_predicate_config(condition.predicate_config).config_hash,
-            "n_covered_predicates": len(
-                get_predicate_config(condition.predicate_config).covered_predicates
-            ),
-            "fma_special_predicates": list(
-                get_predicate_config(condition.predicate_config).fma_special_predicates.keys()
-            ),
-        }
-
     return block
+
+
+def predicate_config_record(name: str) -> Dict[str, object]:
+    """
+    Describe the predicate vocabulary a condition's selector actually used.
+
+    Parameters
+    ----------
+    name : str
+        Vocabulary name.
+
+    Returns
+    -------
+    Dict[str, object]
+        Name, configuration and tier hashes, covered predicates and roles.
+    """
+    vocabulary = get_predicate_config(name)
+    return {
+        "name": vocabulary.name,
+        "config_hash": vocabulary.config_hash,
+        "tiers_sha256": vocabulary.tiers_hash(),
+        "covered_predicates": sorted(vocabulary.covered_predicates),
+        "predicate_roles": dict(vocabulary.predicate_roles),
+    }
 
 
 def _result_paths(results_dir: Path, condition_id: str, pair: AlignmentPair) -> Tuple[Path, Path]:
@@ -552,36 +648,52 @@ def _result_payload(
         "n_candidates_per_entity": _candidate_count(context.candidates),
         "candidates_sha256": _candidate_digest(context.candidates),
         "candidates_file": str(_candidates_path(pair.dataset_id, pair.pair_name, settings.data_dir)),
+        "dataset_files_sha256": dataset_file_digests(pair.dataset_id, settings.data_dir),
         "ablation": ablation,
         **_provenance(settings.model_info),
     }
+
+
+_DATASET_FILES = {
+    "D1": ("d1_snomed_fma/source.rdf", "d1_snomed_fma/target.rdf", "d1_snomed_fma/reference.rdf"),
+    "D2": ("d2_anatomy/source.rdf", "d2_anatomy/target.rdf", "d2_anatomy/reference.rdf"),
+}
+
+
+def dataset_file_digests(dataset_id: str, data_dir: Path) -> Dict[str, Optional[str]]:
+    """
+    Fingerprint the input files of a dataset, as its version record.
+
+    Parameters
+    ----------
+    dataset_id : str
+        Dataset identifier.
+    data_dir : Path
+        Dataset root.
+
+    Returns
+    -------
+    Dict[str, Optional[str]]
+        Relative path to SHA-256, ``None`` for a missing file; empty for
+        datasets without a registered file list.
+    """
+    paths = {rel: Path(data_dir) / rel for rel in _DATASET_FILES.get(dataset_id, ())}
+    return {rel: hashlib.sha256(path.read_bytes()).hexdigest() if path.exists() else None
+            for rel, path in paths.items()}
 
 
 def _select_and_encode(
     condition: AblationCondition, context: PairContext
 ) -> Tuple[Dict[str, List[Selection]], Dict[str, np.ndarray], Dict[str, object]]:
     """Select both sides under the condition, then embed them through the cache."""
-    # Support both legacy (policy only) and new (filter_mode + order_mode) interfaces
-    # Conditions with non-default filter_mode or predicate_config are controlled policies
-    if condition.filter_mode != "all" or condition.predicate_config != "base":
-        # New interface: use explicit filter_mode, order_mode, predicate_config
-        predicate_config = get_predicate_config(condition.predicate_config)
-        selector = PolicySelector(
-            order_mode=condition.order_mode,
-            count_tokens=context.count_tokens,
-            budget=condition.token_budget,
-            seed=condition.seed,
-            filter_mode=condition.filter_mode,
-            predicate_config=predicate_config,
-        )
-    else:
-        # Legacy interface: use policy parameter
-        selector = PolicySelector(
-            policy=condition.policy,
-            count_tokens=context.count_tokens,
-            budget=condition.token_budget,
-            seed=condition.seed,
-        )
+    selector = PolicySelector(
+        order_mode=condition.order_mode,
+        count_tokens=context.count_tokens,
+        budget=condition.token_budget,
+        seed=condition.seed,
+        filter_mode=condition.filter_mode,
+        predicate_config=get_predicate_config(condition.predicate_config),
+    )
     selections, embeddings, runtime = {}, {}, {}
     for side_name, side in ((_SOURCE, context.source), (_CANDIDATE, context.candidate)):
         selections[side_name], seconds = select_side(selector, side)
@@ -618,7 +730,11 @@ def run_condition_on_pair(
     )
     metrics = _evaluate_pair(context.pair, ranked)
     summaries = {
-        side: side_summary(selections[side], settings.max_seq_length) for side in selections
+        side: {
+            **side_summary(selections[side], settings.max_seq_length),
+            "budget": budget_summary(selections[side], condition.token_budget),
+        }
+        for side in selections
     }
     uris = {_SOURCE: context.source.uris, _CANDIDATE: context.candidate.uris}
     summaries["selection_sha256"] = selection_digest(uris, selections)
@@ -641,6 +757,10 @@ def _write_outputs(
         "sampled_fingerprints": {
             _SOURCE: sampled_fingerprints(context.source, selections[_SOURCE]),
             _CANDIDATE: sampled_fingerprints(context.candidate, selections[_CANDIDATE]),
+        },
+        "selection_fingerprints": {
+            _SOURCE: selection_fingerprints(context.source, selections[_SOURCE]),
+            _CANDIDATE: selection_fingerprints(context.candidate, selections[_CANDIDATE]),
         },
     }
     sidecar_path.write_text(json.dumps(sidecar), encoding="utf-8")
@@ -712,12 +832,50 @@ def build_pair_context(
     return PairContext(pair, candidates, source, candidate, EmbeddingCache(encoder), count_tokens)
 
 
-def _guard_results_dir(results_dir: Path) -> None:
-    """Refuse to write into the historical results tree."""
-    if results_dir.resolve() == _HISTORICAL_RESULTS_DIR.resolve():
+def is_reference_run(condition: AblationCondition, dataset_id: str) -> bool:
+    """
+    Tell whether a controlled condition on a dataset belongs to the #128 reference.
+
+    Parameters
+    ----------
+    condition : AblationCondition
+        A registered condition.
+    dataset_id : str
+        Dataset it would run on.
+
+    Returns
+    -------
+    bool
+        True for a controlled condition on D1 at the #128 budget.
+    """
+    return condition.is_controlled and dataset_id == "D1" and condition.token_budget == CONTROLLED_BUDGET
+
+
+def _guard_results_dir(
+    results_dir: Path, conditions: List[AblationCondition], dataset_ids: List[str]
+) -> None:
+    """Refuse the historical tree, and controlled runs outside their own tree."""
+    resolved = results_dir.resolve()
+    runs = [(c, d) for c in conditions for d in dataset_ids if d in c.datasets and c.is_controlled]
+    if resolved == Path(CONTROLLED_RESULTS_DIR).resolve() and not all(is_reference_run(c, d) for c, d in runs):
+        raise ValueError(
+            f"{CONTROLLED_RESULTS_DIR} holds only the #128 D1 runs at {CONTROLLED_BUDGET} tokens; "
+            f"write validation runs to {VALIDATION_RESULTS_DIR}."
+        )
+    if resolved == Path(VALIDATION_RESULTS_DIR).resolve() and any(is_reference_run(c, d) for c, d in runs):
+        raise ValueError(
+            f"D1 controlled runs at {CONTROLLED_BUDGET} tokens are the #128 reference in "
+            f"{CONTROLLED_RESULTS_DIR}; they must not be rerun into {VALIDATION_RESULTS_DIR}."
+        )
+    if resolved == _HISTORICAL_RESULTS_DIR.resolve():
         raise ValueError(
             f"Ablation results must not be written to {_HISTORICAL_RESULTS_DIR}; "
             f"use {DEFAULT_RESULTS_DIR}."
+        )
+    if resolved == _ISSUE_122_RESULTS_DIR.resolve() and any(c.is_controlled for c in conditions):
+        raise ValueError(
+            f"Controlled conditions must not be written beside the #122 results in "
+            f"{_ISSUE_122_RESULTS_DIR}; use {CONTROLLED_RESULTS_DIR}."
         )
 
 
@@ -802,7 +960,7 @@ def run_ablation(
         Result payloads written by the run.
     """
     conditions = _select_conditions(condition_ids)
-    _guard_results_dir(Path(settings_kwargs["results_dir"]))
+    _guard_results_dir(Path(settings_kwargs["results_dir"]), conditions, dataset_ids)
     model, model_info = load_sentence_transformer(ABLATION_MODEL_KEY)
     encoder = EmbeddingEncoder(ABLATION_MODEL_KEY, model)
     settings = RunSettings(

@@ -1,379 +1,316 @@
-"""Predicate vocabulary and eligibility configuration for controlled PPAS ablation (#126).
+"""Predicate vocabularies for the controlled PPAS ablation (#126, #128).
 
-Separates predicate filtering (eligibility) from ordering (priority), enabling
-independent measurement of which effects explain PPAS results.
+A vocabulary fixes two things independently of each other:
+
+* **eligibility** -- ``covered_predicates``, the predicates kept when a policy
+  filters with ``filter_mode="covered"``; under ``filter_mode="all"`` every
+  predicate is eligible and this set is not consulted;
+* **priority** -- ``tier_lists``, the per-entity-type tiers the PPAS order
+  visits, highest priority first.
+
+Fallback policy for predicates absent from every tier: they are visited after
+the last tier, in canonical ``(predicate URI, object term)`` order.  This holds
+for unknown predicates and for covered-but-untiered ones alike.
+
+Vocabularies
+------------
+``base``
+    The legacy PPAS tier lists of :mod:`kgsemembed.verbalisation.ppas`, copied
+    at import time, so its ordering is the #122 PPAS ordering by construction.
+    Its covered set is the union of the tiered predicates.
+``fma_extended``
+    ``base`` plus three FMA annotation predicates, assigned by their declared
+    meaning in the FMA ontology, never by alignment outcomes:
+
+    * ``fma:preferred_name`` -- the term's preferred English name, the role
+      ``skos:prefLabel`` plays elsewhere: class tier 0 (lexical);
+    * ``fma:synonym`` -- an alternative English name, the role
+      ``skos:altLabel`` plays elsewhere: class tier 0 (lexical);
+    * ``fma:FMAID`` -- an opaque numeric identifier with no counterpart in
+      SNOMED CT, so it carries no cross-ontology lexical signal.  It is covered
+      (a covered filter keeps it) but untiered, so it falls back after every
+      tier rather than sharing the lexical tier.
+
+    The FMA namespace is the one D1's ``target.rdf`` declares for its
+    annotation properties, ``http://purl.org/sig/ont/fma/``.  FMA class URIs use
+    a different namespace (``http://purl.org/sig/ont/fma.owl#``), which is why
+    predicate URIs are matched in full and never by prefix name.
+``obo_extended``
+    ``base`` plus the OBO-in-OWL annotation predicates D2 (MA-NCI) uses,
+    assigned by their declared meaning in the oboInOwl vocabulary, never by
+    alignment outcomes:
+
+    * the synonym family (``hasExactSynonym``, ``hasRelatedSynonym``,
+      ``hasNarrowSynonym``, ``hasBroadSynonym``, ``hasSynonym``) -- alternative
+      names, the role ``skos:altLabel`` plays elsewhere: class tier 0 (lexical);
+    * ``hasDefinition`` -- a textual definition, the role ``IAO_0000115`` and
+      ``skos:definition`` play in ``base``: class tier 0 (lexical);
+    * ``hasAlternativeId`` and ``hasDbXref`` -- identifiers and cross-references
+      with no counterpart on the other side: covered but untiered, like
+      ``fma:FMAID``.
+
+    ``base`` already lists ``obo:hasExactSynonym`` and ``obo:hasSynonym``, but
+    under ``http://purl.obolibrary.org/obo/``, which neither D1 nor D2 uses;
+    the oboInOwl predicates live in
+    ``http://www.geneontology.org/formats/oboInOwl#``.  ``base`` is left
+    unchanged so that P1-P4 keep their #128 definitions.
 """
 
+import copy
 import hashlib
 import json
-from dataclasses import dataclass
-from typing import Dict, FrozenSet, Optional
+from dataclasses import dataclass, field
 
-from rdflib import URIRef
+from kgsemembed.verbalisation.ppas import (
+    CLASS_TIER_LIST,
+    INSTANCE_TIER_LIST,
+    PREDICATE_TIER_LIST,
+)
 
-# ---------------------------------------------------------------------------
-# Standard namespace URIs and FMA-specific predicates
-# ---------------------------------------------------------------------------
-_RDFS = "http://www.w3.org/2000/01/rdf-schema#"
-_SKOS = "http://www.w3.org/2004/02/skos/core#"
-_OBO = "http://purl.obolibrary.org/obo/"
-_OWL = "http://www.w3.org/2002/07/owl#"
-_RDF = "http://www.w3.org/1999/02/22-rdf-syntax-ns#"
-_FMA = "http://purl.org/oasis/names/tc/ciq/xal/3.0#"  # FMA namespace base
+ENTITY_TYPES = ("class", "instance", "predicate")
 
-# FMA-specific predicates not in the base tier configuration
-# These are documented in Issue #126 as important for D1 (SNOMED-FMA Body)
-_FMA_PREFERRED_NAME = f"{_FMA}preferred_name"
-_FMA_SYNONYM = f"{_FMA}synonym"
-_FMA_FMAID = f"{_FMA}FMAID"
+PREFIXES: dict[str, str] = {
+    "rdf": "http://www.w3.org/1999/02/22-rdf-syntax-ns#",
+    "rdfs": "http://www.w3.org/2000/01/rdf-schema#",
+    "owl": "http://www.w3.org/2002/07/owl#",
+    "skos": "http://www.w3.org/2004/02/skos/core#",
+    "obo": "http://purl.obolibrary.org/obo/",
+    "fma": "http://purl.org/sig/ont/fma/",
+    "oboInOwl": "http://www.geneontology.org/formats/oboInOwl#",
+}
 
-# Note: FMA uses multiple namespaces; this is the OBO Foundry standard.
-# If datasets use alternate FMA URI schemes, they must be normalized first.
+LEXICAL = "lexical"
+IDENTIFIER = "identifier"
+
+
+def expand_predicate(name: str) -> str:
+    """
+    Expand a ``prefix:local`` name to a full URI; full URIs pass through.
+
+    Parameters
+    ----------
+    name : str
+        A prefixed name such as ``"fma:synonym"`` or a full ``http(s)`` URI.
+
+    Returns
+    -------
+    str
+        The full predicate URI.
+
+    Raises
+    ------
+    ValueError
+        If the prefix is not in :data:`PREFIXES`.
+    """
+    if name.startswith(("http://", "https://")):
+        return name
+    prefix, _, local = name.partition(":")
+    if prefix not in PREFIXES or not local:
+        raise ValueError(f"Cannot expand predicate name {name!r}; known prefixes: {sorted(PREFIXES)}.")
+    return PREFIXES[prefix] + local
 
 
 @dataclass(frozen=True)
 class PredicateVocabulary:
     """
-    Explicit predicate eligibility and priority configuration.
-
-    Separates which predicates are eligible (covered_predicates) from how
-    eligible predicates are ordered (tier_lists). This allows independent
-    testing of filtering and prioritization effects.
+    Predicate eligibility and priority, fingerprinted by ``config_hash``.
 
     Attributes
     ----------
     name : str
-        Configuration identifier (e.g., "base", "covered_only", "fma_extended").
+        Vocabulary identifier, e.g. ``"base"`` or ``"fma_extended"``.
     description : str
-        Human-readable documentation of the configuration.
+        Human-readable rationale.
     covered_predicates : frozenset[str]
-        Fully-qualified predicate URIs that are eligible for selection.
-        When filter_mode="covered", only these predicates are included.
-        When filter_mode="all", this set is ignored (all predicates eligible).
+        Full predicate URIs kept by ``filter_mode="covered"``.
     tier_lists : dict[str, list[list[str]]]
-        Predicate tiers by entity type ("class", "instance", "predicate").
-        Each entity type maps to tiers [tier_0, tier_1, ...] where tier_0 is
-        highest priority. Predicates not in any tier are untiered (lowest).
-    fma_special_predicates : dict[str, str]
-        FMA-specific predicates and their documented role.
-        Example: {"fma:preferred_name": "lexical", "fma:FMAID": "identifier"}
+        Full predicate URIs grouped by tier for each entity type.
+    predicate_roles : dict[str, str]
+        Role (``"lexical"`` or ``"identifier"``) of each predicate the
+        vocabulary adds to ``base``, keyed by full URI.
     config_hash : str
-        SHA-256 of the JSON-serialized configuration (name, tier_lists,
-        covered_predicates, fma_special_predicates). Frozen at creation.
+        SHA-256 of name, tiers, covered set and roles; derived, never passed.
     """
 
     name: str
     description: str
-    covered_predicates: FrozenSet[str]
-    tier_lists: Dict[str, list[list[str]]]
-    fma_special_predicates: Dict[str, str]
-    config_hash: str
+    covered_predicates: frozenset[str]
+    tier_lists: dict[str, list[list[str]]]
+    predicate_roles: dict[str, str] = field(default_factory=dict)
+    config_hash: str = field(init=False)
 
     def __post_init__(self) -> None:
-        """Validate configuration consistency (called after dataclass init)."""
-        # Ensure all tier-listed predicates are in covered_predicates
-        if not self._all_tiered_predicates_covered():
+        _validate_vocabulary(self)
+        object.__setattr__(self, "config_hash", _config_hash(self))
+
+    def tier_list_for(self, entity_type: str) -> list[list[str]]:
+        """
+        Return this vocabulary's tiers for an entity type.
+
+        Parameters
+        ----------
+        entity_type : str
+            One of :data:`ENTITY_TYPES`.
+
+        Returns
+        -------
+        list[list[str]]
+            Predicate URIs grouped by tier, highest priority first.
+
+        Raises
+        ------
+        ValueError
+            If ``entity_type`` is not supported.
+        """
+        if entity_type not in self.tier_lists:
             raise ValueError(
-                f"Config {self.name!r}: tier lists contain predicates absent from "
-                f"covered_predicates. Tier lists must be a subset of covered predicates."
+                f"Unsupported entity type: {entity_type!r}. Expected one of {sorted(self.tier_lists)}."
             )
+        return self.tier_lists[entity_type]
 
-    def _all_tiered_predicates_covered(self) -> bool:
-        """Check that every predicate in tier_lists is in covered_predicates."""
-        for entity_type, tiers in self.tier_lists.items():
-            for tier in tiers:
-                for predicate in tier:
-                    if predicate not in self.covered_predicates:
-                        return False
-        return True
+    def tiers_hash(self) -> str:
+        """
+        Fingerprint only the tier lists, the input to PPAS ordering.
 
-
-def _normalise_predicate_uri(uri: str) -> str:
-    """
-    Normalise a predicate URI to a canonical form.
-
-    Supports full URIs (e.g. "http://...") and rdflib.URIRef objects.
-
-    Parameters
-    ----------
-    uri : str
-        Predicate URI.
-
-    Returns
-    -------
-    str
-        Canonical string form of the URI.
-    """
-    return str(URIRef(uri))
+        Returns
+        -------
+        str
+            SHA-256 hex digest of ``tier_lists``.
+        """
+        return _digest(self.tier_lists)
 
 
-def _make_config_hash(
-    name: str,
-    tier_lists: Dict[str, list[list[str]]],
-    covered_predicates: FrozenSet[str],
-    fma_special_predicates: Dict[str, str],
-) -> str:
-    """
-    Create a SHA-256 fingerprint of the configuration.
+def _tiered(tier_lists: dict[str, list[list[str]]]) -> set[str]:
+    """Return every predicate that appears in some tier."""
+    return {p for tiers in tier_lists.values() for tier in tiers for p in tier}
 
-    Parameters
-    ----------
-    name : str
-        Configuration name.
-    tier_lists : dict[str, list[list[str]]]
-        Tier lists by entity type.
-    covered_predicates : frozenset[str]
-        Eligible predicates.
-    fma_special_predicates : dict[str, str]
-        FMA predicate roles.
 
-    Returns
-    -------
-    str
-        SHA-256 hex digest.
-    """
-    payload = {
-        "name": name,
-        "tier_lists": tier_lists,
-        "covered_predicates": sorted(covered_predicates),
-        "fma_special_predicates": fma_special_predicates,
-    }
+def _validate_vocabulary(vocabulary: PredicateVocabulary) -> None:
+    """Raise if tiers, covered set and roles are inconsistent or not full URIs."""
+    if set(vocabulary.tier_lists) != set(ENTITY_TYPES):
+        raise ValueError(f"{vocabulary.name}: tier lists must cover exactly {ENTITY_TYPES}.")
+    tiered = _tiered(vocabulary.tier_lists)
+    if not tiered <= vocabulary.covered_predicates:
+        raise ValueError(f"{vocabulary.name}: tiered predicates absent from covered_predicates.")
+    uris = vocabulary.covered_predicates | set(vocabulary.predicate_roles)
+    if any(expand_predicate(uri) != uri for uri in uris):
+        raise ValueError(f"{vocabulary.name}: predicates must be full URIs.")
+    if not set(vocabulary.predicate_roles) <= vocabulary.covered_predicates:
+        raise ValueError(f"{vocabulary.name}: every role-annotated predicate must be covered.")
+
+
+def _digest(payload: object) -> str:
+    """Return the SHA-256 of a canonical JSON encoding."""
     encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
 
 
-def _make_base_config() -> PredicateVocabulary:
-    """
-    Create the base configuration.
+def _config_hash(vocabulary: PredicateVocabulary) -> str:
+    """Fingerprint everything that determines a vocabulary's selections."""
+    return _digest({
+        "name": vocabulary.name,
+        "tier_lists": vocabulary.tier_lists,
+        "covered_predicates": sorted(vocabulary.covered_predicates),
+        "predicate_roles": vocabulary.predicate_roles,
+    })
 
-    Includes all predicates from the current PPAS tier lists (CLASS_TIER_LIST,
-    INSTANCE_TIER_LIST, PREDICATE_TIER_LIST). Untiered predicates are
-    eligible but receive lowest priority.
 
-    This configuration represents the existing PPAS behavior and is the
-    baseline for P2 (all-ppas ordering).
-
-    Returns
-    -------
-    PredicateVocabulary
-        Base configuration.
-    """
-    # All tier-listed predicates from ppas.py (as of Issue #122)
-    tier_lists = {
-        "class": [
-            [  # Tier 0: core lexical
-                f"{_RDFS}label",
-                f"{_SKOS}prefLabel",
-                f"{_SKOS}altLabel",
-                f"{_OBO}hasExactSynonym",
-                f"{_OBO}hasSynonym",
-                f"{_OBO}IAO_0000115",
-                f"{_RDFS}comment",
-                f"{_SKOS}definition",
-            ],
-            [  # Tier 1: structural type
-                f"{_RDF}type",
-                f"{_RDFS}subClassOf",
-                f"{_RDFS}domain",
-                f"{_RDFS}range",
-            ],
-            [  # Tier 2: equivalence
-                f"{_OWL}equivalentClass",
-                f"{_SKOS}exactMatch",
-            ],
-            [],  # Tier 3 - populated dynamically per dataset
-            [],  # Tier 4
-            [],  # Tier 5
-        ],
-        "instance": [
-            [  # Tier 0
-                f"{_RDF}type",
-                f"{_RDFS}label",
-                f"{_SKOS}prefLabel",
-            ],
-            [],  # Tier 1 -- datatype properties / functional object properties
-            [],  # Tier 2
-            [  # Tier 3
-                f"{_OWL}sameAs",
-                f"{_SKOS}exactMatch",
-            ],
-        ],
-        "predicate": [
-            [  # Tier 0
-                f"{_RDFS}label",
-                f"{_SKOS}prefLabel",
-                f"{_RDFS}comment",
-            ],
-            [  # Tier 1
-                f"{_RDFS}domain",
-                f"{_RDFS}range",
-            ],
-            [  # Tier 2
-                f"{_RDFS}subPropertyOf",
-                f"{_OWL}inverseOf",
-                f"{_OWL}equivalentProperty",
-            ],
-        ],
+def _legacy_tier_lists() -> dict[str, list[list[str]]]:
+    """Deep-copy the module-level PPAS tier lists of :mod:`ppas`."""
+    return {
+        "class": copy.deepcopy(CLASS_TIER_LIST),
+        "instance": copy.deepcopy(INSTANCE_TIER_LIST),
+        "predicate": copy.deepcopy(PREDICATE_TIER_LIST),
     }
 
-    # Collect all tier-listed predicates as the "covered" set
-    covered = set()
-    for entity_type, tiers in tier_lists.items():
-        for tier in tiers:
-            covered.update(tier)
 
-    config_hash = _make_config_hash("base", tier_lists, frozenset(covered), {})
-
+def _make_base() -> PredicateVocabulary:
+    """Build the legacy vocabulary: PPAS tiers, covered set = tiered predicates."""
+    tier_lists = _legacy_tier_lists()
     return PredicateVocabulary(
         name="base",
-        description=(
-            "All predicates from PPAS tier lists (CLASS, INSTANCE, PREDICATE). "
-            "Untiered predicates are eligible but lowest priority. "
-            "Represents existing PPAS behavior (P2 baseline)."
-        ),
-        covered_predicates=frozenset(covered),
+        description="Legacy PPAS tier lists; covered predicates are exactly the tiered ones.",
+        covered_predicates=frozenset(_tiered(tier_lists)),
         tier_lists=tier_lists,
-        fma_special_predicates={},
-        config_hash=config_hash,
     )
 
 
-def _make_covered_only_config() -> PredicateVocabulary:
-    """
-    Create the covered-only configuration.
+FMA_EXTENSION: dict[str, str] = {
+    expand_predicate("fma:preferred_name"): LEXICAL,
+    expand_predicate("fma:synonym"): LEXICAL,
+    expand_predicate("fma:FMAID"): IDENTIFIER,
+}
 
-    Same tier lists as base, but untiered predicates are ineligible.
-    This allows isolation of the filtering effect (P3 vs P1).
 
-    Returns
-    -------
-    PredicateVocabulary
-        Covered-only configuration.
-    """
-    base = _make_base_config()
-    # Reuse tier_lists as-is; filter is applied at selection time
-    config_hash = _make_config_hash(
-        "covered_only",
-        base.tier_lists,
-        base.covered_predicates,
-        {},
-    )
+OBO_EXTENSION: dict[str, str] = {
+    expand_predicate("oboInOwl:hasExactSynonym"): LEXICAL,
+    expand_predicate("oboInOwl:hasRelatedSynonym"): LEXICAL,
+    expand_predicate("oboInOwl:hasNarrowSynonym"): LEXICAL,
+    expand_predicate("oboInOwl:hasBroadSynonym"): LEXICAL,
+    expand_predicate("oboInOwl:hasSynonym"): LEXICAL,
+    expand_predicate("oboInOwl:hasDefinition"): LEXICAL,
+    expand_predicate("oboInOwl:hasAlternativeId"): IDENTIFIER,
+    expand_predicate("oboInOwl:hasDbXref"): IDENTIFIER,
+}
+
+
+def _make_extended(name: str, extension: dict[str, str], description: str) -> PredicateVocabulary:
+    """Build ``base`` plus lexical predicates in class tier 0 and identifiers untiered."""
+    tier_lists = _legacy_tier_lists()
+    lexical = [uri for uri, role in extension.items() if role == LEXICAL]
+    tier_lists["class"][0] = tier_lists["class"][0] + lexical
     return PredicateVocabulary(
-        name="covered_only",
-        description=(
-            "Only predicates in the PPAS tier lists (no untiered). "
-            "Used to isolate filtering effect: P3 (covered-det) vs P1 (all-det), "
-            "and P4 (covered-ppas) vs P3 (covered-det)."
-        ),
-        covered_predicates=base.covered_predicates,
-        tier_lists=base.tier_lists,
-        fma_special_predicates={},
-        config_hash=config_hash,
-    )
-
-
-def _make_fma_extended_config() -> PredicateVocabulary:
-    """
-    Create the FMA-extended configuration.
-
-    Extends base with FMA-specific predicates that were absent from the
-    original tier lists but are semantically important for D1 (SNOMED-FMA Body).
-
-    FMA-specific predicates:
-    - fma:preferred_name: Lexical/label predicate (similar to rdfs:label)
-    - fma:synonym: Lexical/label predicate (similar to skos:altLabel)
-    - fma:FMAID: Identifier predicate (documented separately, not auto-labeled)
-
-    Returns
-    -------
-    PredicateVocabulary
-        FMA-extended configuration.
-    """
-    base = _make_base_config()
-
-    # Extend tier lists: add FMA predicates to appropriate tiers
-    tier_lists = {
-        entity_type: [tier[:] for tier in tiers]  # Deep copy
-        for entity_type, tiers in base.tier_lists.items()
-    }
-
-    # Add FMA predicates to class tier 0 (lexical)
-    tier_lists["class"][0] = (
-        tier_lists["class"][0]
-        + [_FMA_PREFERRED_NAME, _FMA_SYNONYM]
-    )
-
-    # Extend covered_predicates
-    covered = set(base.covered_predicates)
-    covered.update({_FMA_PREFERRED_NAME, _FMA_SYNONYM, _FMA_FMAID})
-
-    # Document FMA special cases
-    fma_special = {
-        "fma:preferred_name": "lexical (similar to rdfs:label)",
-        "fma:synonym": "lexical (similar to skos:altLabel)",
-        "fma:FMAID": (
-            "identifier (numeric or alphanumeric ID); not automatically treated "
-            "as a label; included for completeness but may not contribute to matching"
-        ),
-    }
-
-    config_hash = _make_config_hash(
-        "fma_extended",
-        tier_lists,
-        frozenset(covered),
-        fma_special,
-    )
-
-    return PredicateVocabulary(
-        name="fma_extended",
-        description=(
-            "Base configuration extended with FMA-specific predicates "
-            "(fma:preferred_name, fma:synonym, fma:FMAID). "
-            "Evaluates whether vocabulary coverage improves matching on D1. "
-            "Used for P5 (extended-ppas)."
-        ),
-        covered_predicates=frozenset(covered),
+        name=name,
+        description=description,
+        covered_predicates=frozenset(_tiered(tier_lists) | set(extension)),
         tier_lists=tier_lists,
-        fma_special_predicates=fma_special,
-        config_hash=config_hash,
+        predicate_roles=dict(extension),
     )
 
 
-# Global registry of predicate configurations
-# Keyed by configuration name; frozen at module import time
-PER_PREDICATE_CONFIGS: Dict[str, PredicateVocabulary] = {
-    config.name: config
-    for config in [
-        _make_base_config(),
-        _make_covered_only_config(),
-        _make_fma_extended_config(),
-    ]
+def _make_fma_extended() -> PredicateVocabulary:
+    """Build ``base`` plus FMA lexical predicates in class tier 0 and FMAID untiered."""
+    return _make_extended("fma_extended", FMA_EXTENSION, (
+        "Base plus fma:preferred_name and fma:synonym in class tier 0 (lexical) "
+        "and fma:FMAID covered but untiered (identifier)."
+    ))
+
+
+def _make_obo_extended() -> PredicateVocabulary:
+    """Build ``base`` plus oboInOwl synonyms and definition in class tier 0, IDs untiered."""
+    return _make_extended("obo_extended", OBO_EXTENSION, (
+        "Base plus the oboInOwl synonym family and hasDefinition in class tier 0 "
+        "(lexical) and hasAlternativeId/hasDbXref covered but untiered (identifier)."
+    ))
+
+
+PER_PREDICATE_CONFIGS: dict[str, PredicateVocabulary] = {
+    vocabulary.name: vocabulary
+    for vocabulary in (_make_base(), _make_fma_extended(), _make_obo_extended())
 }
 
 
 def get_predicate_config(name: str) -> PredicateVocabulary:
     """
-    Retrieve a registered predicate configuration by name.
+    Retrieve a registered predicate vocabulary by name.
 
     Parameters
     ----------
     name : str
-        Configuration name (e.g., "base", "covered_only", "fma_extended").
+        Vocabulary name: ``"base"``, ``"fma_extended"`` or ``"obo_extended"``.
 
     Returns
     -------
     PredicateVocabulary
-        The requested configuration.
+        The requested vocabulary.
 
     Raises
     ------
     KeyError
-        If the configuration name is not registered.
+        If the name is not registered.
     """
     if name not in PER_PREDICATE_CONFIGS:
-        available = sorted(PER_PREDICATE_CONFIGS.keys())
         raise KeyError(
-            f"Predicate configuration {name!r} not found. "
-            f"Available: {available}."
+            f"Predicate configuration {name!r} not found. Available: {sorted(PER_PREDICATE_CONFIGS)}."
         )
     return PER_PREDICATE_CONFIGS[name]

@@ -1,6 +1,7 @@
-"""Tests for the controlled PPAS ablation registry and runner (#122)."""
+"""Tests for the controlled PPAS ablation registry and runner (#122, #128)."""
 
 import hashlib
+from dataclasses import replace
 import sys
 import json
 from pathlib import Path
@@ -8,7 +9,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 from rdflib import Graph, Literal, URIRef
-from rdflib.namespace import RDF
+from rdflib.namespace import OWL, RDF, RDFS
 
 import kgsemembed.pipeline.ppas_ablation as ablation
 from kgsemembed.datasets import AlignmentPair
@@ -16,14 +17,21 @@ from kgsemembed.embeddings.models import get_model_config
 from kgsemembed.pipeline.ablation_conditions import (
     ABLATION_CONDITIONS,
     ABLATION_MODEL_KEY,
+    BASE_POLICIES,
+    CONTROLLED_BUDGET,
+    CONTROLLED_POLICIES,
+    EXTENDED_VOCABULARIES,
     PRIMARY_BUDGET,
     RANDOM_SEEDS,
     STRESS_BUDGETS,
+    VALIDATION_BUDGETS,
+    _validate_registry,
+    extended_policies,
     get_ablation_condition,
     stress_budget,
 )
 from kgsemembed.pipeline.conditions import EXPERIMENT_CONDITIONS
-from kgsemembed.verbalisation.selection import DETERMINISTIC, FULL, PPAS, RANDOM
+from kgsemembed.verbalisation.selection import DETERMINISTIC, FULL, PPAS, RANDOM, Selection
 
 EX = "http://example.org/"
 _DIM = 32
@@ -38,14 +46,12 @@ _CONDITIONS = ["PA-full", "PA-ppas-80", "PA-det-80", "PA-rand-80-s0", "PA-rand-8
 
 def test_registry_ids_are_unique_and_share_one_model():
     ids = [c.condition_id for c in ABLATION_CONDITIONS]
-    # 22 historical + 12 controlled policy conditions (P3, P4, P5, P5-det at 3 budgets each)
-    assert len(ids) == len(set(ids)) == 34
+    assert len(ids) == len(set(ids)) == 22 + len(CONTROLLED_POLICIES) + 3 + 2 * len(BASE_POLICIES) == 40
     assert {c.model_key for c in ABLATION_CONDITIONS} == {ABLATION_MODEL_KEY} == {"M2"}
 
 
 def test_each_budget_has_ppas_deterministic_and_every_random_seed():
-    # Only check historical conditions (filter_mode == "all" and predicate_config == "base")
-    historical = [c for c in ABLATION_CONDITIONS if c.filter_mode == "all" and c.predicate_config == "base"]
+    historical = [c for c in ABLATION_CONDITIONS if not c.is_controlled]
     budgets = {c.token_budget for c in historical} - {None}
     assert budgets == {PRIMARY_BUDGET, *STRESS_BUDGETS.values()}
     for budget in budgets:
@@ -55,6 +61,66 @@ def test_each_budget_has_ppas_deterministic_and_every_random_seed():
         assert len({c.datasets for c in family}) == 1
 
 
+def _controlled_on(dataset_id: str, budget: int) -> list:
+    return [c for c in ABLATION_CONDITIONS
+            if c.is_controlled and dataset_id in c.datasets and c.token_budget == budget]
+
+
+def test_controlled_policies_are_p1_to_p7_on_d1_at_48():
+    controlled = _controlled_on("D1", CONTROLLED_BUDGET)
+    assert [c.policy_label for c in controlled] == [f"P{i}" for i in range(1, 8)]
+    assert CONTROLLED_BUDGET == 48
+    dimensions = {(c.filter_mode, c.predicate_config, c.order_mode) for c in controlled}
+    assert len(dimensions) == len(controlled)
+    assert ("all", "fma_extended", DETERMINISTIC) not in dimensions
+
+
+def test_validation_budgets_register_only_the_base_policies_on_d1():
+    assert VALIDATION_BUDGETS == (32, 64)
+    for budget in VALIDATION_BUDGETS:
+        family = _controlled_on("D1", budget)
+        assert [(c.policy_label, c.filter_mode, c.predicate_config, c.order_mode) for c in family] == list(BASE_POLICIES)
+        assert all(c.condition_id.endswith(f"-{budget}") and c.datasets == ("D1",) for c in family)
+    assert {c.token_budget for c in ABLATION_CONDITIONS if c.is_controlled} == {32, 48, 64}
+
+
+def test_d2_runs_base_policies_and_its_own_extended_vocabulary_at_48():
+    family = _controlled_on("D2", 48)
+    assert [c.policy_label for c in family] == [f"P{i}" for i in range(1, 8)]
+    vocabularies = {c.policy_label: c.predicate_config for c in family}
+    assert {vocabularies[f"P{i}"] for i in range(1, 5)} == {"base"}
+    assert {vocabularies[f"P{i}"] for i in range(5, 8)} == {"obo_extended"} == {EXTENDED_VOCABULARIES["D2"]}
+    assert not any(c.predicate_config == "fma_extended" for c in family)
+    assert not _controlled_on("D2", 32) and not _controlled_on("D2", 64)
+
+
+def test_extended_policies_keep_the_p5_to_p7_design():
+    designs = [(label, f, o) for label, f, _v, o in extended_policies("obo_extended")]
+    assert designs == [(label, f, o) for label, f, v, o in CONTROLLED_POLICIES if v == "fma_extended"]
+
+
+def test_a_label_repeated_within_one_dataset_and_budget_raises():
+    duplicate = get_ablation_condition("PA-all-base-det-48")
+    with pytest.raises(ValueError, match="Duplicate controlled policy labels"):
+        _validate_registry(ABLATION_CONDITIONS + [replace(duplicate, condition_id="PA-x")])
+
+
+def test_controlled_condition_ids_name_every_dimension():
+    ids = {c.policy_label: c.condition_id for c in _controlled_on("D1", 48)}
+    assert ids == {
+        "P1": "PA-all-base-det-48", "P2": "PA-all-base-ppas-48", "P3": "PA-cov-base-det-48",
+        "P4": "PA-cov-base-ppas-48", "P5": "PA-all-fmax-ppas-48", "P6": "PA-cov-fmax-det-48",
+        "P7": "PA-cov-fmax-ppas-48",
+    }
+
+
+def test_legacy_conditions_default_to_all_base_and_their_policy_order():
+    for condition in ABLATION_CONDITIONS:
+        assert condition.order_mode == condition.policy
+        if not condition.is_controlled:
+            assert (condition.filter_mode, condition.predicate_config) == ("all", "base")
+
+
 def test_random_seeds_are_at_least_five():
     assert len(RANDOM_SEEDS) >= 5
 
@@ -62,7 +128,7 @@ def test_random_seeds_are_at_least_five():
 def test_primary_budget_runs_on_d5_only_and_d1_uses_its_stress_budget():
     primary = [c for c in ABLATION_CONDITIONS if c.token_budget == PRIMARY_BUDGET]
     assert {c.datasets for c in primary} == {("D5",)}
-    d1_budgets = {c.token_budget for c in ABLATION_CONDITIONS if "D1" in c.datasets}
+    d1_budgets = {c.token_budget for c in ABLATION_CONDITIONS if "D1" in c.datasets and not c.is_controlled}
     assert d1_budgets == {None, STRESS_BUDGETS["D1"]}
 
 
@@ -334,3 +400,381 @@ def test_report_renders_every_section_for_a_toy_run(toy_run):
 def test_report_refuses_an_empty_results_directory(tmp_path):
     with pytest.raises(FileNotFoundError):
         report.build_report(tmp_path)
+
+
+# ---------------------------------------------------------------------------
+# Controlled policies P1-P7 on a synthetic FMA-style class pair (#128)
+# ---------------------------------------------------------------------------
+
+FMA = "http://purl.org/sig/ont/fma/"
+_CONTROLLED_IDS = [c.condition_id for c in ABLATION_CONDITIONS if ablation.is_reference_run(c, "D1")]
+_LABEL_OF = {cid: get_ablation_condition(cid).policy_label for cid in _CONTROLLED_IDS}
+
+
+def _fma_class_graph(prefix: str, n: int) -> Graph:
+    """Classes whose FMA annotations sort before rdfs:label and exceed 48 tokens."""
+    graph = Graph()
+    for i in range(n):
+        entity = URIRef(f"{EX}{prefix}{i}")
+        graph.add((entity, RDF.type, OWL.Class))
+        graph.add((entity, RDFS.label, Literal(f"organ {i}")))
+        graph.add((entity, URIRef(f"{FMA}preferred_name"), Literal(f"organ {i} proper")))
+        graph.add((entity, URIRef(f"{FMA}FMAID"), Literal(str(7000 + i))))
+        for j in range(6):
+            graph.add((entity, URIRef(f"{FMA}synonym"), Literal(f"organ {i} alias {j} term")))
+            graph.add((entity, URIRef(f"{FMA}author"), Literal(f"curator {j} of the record {i}")))
+    return graph
+
+
+def _class_pair() -> AlignmentPair:
+    sources = [f"{EX}s{i}" for i in range(8)]
+    refs = [(f"{EX}s{i}", f"{EX}t{i}") for i in range(8)]
+    return AlignmentPair(
+        dataset_id="D1", pair_name="toy", source_graph=_fma_class_graph("s", 8),
+        target_graph=_fma_class_graph("t", 8), source_entities=sources,
+        val_refs=refs[:3], test_refs=refs[3:], entity_type="class",
+    )
+
+
+@pytest.fixture
+def controlled_run(monkeypatch, tmp_path):
+    """Run every controlled condition on the toy class pair."""
+    model = _FakeModel()
+    info = {"model_key": "M2", "model_id": "fake/M2", "device": "cpu", "hf_revision": "rev-1"}
+    candidates = {f"{EX}s{i}": [f"{EX}t{j}" for j in range(8)] for i in range(8)}
+    monkeypatch.setattr(ablation, "load_sentence_transformer", lambda _key: (model, info))
+    monkeypatch.setattr(ablation, "load_dataset", lambda _d, _dir: [_class_pair()])
+    monkeypatch.setattr(ablation, "load_candidates", lambda _d, _p, _dir: dict(candidates))
+    results_dir = tmp_path / "controlled"
+    kwargs = {"data_dir": tmp_path, "results_dir": results_dir, "force_recompute": False, "max_sources": None}
+    payloads = ablation.run_ablation(["D1"], _CONTROLLED_IDS, kwargs)
+    return {_LABEL_OF[p["condition_id"]]: p for p in payloads}, results_dir
+
+
+def test_controlled_run_writes_every_policy(controlled_run):
+    payloads, _ = controlled_run
+    assert sorted(payloads) == [f"P{i}" for i in range(1, 8)]
+
+
+def test_controlled_results_record_the_policy_and_its_vocabulary(controlled_run):
+    payloads, _ = controlled_run
+    for label, payload in payloads.items():
+        block = payload["ablation"]
+        filter_mode, vocabulary, order_mode = next(
+            (f, v, o) for lab, f, v, o in CONTROLLED_POLICIES if lab == label
+        )
+        assert (block["policy_label"], block["filter_mode"], block["order_mode"]) == (label, filter_mode, order_mode)
+        assert block["predicate_config"]["name"] == vocabulary
+        assert block["tier_config_sha256"] == block["predicate_config"]["tiers_sha256"]
+        assert block["tokenizer_revision"] == payload["hf_revision"] == "rev-1"
+        for key in ("candidates_sha256", "evaluation_protocol", "git_commit", "git_dirty"):
+            assert key in payload
+
+
+def test_extended_vocabulary_hash_differs_from_base(controlled_run):
+    payloads, _ = controlled_run
+    hashes = {label: p["ablation"]["predicate_config"]["config_hash"] for label, p in payloads.items()}
+    assert hashes["P1"] == hashes["P2"] == hashes["P3"] == hashes["P4"]
+    assert hashes["P5"] == hashes["P6"] == hashes["P7"] != hashes["P2"]
+
+
+def test_p5_selects_differently_from_p2(controlled_run):
+    payloads, _ = controlled_run
+    assert payloads["P5"]["ablation"]["selection_sha256"] != payloads["P2"]["ablation"]["selection_sha256"]
+
+
+def test_policies_differ_except_where_filtering_cannot_bind(controlled_run):
+    """P3 = P4: the covered base text fits.  P5 = P7: tier 0 fills the budget
+    before the filtered fma:author items would be visited."""
+    payloads, _ = controlled_run
+    digest = {label: p["ablation"]["selection_sha256"] for label, p in payloads.items()}
+    assert digest["P3"] == digest["P4"]
+    assert payloads["P3"]["ablation"]["source"]["n_sampling_invoked"] == 0
+    assert digest["P5"] == digest["P7"]
+    others = [digest[label] for label in ("P1", "P2", "P3", "P5", "P6")]
+    assert len(set(others)) == len(others)
+
+
+def test_controlled_policies_share_population_candidates_and_budget(controlled_run):
+    payloads, _ = controlled_run
+    for key in ("candidates_sha256", "token_budget", "hf_revision", "evaluation_protocol"):
+        assert len({p[key] for p in payloads.values()}) == 1, key
+    assert len({json.dumps(p["population"], sort_keys=True) for p in payloads.values()}) == 1
+
+
+def test_controlled_policies_never_exceed_the_budget(controlled_run):
+    payloads, _ = controlled_run
+    for payload in payloads.values():
+        for side in ("source", "candidate"):
+            summary = payload["ablation"][side]
+            assert summary["tokens"]["max"] <= 48
+            assert summary["budget"]["n_over_budget"] == 0
+
+
+def test_filtering_accounting_matches_between_paired_policies(controlled_run):
+    payloads, _ = controlled_run
+    side = {label: p["ablation"]["source"] for label, p in payloads.items()}
+    for a, b in (("P3", "P4"), ("P6", "P7"), ("P1", "P2")):
+        for key in ("n_items_before_filter", "n_filtered_items", "eligible_items"):
+            assert side[a][key] == side[b][key], (a, b, key)
+    assert side["P1"]["n_filtered_items"] == 0
+    assert side["P3"]["n_filtered_items"] > side["P6"]["n_filtered_items"] > 0
+    assert side["P5"]["n_covered_items"] > side["P2"]["n_covered_items"]
+
+
+def test_sidecar_fingerprints_every_entity(controlled_run):
+    _, results_dir = controlled_run
+    sidecar = json.loads((results_dir / "PA-cov-base-det-48" / "D1" / "toy_entities.json").read_text())
+    assert len(sidecar["selection_fingerprints"]["source"]) == 8
+    assert len(sidecar["selection_fingerprints"]["candidate"]) == 8
+
+
+def test_ppas_effective_requires_ppas_order_and_invoked_sampling(controlled_run):
+    payloads, _ = controlled_run
+    effective = {label: p["ppas_effective"] for label, p in payloads.items()}
+    assert effective == {"P1": False, "P2": True, "P3": False, "P4": False,
+                         "P5": True, "P6": False, "P7": True}
+
+
+def test_controlled_conditions_refuse_the_issue_122_directory():
+    with pytest.raises(ValueError):
+        ablation._guard_results_dir(Path(ablation.DEFAULT_RESULTS_DIR), [get_ablation_condition("PA-all-base-det-48")], ["D1"])
+    ablation._guard_results_dir(Path(ablation.DEFAULT_RESULTS_DIR), [get_ablation_condition("PA-det-48")], ["D1"])
+
+
+# ---------------------------------------------------------------------------
+# Controlled-policy report (#128)
+# ---------------------------------------------------------------------------
+
+
+def _controlled_runs(results_dir: Path) -> list:
+    return [r for runs in report.load_runs(results_dir).values() for r in runs if report.is_controlled(r)]
+
+
+def test_report_renders_the_controlled_section_keyed_by_label(controlled_run):
+    _, results_dir = controlled_run
+    text = report.build_report(results_dir)
+    for heading in ("### Controlled policies (#128)", "##### Execution matrix", "##### Matching quality",
+                    "##### Representation cost", "##### Selection changes", "unit = test source",
+                    "Missing policies: none", "P3 − P1", "P4 − P3", "P2 − P1", "P5 − P2", "P6 − P3",
+                    "P7 − P6", "P7 − P5"):
+        assert heading in text, heading
+    assert "### Policy ablation (#122)" not in text
+
+
+def test_controlled_runs_with_the_same_policy_do_not_collide(controlled_run):
+    _, results_dir = controlled_run
+    [(_signature, group)] = report.signature_groups(_controlled_runs(results_dir))
+    assert sorted(group) == [f"P{i}" for i in range(1, 8)]
+    assert group["P1"]["ablation"]["policy"] == group["P3"]["ablation"]["policy"] == DETERMINISTIC
+
+
+def test_runs_with_different_signatures_are_never_combined(controlled_run):
+    _, results_dir = controlled_run
+    runs = _controlled_runs(results_dir)
+    smoke = json.loads(json.dumps([r for r in runs if report._label(r) == "P1"][0]))
+    smoke["ablation"]["smoke_max_sources"] = 3
+    groups = report.signature_groups(runs + [smoke])
+    assert [sorted(g) for _s, g in groups] == [[f"P{i}" for i in range(1, 8)], ["P1"]]
+    text = "\n\n".join(report.controlled_parts(runs + [smoke]))
+    assert "Run group 2" in text and "SMOKE, 3 sources" in text
+    assert "Missing policies: P2, P3, P4, P5, P6, P7" in text
+
+
+def test_duplicate_labels_within_one_signature_raise(controlled_run):
+    _, results_dir = controlled_run
+    runs = _controlled_runs(results_dir)
+    with pytest.raises(ValueError):
+        report.signature_groups(runs + [runs[0]])
+
+
+def test_selection_change_counts_match_the_fingerprints(controlled_run):
+    _, results_dir = controlled_run
+    [(_signature, group)] = report.signature_groups(_controlled_runs(results_dir))
+    assert report.changed_entities(group["P3"], group["P4"], "source") == set()
+    assert len(report.changed_entities(group["P5"], group["P2"], "source")) == 8
+
+
+def test_controlled_bootstrap_pairs_per_source_differences(controlled_run):
+    _, results_dir = controlled_run
+    [(_signature, group)] = report.signature_groups(_controlled_runs(results_dir))
+    a, b = report._per_source(group["P5"]), report._per_source(group["P2"])
+    sources = sorted(a)
+    expected = np.mean([a[s][0] - b[s][0] for s in sources])
+    row = report._contrast_row("x", a, b, set(sources), np.random.default_rng(0))
+    assert row[2].startswith(report._fmt(expected))
+
+
+def test_changed_and_unchanged_strata_partition_the_test_sources(controlled_run):
+    _, results_dir = controlled_run
+    [(_signature, group)] = report.signature_groups(_controlled_runs(results_dir))
+    table = report.controlled_contrast_section(group)
+    for a, b, _effect in report._available_contrasts(group):
+        counts = {
+            cells[2]: int(cells[3])
+            for cells in (line.split(" | ") for line in table.splitlines())
+            if len(cells) > 3 and cells[0].lstrip("| ") == f"{a} − {b}"
+        }
+        assert counts[report._CHANGED] + counts[report._UNCHANGED] == counts[report._ALL]
+
+
+def test_inventory_compares_selected_text_not_filtered_indices():
+    import scripts.ppas_ablation_inventory as inventory
+
+    base = Selection("a: 1", (0,), 1, 4, False, 0)
+    assert inventory._differ([base], [replace(base, selected=(3,))]) == 0
+    assert inventory._differ([base], [replace(base, text="b: 2")]) == 1
+
+
+@pytest.mark.parametrize("results_dir,condition_id,datasets", [
+    (ablation.CONTROLLED_RESULTS_DIR, "PA-all-base-det-32", ["D1"]),
+    (ablation.CONTROLLED_RESULTS_DIR, "PA-all-base-det-48", ["D2"]),
+    (ablation.CONTROLLED_RESULTS_DIR, "PA-cov-obox-ppas-48", ["D2"]),
+    (ablation.VALIDATION_RESULTS_DIR, "PA-all-base-det-48", ["D1"]),
+    (ablation.VALIDATION_RESULTS_DIR, "PA-cov-fmax-ppas-48", ["D1", "D2"]),
+])
+def test_validation_and_reference_runs_refuse_each_others_directory(results_dir, condition_id, datasets):
+    with pytest.raises(ValueError):
+        ablation._guard_results_dir(Path(results_dir), [get_ablation_condition(condition_id)], datasets)
+
+
+@pytest.mark.parametrize("results_dir,condition_ids,datasets", [
+    (ablation.CONTROLLED_RESULTS_DIR, ["PA-all-base-det-48", "PA-cov-fmax-ppas-48"], ["D1"]),
+    (ablation.VALIDATION_RESULTS_DIR, ["PA-all-base-det-32", "PA-cov-base-ppas-64"], ["D1"]),
+    (ablation.VALIDATION_RESULTS_DIR, ["PA-all-base-det-48", "PA-cov-obox-ppas-48"], ["D2"]),
+])
+def test_validation_and_reference_runs_accept_their_own_directory(results_dir, condition_ids, datasets):
+    ablation._guard_results_dir(Path(results_dir), [get_ablation_condition(c) for c in condition_ids], datasets)
+
+
+def test_dataset_file_digests_fingerprint_the_registered_files(tmp_path):
+    (tmp_path / "d2_anatomy").mkdir()
+    (tmp_path / "d2_anatomy" / "source.rdf").write_bytes(b"abc")
+    digests = ablation.dataset_file_digests("D2", tmp_path)
+    assert digests["d2_anatomy/source.rdf"] == hashlib.sha256(b"abc").hexdigest()
+    assert digests["d2_anatomy/target.rdf"] is None
+    assert ablation.dataset_file_digests("D5", tmp_path) == {}
+
+
+def test_results_record_dataset_file_digests(controlled_run):
+    payloads, _ = controlled_run
+    assert all("dataset_files_sha256" in p for p in payloads.values())
+
+
+@pytest.mark.parametrize("dataset_id,budget,labels", [
+    ("D1", 48, [f"P{i}" for i in range(1, 8)]),
+    ("D1", 32, ["P1", "P2", "P3", "P4"]),
+    ("D2", 48, [f"P{i}" for i in range(1, 8)]),
+    ("D2", 64, []),
+])
+def test_report_expects_the_registered_labels_per_dataset_and_budget(dataset_id, budget, labels):
+    assert report.expected_labels(dataset_id, budget) == labels
+
+
+def test_contrast_effects_name_the_groups_extended_vocabulary(controlled_run):
+    _, results_dir = controlled_run
+    [(_signature, group)] = report.signature_groups(_controlled_runs(results_dir))
+    effects = {(a, b): effect for a, b, effect in report._available_contrasts(group)}
+    assert effects[("P7", "P6")] == "ordering, eligibility fixed (fma_extended)"
+    assert ("P4", "P2") in effects
+
+
+# ---------------------------------------------------------------------------
+# Validation report (#128 follow-up)
+# ---------------------------------------------------------------------------
+
+import scripts.generate_ppas_validation_report as validation  # noqa: E402
+
+_VALIDATION_IDS = {
+    dataset_id: [c.condition_id for c in ABLATION_CONDITIONS if c.is_controlled
+                 and dataset_id in c.datasets and not ablation.is_reference_run(c, dataset_id)]
+    for dataset_id in ("D1", "D2")
+}
+
+
+def _run_into(monkeypatch, tmp_path, dataset_id, condition_ids, results_dir):
+    model = _FakeModel()
+    info = {"model_key": "M2", "model_id": "fake/M2", "device": "cpu", "hf_revision": "rev-1"}
+    candidates = {f"{EX}s{i}": [f"{EX}t{j}" for j in range(8)] for i in range(8)}
+    pair = replace(_class_pair(), dataset_id=dataset_id)
+    monkeypatch.setattr(ablation, "load_sentence_transformer", lambda _key: (model, info))
+    monkeypatch.setattr(ablation, "load_dataset", lambda _d, _dir: [pair])
+    monkeypatch.setattr(ablation, "load_candidates", lambda _d, _p, _dir: dict(candidates))
+    kwargs = {"data_dir": tmp_path, "results_dir": results_dir, "force_recompute": False, "max_sources": None}
+    return ablation.run_ablation([dataset_id], condition_ids, kwargs)
+
+
+@pytest.fixture
+def validation_dirs(monkeypatch, tmp_path):
+    """Write a toy #128 reference and toy D1 (32, 64) and D2 (48) validation runs."""
+    reference, results = tmp_path / "controlled", tmp_path / "validation"
+    _run_into(monkeypatch, tmp_path, "D1", _CONTROLLED_IDS, reference)
+    _run_into(monkeypatch, tmp_path, "D1", _VALIDATION_IDS["D1"], results)
+    _run_into(monkeypatch, tmp_path, "D2", _VALIDATION_IDS["D2"], results)
+    return reference, results
+
+
+def test_validation_runs_cover_the_expected_matrix(validation_dirs):
+    runs = validation.collect_runs(*validation_dirs)
+    present = sorted((r["dataset_id"], r["token_budget"], report._label(r)) for r in runs)
+    assert present == sorted(validation.expected_runs())
+    assert len(present) == 3 * 4 + 7
+
+
+def test_validation_report_renders_both_analyses_separately(validation_dirs, tmp_path):
+    reference, results = validation_dirs
+    text = validation.build_report(reference, results, results / "figures", tmp_path)
+    assert "Expected full-population runs: 19; complete: 19." in text
+    assert "## D1 budget sensitivity" in text and "## D2 replication at 48 tokens" in text
+    for name in ("d1_metrics_by_budget.png", "d1_contrasts_by_budget.png", "d2_contrasts.png"):
+        assert (results / "figures" / name).stat().st_size > 0
+
+
+def test_validation_groups_never_mix_budgets_or_datasets(validation_dirs):
+    runs = validation.collect_runs(*validation_dirs)
+    d1 = validation.full_groups(validation.groups_of(runs, "D1"))
+    assert sorted(d1) == [32, 48, 64]
+    for budget, group in d1.items():
+        assert sorted(group) == list(validation.BASE_LABELS)
+        assert {r["token_budget"] for r in group.values()} == {budget}
+        assert {r["dataset_id"] for r in group.values()} == {"D1"}
+    d2 = validation.full_groups(validation.groups_of(runs, "D2"))
+    assert list(d2) == [48] and len(d2[48]) == 7
+
+
+def test_smoke_groups_are_excluded_from_the_analysis(validation_dirs):
+    runs = validation.collect_runs(*validation_dirs)
+    smoke = json.loads(json.dumps([r for r in runs if r["dataset_id"] == "D2"]))
+    for run in smoke:
+        run["ablation"]["smoke_max_sources"] = 3
+    groups = validation.groups_of(runs + smoke, "D2")
+    assert len(groups) == 2
+    assert validation.full_groups(groups)[48]["P1"]["ablation"]["smoke_max_sources"] is None
+
+
+def test_validation_refuses_a_d1_reference_budget_run_in_its_own_root(validation_dirs):
+    reference, results = validation_dirs
+    source = reference / "PA-all-base-det-48"
+    target = results / "PA-all-base-det-48" / "D1"
+    target.mkdir(parents=True)
+    for path in (source / "D1").iterdir():
+        (target / path.name).write_bytes(path.read_bytes())
+    with pytest.raises(ValueError, match="#128 reference"):
+        validation.collect_runs(reference, results)
+
+
+def test_validation_contrasts_reproduce_the_128_report_intervals(validation_dirs):
+    runs = validation.collect_runs(*validation_dirs)
+    group = validation.full_groups(validation.groups_of(runs, "D1"))[48]
+    estimates = validation.contrast_estimates(group["P3"], group["P1"])
+    rows = [line for line in report.controlled_contrast_section(group).splitlines() if line.startswith("| P3 − P1 |")]
+    for line, stratum in zip(rows, validation.STRATA):
+        assert validation._interval(estimates[stratum]["mrr"]) in line
+
+
+def test_identical_selections_are_reported_as_not_identifiable(validation_dirs):
+    runs = validation.collect_runs(*validation_dirs)
+    group = validation.full_groups(validation.groups_of(runs, "D2"))[48]
+    assert not validation.identifiable(group["P5"], group["P2"])
+    table = validation.contrast_table({48: group}, (("P5", "P2", "vocabulary"),))
+    assert validation._NOT_IDENTIFIABLE in table

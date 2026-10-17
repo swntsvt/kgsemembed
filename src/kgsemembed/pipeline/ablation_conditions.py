@@ -18,15 +18,35 @@ on input lengths only: the median full-representation length over a dataset's
 pooled source and candidate entities, floored to a multiple of 8.  D5 gives 80
 (sampling 28% of sources, 82% of candidates) and D1 gives 48 (25% / 81%).
 ``scripts/ppas_ablation_inventory.py`` recomputes the rule.
+
+Controlled policies (#128)
+--------------------------
+P1-P7 vary predicate eligibility (``filter_mode``), predicate vocabulary and
+visiting order one at a time, on D1 at 48 tokens; see
+:data:`CONTROLLED_POLICIES`.  They are identified by ``policy_label`` and their
+condition IDs name every dimension, so no two collide when grouped by policy.
+
+Validation (#128 follow-up)
+---------------------------
+The base-vocabulary policies P1-P4 are also registered on D1 at
+:data:`VALIDATION_BUDGETS` (32 and 64) and on D2 at 48, and P5-P7 on D2 with
+the D2 vocabulary ``obo_extended`` (:data:`EXTENDED_VOCABULARIES`).  A label
+names the same filter/vocabulary-role/order design everywhere; it is unique
+per (dataset, budget), the unit a report groups by.
 """
+
 
 from collections import Counter
 from dataclasses import dataclass
 from typing import List, Optional, Tuple
 
 from kgsemembed.embeddings.models import get_model_config
+from kgsemembed.verbalisation.predicate_config import PER_PREDICATE_CONFIGS
 from kgsemembed.verbalisation.selection import (
     DETERMINISTIC,
+    FILTER_ALL,
+    FILTER_COVERED,
+    FILTER_MODES,
     FULL,
     PPAS,
     RANDOM,
@@ -62,11 +82,13 @@ class AblationCondition:
     model_key : str
         Embedding model, shared by every ablation condition.
     filter_mode : str
-        Predicate filtering mode ("all" or "covered"), default "all" (Issue #126).
+        Predicate eligibility: ``"all"`` or ``"covered"``.
     order_mode : str
-        Predicate ordering mode ("ppas", "deterministic", "random", "full"), default same as policy.
+        Visiting order; defaults to ``policy``, which it must equal.
     predicate_config : str
-        Name of predicate vocabulary config ("base", "covered_only", "fma_extended"), default "base".
+        Predicate vocabulary name, ``"base"`` or ``"fma_extended"``.
+    policy_label : str
+        Controlled-policy label (``"P1"``-``"P7"``); empty for #122 conditions.
     """
 
     condition_id: str
@@ -75,9 +97,19 @@ class AblationCondition:
     seed: Optional[int]
     datasets: Tuple[str, ...]
     model_key: str = ABLATION_MODEL_KEY
-    filter_mode: str = "all"
+    filter_mode: str = FILTER_ALL
     order_mode: str = ""
     predicate_config: str = "base"
+    policy_label: str = ""
+
+    def __post_init__(self) -> None:
+        if not self.order_mode:
+            object.__setattr__(self, "order_mode", self.policy)
+
+    @property
+    def is_controlled(self) -> bool:
+        """Whether the condition belongs to the #128 controlled-policy family."""
+        return bool(self.policy_label)
 
 
 def _budget_family(budget: int, datasets: Tuple[str, ...]) -> List[AblationCondition]:
@@ -93,85 +125,91 @@ def _budget_family(budget: int, datasets: Tuple[str, ...]) -> List[AblationCondi
     return family
 
 
-def _controlled_policy_family(
-    filter_mode: str,
-    order_mode: str,
-    predicate_config: str,
-    budget: int,
-    datasets: Tuple[str, ...],
-) -> List[AblationCondition]:
-    """Create a controlled policy condition (Issue #126).
+CONTROLLED_BUDGET = STRESS_BUDGETS["D1"]
+CONTROLLED_DATASETS: Tuple[str, ...] = ("D1",)
+VALIDATION_BUDGETS: Tuple[int, ...] = (32, 64)
+VALIDATION_DATASET = "D2"
+EXTENDED_VOCABULARIES = {"D1": "fma_extended", "D2": "obo_extended"}
+
+_FILTER_LABELS = {FILTER_ALL: "all", FILTER_COVERED: "cov"}
+_VOCABULARY_LABELS = {"base": "base", "fma_extended": "fmax", "obo_extended": "obox"}
+
+CONTROLLED_POLICIES: Tuple[Tuple[str, str, str, str], ...] = (
+    ("P1", FILTER_ALL, "base", DETERMINISTIC),
+    ("P2", FILTER_ALL, "base", PPAS),
+    ("P3", FILTER_COVERED, "base", DETERMINISTIC),
+    ("P4", FILTER_COVERED, "base", PPAS),
+    ("P5", FILTER_ALL, "fma_extended", PPAS),
+    ("P6", FILTER_COVERED, "fma_extended", DETERMINISTIC),
+    ("P7", FILTER_COVERED, "fma_extended", PPAS),
+)
+"""Controlled policies (#128): (label, filter mode, vocabulary, order mode).
+
+P1 and P2 are the #122 deterministic and PPAS policies re-registered with an
+explicit vocabulary, so they are rerun from the same commit as P3-P7.  The
+filter "all" with deterministic order never consults a vocabulary, so an
+``all``/``fma_extended``/deterministic condition would equal P1 and is not
+registered; P6 and P7 are the extended-vocabulary controls instead.
+"""
+
+BASE_POLICIES = tuple(p for p in CONTROLLED_POLICIES if p[2] == "base")
+"""P1-P4: the base-vocabulary policies, run at every validation budget."""
+
+
+def extended_policies(vocabulary: str) -> Tuple[Tuple[str, str, str, str], ...]:
+    """
+    Return P5-P7 with their extended vocabulary replaced by ``vocabulary``.
+
+    Parameters
+    ----------
+    vocabulary : str
+        A dataset's extended vocabulary, e.g. ``"obo_extended"``.
+
+    Returns
+    -------
+    Tuple[Tuple[str, str, str, str], ...]
+        ``(label, filter mode, vocabulary, order mode)`` of P5-P7.
+    """
+    return tuple((label, f, vocabulary, o) for label, f, v, o in CONTROLLED_POLICIES if v != "base")
+
+
+def controlled_condition_id(filter_mode: str, vocabulary: str, order_mode: str, budget: int) -> str:
+    """
+    Name a controlled condition by every dimension it fixes.
 
     Parameters
     ----------
     filter_mode : str
-        "all" or "covered".
+        ``"all"`` or ``"covered"``.
+    vocabulary : str
+        Predicate vocabulary name.
     order_mode : str
-        "ppas", "deterministic", "random", or "full".
-    predicate_config : str
-        "base", "covered_only", or "fma_extended".
+        ``"ppas"`` or ``"deterministic"``.
     budget : int
         Token budget.
-    datasets : Tuple[str, ...]
-        Datasets to run on.
 
     Returns
     -------
-    List[AblationCondition]
-        A single controlled policy condition (no random seeds; one only).
-        Or multiple if order_mode is "random" (one per seed).
+    str
+        E.g. ``"PA-cov-fmax-ppas-48"``.
     """
-    # Map order_mode to a policy equivalent for display
-    if order_mode == "ppas":
-        policy_label = "ppas"
-        policy = PPAS
-    elif order_mode == "deterministic":
-        policy_label = "det"
-        policy = DETERMINISTIC
-    elif order_mode == "random":
-        policy_label = "rand"
-        policy = RANDOM
-    elif order_mode == "full":
-        policy_label = "full"
-        policy = FULL
-    else:
-        raise ValueError(f"Unknown order_mode {order_mode!r}.")
+    order = _POLICY_LABELS[order_mode]
+    return f"PA-{_FILTER_LABELS[filter_mode]}-{_VOCABULARY_LABELS[vocabulary]}-{order}-{budget}"
 
-    # Construct condition ID: PA-cp-{filter}{config}{order}_{budget}[-s{seed}]
-    config_label = predicate_config[:3] if predicate_config != "base" else ""
-    filter_label = filter_mode[:3] if filter_mode != "all" else ""
 
-    base_id = f"PA-cp-{filter_label}{config_label}{policy_label}-{budget}".replace("--", "-").lstrip("-")
-    if not base_id.startswith("PA-"):
-        base_id = f"PA-{base_id}"
-
-    if order_mode == "random":
-        return [
-            AblationCondition(
-                f"{base_id}-s{seed}",
-                policy,
-                budget,
-                seed,
-                datasets,
-                filter_mode=filter_mode,
-                order_mode=order_mode,
-                predicate_config=predicate_config,
-            )
-            for seed in RANDOM_SEEDS
-        ]
-    else:
-        return [
-            AblationCondition(
-                base_id,
-                policy,
-                budget,
-                None,
-                datasets,
-                filter_mode=filter_mode,
-                order_mode=order_mode,
-                predicate_config=predicate_config,
-            )
-        ]
+def _controlled_family(
+    budget: int, datasets: Tuple[str, ...], policies: Tuple[Tuple[str, str, str, str], ...]
+) -> List[AblationCondition]:
+    """Return the given controlled policies at one budget."""
+    return [
+        AblationCondition(
+            controlled_condition_id(filter_mode, vocabulary, order_mode, budget),
+            order_mode, budget, None, datasets,
+            filter_mode=filter_mode, order_mode=order_mode,
+            predicate_config=vocabulary, policy_label=label,
+        )
+        for label, filter_mode, vocabulary, order_mode in policies
+    ]
 
 
 ABLATION_CONDITIONS: List[AblationCondition] = [
@@ -179,24 +217,13 @@ ABLATION_CONDITIONS: List[AblationCondition] = [
     *_budget_family(PRIMARY_BUDGET, ("D5",)),
     *_budget_family(STRESS_BUDGETS["D5"], ("D5",)),
     *_budget_family(STRESS_BUDGETS["D1"], ("D1",)),
-    # Controlled policy conditions (Issue #126)
-    # Only add NEW policy combinations; P1 (all-det) and P2 (all-ppas) already exist above
-    # P3: covered-det
-    *_controlled_policy_family("covered", "deterministic", "base", PRIMARY_BUDGET, ("D5",)),
-    *_controlled_policy_family("covered", "deterministic", "base", STRESS_BUDGETS["D5"], ("D5",)),
-    *_controlled_policy_family("covered", "deterministic", "base", STRESS_BUDGETS["D1"], ("D1",)),
-    # P4: covered-ppas
-    *_controlled_policy_family("covered", "ppas", "base", PRIMARY_BUDGET, ("D5",)),
-    *_controlled_policy_family("covered", "ppas", "base", STRESS_BUDGETS["D5"], ("D5",)),
-    *_controlled_policy_family("covered", "ppas", "base", STRESS_BUDGETS["D1"], ("D1",)),
-    # P5: fma_extended-ppas
-    *_controlled_policy_family("all", "ppas", "fma_extended", PRIMARY_BUDGET, ("D5",)),
-    *_controlled_policy_family("all", "ppas", "fma_extended", STRESS_BUDGETS["D5"], ("D5",)),
-    *_controlled_policy_family("all", "ppas", "fma_extended", STRESS_BUDGETS["D1"], ("D1",)),
-    # P5-det: fma_extended-det (bonus control)
-    *_controlled_policy_family("all", "deterministic", "fma_extended", PRIMARY_BUDGET, ("D5",)),
-    *_controlled_policy_family("all", "deterministic", "fma_extended", STRESS_BUDGETS["D5"], ("D5",)),
-    *_controlled_policy_family("all", "deterministic", "fma_extended", STRESS_BUDGETS["D1"], ("D1",)),
+    *_controlled_family(CONTROLLED_BUDGET, (*CONTROLLED_DATASETS, VALIDATION_DATASET), BASE_POLICIES),
+    *_controlled_family(CONTROLLED_BUDGET, CONTROLLED_DATASETS, extended_policies("fma_extended")),
+    *_controlled_family(
+        CONTROLLED_BUDGET, (VALIDATION_DATASET,), extended_policies(EXTENDED_VOCABULARIES[VALIDATION_DATASET])
+    ),
+    *(c for budget in VALIDATION_BUDGETS
+      for c in _controlled_family(budget, CONTROLLED_DATASETS, BASE_POLICIES)),
 ]
 
 
@@ -208,6 +235,12 @@ def _validate_condition(condition: AblationCondition) -> None:
         raise ValueError(f"{condition.condition_id}: only 'full' may omit a budget.")
     if (condition.policy == RANDOM) != (condition.seed is not None):
         raise ValueError(f"{condition.condition_id}: only 'random' takes a seed.")
+    if condition.order_mode != condition.policy:
+        raise ValueError(f"{condition.condition_id}: order_mode must equal policy.")
+    if condition.filter_mode not in FILTER_MODES:
+        raise ValueError(f"{condition.condition_id}: unknown filter mode {condition.filter_mode!r}.")
+    if condition.predicate_config not in PER_PREDICATE_CONFIGS:
+        raise ValueError(f"{condition.condition_id}: unknown vocabulary {condition.predicate_config!r}.")
     config = get_model_config(condition.model_key)
     if condition.token_budget is not None and condition.token_budget > config.max_tokens:
         raise ValueError(f"{condition.condition_id}: budget exceeds the model limit.")
@@ -221,6 +254,13 @@ def _validate_registry(conditions: List[AblationCondition]) -> None:
     duplicates = sorted(cid for cid, count in counts.items() if count > 1)
     if duplicates:
         raise ValueError(f"Duplicate ablation condition identifiers: {duplicates}.")
+    labels = Counter(
+        (c.policy_label, dataset, c.token_budget)
+        for c in conditions if c.is_controlled for dataset in c.datasets
+    )
+    duplicated = sorted(key for key, count in labels.items() if count > 1)
+    if duplicated:
+        raise ValueError(f"Duplicate controlled policy labels per (dataset, budget): {duplicated}.")
     if len({c.model_key for c in conditions}) != 1:
         raise ValueError("Every ablation condition must share one embedding model.")
     for condition in conditions:
