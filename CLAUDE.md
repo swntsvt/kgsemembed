@@ -17,7 +17,7 @@ Phase 2 datasets: D1 (SNOMED-FMA Body), D2 (Anatomy MA-NCI), D3 (Conference,
 21 pairs), D4 (memoryalpha-stexpanded, schema and instance), D5
 (DBpedia-Wikidata 15K EN, OpenEA). Five datasets total.
 
-**Current focus**: Issue #131 — predicate-role ablation on D1 and D2 (which annotation roles drive the #128 covered-eligibility effect, with and without a token budget); #128 and #130 merged (Phase 2)
+**Current focus**: Issue #134 — text-serialization-order experiment on D1 and D2 (effect of item order with the selected set held fixed; order frozen on D2 validation before any test evaluation); #128, #130 and #131 merged (Phase 2)
 
 ## Git Workflow
 
@@ -211,6 +211,27 @@ python scripts/predicate_role_diagnostics.py label-loss --datasets D1 D2
 python scripts/predicate_role_diagnostics.py examples --n_sample 300 \
     --pair PR-core-full PR-all-full PR-no-syn-full PR-core-plus-syn-full
 python scripts/predicate_role_diagnostics.py probe --n_sample 400
+
+# Serialization order (#134): tokenizer-only identity gates and diagnostics
+# (~10 min); check that every stored #122/#128/#131 run still renders
+# identically; the validation stage (loads M2; long — run in tmux); the freeze
+# (validation results only; commit and push it before the test stage); the
+# test stage (refuses to start without a committed, pushed freeze on a clean
+# tree); the tracked bundle and reports (URI-only, rebuilt from the bundle alone).
+python scripts/serialization_inventory.py gates --datasets D1 D2
+python scripts/serialization_inventory.py existing --datasets D1 D2
+python -m kgsemembed.pipeline.serialization_order --population validation \
+    --datasets D1 D2 --data_dir data/ --results_dir data/results_serialization/
+python scripts/freeze_serialization_order.py --results_dir data/results_serialization/
+python scripts/freeze_serialization_order.py --verify   # recompute; must match the committed record
+python -m kgsemembed.pipeline.serialization_order --population test \
+    --datasets D1 D2 --data_dir data/ --results_dir data/results_serialization/
+python scripts/generate_serialization_report.py export --stage validation
+python scripts/generate_serialization_report.py report --stage validation
+python scripts/generate_serialization_report.py verify-rebuild --stage validation
+python scripts/generate_serialization_report.py check-text
+python scripts/generate_serialization_report.py examples-local --stage validation  # local text only
+python scripts/generate_serialization_report.py gate-ranks   # test stage; before report --stage test
 ```
 
 Omitting `--conditions` runs every registered condition; omitting `--datasets`
@@ -570,6 +591,78 @@ Seven conditions vary one dimension at a time on D1 at 48 tokens
     only; regenerates byte-identically apart from file timestamps);
   - diagnostics: `predicate_role_diagnostics.py label-loss | examples | probe`
     (label-loss is tokenizer only; examples and probe load M2, ~10–40 min).
+
+### Serialization order (#134)
+
+- **Question**: how much the order in which selected items are *written*
+  changes matching when the selected item set is fixed. Orders
+  (`verbalisation/serialization.py`, hash `9429a87c…`, pinned in tests):
+  `uri` (canonical, every earlier condition), `core` (core items first),
+  `label` (`rdfs:label` first), `role` (label → preferred_name → synonym →
+  definition → subClassOf → type → disjointness → non_english → identifier →
+  other). Within a group, canonical order.
+- **Selector**: `PolicySelector(render_order=...)`, default `"uri"`, which
+  renders through `join_items` exactly as before; non-canonical renders and
+  the `label_first`/`role_priority` selection orders need a role filter.
+  `ABLATION_CONDITIONS` refuses any non-`uri` render, so every #122/#128/#131
+  condition is byte-identical (`serialization_inventory.py existing`). The
+  main V2+V6 pipeline does not import `selection.py`.
+- **Registry** (`pipeline/serialization_conditions.py`, separate from
+  `ABLATION_CONDITIONS`): 62 logical conditions, 57 executions (37 `SO-*`
+  condition IDs). Block S (no budget): D1 A0/A-core/C+syn/C+id, D2
+  A0/A-core/C+syn/C+def × 4 renders = 32, A-core `core` ≡ `uri` → 30 runs.
+  Block B (A0 at D1@48, D2@24, D2@48): F-* (core-first selection, each
+  render), C-* (selection = render), X-label/X-role (selection, `uri`
+  render) = 10 per budget, C-core ≡ F-core → 9 runs (B1–B9).
+- **Gates** (tokenizer only, before any run): item-set fingerprints
+  (`(predicate, item text)`, order-free) equal within every fixed-set group;
+  shared conditions render their execution's exact text; every `uri`-rendered
+  execution reproduces the stored #131/#128 text of every entity; nothing
+  exceeds its budget. After the freeze, `gate-ranks` compares test ranks of
+  those executions with the stored sidecars source by source.
+- **Stages**: `--population validation` ranks only the validation
+  population (D1 4,903 sources / 33,490 candidates; D2 556 / 2,687) and
+  writes no test rank. The order is chosen on D2 validation (299 reference
+  sources) by `evaluation/order_selection.choose_order` (10,000 shared
+  replicates, seed 20261016, 95% percentile; E = best plus every candidate
+  whose `MRR(best) − MRR(o)` interval has lower bound ≤ 0; precedence
+  `label` > `core` > `role`). Those intervals are descriptive, not adjusted
+  for selection. D1 validation is exploratory, split into the 400 sources the
+  #131 probe used (sorted-URI SHA-256 `a773ea69dc13…`) and the 751 it did
+  not. `--population test` verifies the freeze record
+  (`artifacts/issue-134/serialization_freeze.json`) first.
+- **Frozen**: `label` (2c4f63e, validation at 4809a98). It was chosen by the
+  tie-breaking precedence, not by the highest D2 validation MRR: `core` was
+  highest (0.8291 vs label 0.8257, uri 0.7899), but no interval of
+  `MRR(core) − MRR(o)` excluded 0, so E = {label, core, role}.
+- **Test-stage guards**: besides the freeze checks, `verify_freeze` refuses
+  a changed rule (seed, replicates, precedence), validation files whose
+  digests differ from the record, and any change under `src/kgsemembed/`
+  since the validation commit except the runner itself
+  (`FROZEN_IMPLEMENTATION`). The test stage refuses `--max_sources` and
+  existing test results from another freeze or commit. `export` writes every
+  bundle file once (a different byte refuses), and checks each result's
+  population and, for test, freeze digest and run signature against
+  `PROVENANCE_validation.json`; it also refuses a stage from several commits,
+  a dirty tree, a smoke run, a sidecar that does not cover every counted
+  reference, or executions over different sources. `report` refuses missing
+  or empty executions. `gate-ranks` compares the 13 registered reproduction
+  targets (`expected_rank_targets`) with their stored #131/#128 sidecars
+  source by source (test reference sources matched by URI): best gold rank,
+  gold-target set, and source and gold text fingerprints; a missing baseline,
+  missing or extra source, empty comparison or any mismatch fails.
+  `report --stage test` refuses to run unless `diagnostics/rank_gate.json`
+  passed and the SHA-256 of every report input still matches it.
+- **Primary contrasts** (test report only): frozen − uri on D1/S/A0 and
+  D2/S/A0, MRR and Recall@1, 95% and Bonferroni 97.5% intervals (family:
+  the two datasets of one metric, same 2,000 replicates). Examples:
+  5 largest gains and losses of frozen over uri per dataset (ties by URI),
+  `examples/<stage>_examples.csv` (URI-only); readable text via
+  `examples-local` into the gitignored results directory.
+- **Artifacts**: `artifacts/issue-134/` is tracked and URI-only (results
+  JSON, per-source outcomes, conditions map, diagnostics, provenance,
+  manifest, reports, figures). Readable entity text stays local; dataset
+  labels go into public material only once redistribution is confirmed.
 
 ### Validation of the eligibility effect (#128 follow-up)
 

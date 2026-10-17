@@ -1,0 +1,49 @@
+{
+  "stage": "test",
+  "n_runs": 57,
+  "git_commits": [
+    "92e22f0b80a8848c00fb87b24f6e0c1c5a263198"
+  ],
+  "any_dirty": false,
+  "model_id": "BAAI/bge-large-en-v1.5",
+  "hf_revision": "d4aa6901d3a41ba39fb536a557fa166f842b0e09",
+  "tokenizer_revision": "d4aa6901d3a41ba39fb536a557fa166f842b0e09",
+  "dataset_files_sha256": {
+    "D1": {
+      "d1_snomed_fma/source.rdf": "a0fb689dde7b95bfe737f780fc869d73b1b3b59ae8586df6076996507f92a091",
+      "d1_snomed_fma/target.rdf": "c1777ae5546dd78fc8750e312460da58d1ea9322e84a5f0a54c7b7312fd6fd57",
+      "d1_snomed_fma/reference.rdf": "de7358d1841fed495d47257dd244e0fc630cdde088cd352b164fb6b3b9f7d388"
+    },
+    "D2": {
+      "d2_anatomy/source.rdf": "93756393d6306c8f332c884401aa447cc4b2557f0a6be3e0efd988a943cb68f8",
+      "d2_anatomy/target.rdf": "5c1ca432d9845f1abb36ecfce313df46d8c56d2fb4137d0590ec4e4a6a9b05bf",
+      "d2_anatomy/reference.rdf": "b6a6b12f3e7a786e5b58c4898024f0f483426e9036bdc3939aa61b046dbc26c4"
+    }
+  },
+  "candidates_sha256": {
+    "D1": "a65eb2480a75f9ec5ce0d797993b21b5a098d47d9d863121c456d805c95cc688",
+    "D2": "b4f1129bad0e2f7946ac724d48000f105171458ad82007f05c8880c4a6cce73d"
+  },
+  "role_map_sha256": "d4c5bd86becb0725c9c59bae44d19d05cc18db872d9ff90046601a9f45c434cf",
+  "order_definitions_sha256": "9429a87cfc824b14bc947d822ac2df93585550c8d5bf4564cbdc99d6c9a14769",
+  "versions": {
+    "python": "3.12.14",
+    "torch": "2.11.0",
+    "transformers": "5.5.4",
+    "sentence_transformers": "5.4.0",
+    "numpy": "2.5.3",
+    "scipy": "1.18.1",
+    "rdflib": "7.6.0"
+  },
+  "evaluation_protocol": 2,
+  "run_timestamps": [
+    "2026-10-17T06:08:10.878396Z",
+    "2026-10-17T09:10:19.117802Z"
+  ],
+  "freeze": {
+    "sha256": "689416298029bf14e1f65eb2a2f85b57f29fe96e75f8f63f8102df9fb0a77749",
+    "chosen": "label",
+    "commit": "2c4f63e14c0bb25a8b8e69bb63b7438fc87d18e3"
+  },
+  "command": "python -m kgsemembed.pipeline.serialization_order --population test --datasets D1 D2 --data_dir data/ --results_dir data/results_serialization/"
+}
