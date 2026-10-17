@@ -60,7 +60,7 @@ from kgsemembed.pipeline.conditions import (
 )
 from kgsemembed.utils.errors import DataError
 from kgsemembed.utils.logging import RunContext, get_logger, init_logging
-from kgsemembed.verbalisation.base import VerbaliserBase
+from kgsemembed.verbalisation.base import VerbaliserBase, annotation_predicates_digest
 from kgsemembed.verbalisation.ppas import PPAS_BUDGETS, strategy_uses_ppas
 from kgsemembed.verbalisation.registry import build_verbaliser
 
@@ -815,6 +815,7 @@ def _write_result(
         "n_source_entities": len(pair.source_entities),
         "n_candidates_per_entity": _candidate_count(candidates),
         "candidates_sha256": _candidate_digest(candidates),
+        "annotation_predicates_sha256": annotation_predicates_digest(),
         **_provenance(model_info),
     }
     path.write_text(json.dumps(payload, indent=2), encoding="utf-8")

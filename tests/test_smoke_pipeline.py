@@ -232,6 +232,7 @@ def test_result_json_matches_required_schema(fakes, tmp_path):
         "n_source_entities",
         "n_candidates_per_entity",
         "candidates_sha256",
+        "annotation_predicates_sha256",
         "hf_revision",
         "kgsemembed_version",
         "python_version",
@@ -1474,6 +1475,7 @@ def test_result_records_seeds_and_candidate_digest(fakes, tmp_path):
     assert payload["random_seed"] == 42
     assert payload["split_seed"] == 42
     assert payload["candidates_sha256"] == runner._candidate_digest(dict(_CANDIDATES))
+    assert payload["annotation_predicates_sha256"] == runner.annotation_predicates_digest()
     assert payload["counts"]["tp"] + payload["counts"]["fn"] == 1
 
 
