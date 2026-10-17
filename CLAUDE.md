@@ -17,7 +17,7 @@ Phase 2 datasets: D1 (SNOMED-FMA Body), D2 (Anatomy MA-NCI), D3 (Conference,
 21 pairs), D4 (memoryalpha-stexpanded, schema and instance), D5
 (DBpedia-Wikidata 15K EN, OpenEA). Five datasets total.
 
-**Current focus**: Issue #131 — predicate-role ablation on D1 and D2 (which annotation roles drive the #128 covered-eligibility effect, with and without a token budget); #128 (PR #129) and #130 (PR #132) await review (Phase 2)
+**Current focus**: Issue #131 — predicate-role ablation on D1 and D2 (which annotation roles drive the #128 covered-eligibility effect, with and without a token budget); #128 and #130 merged (Phase 2)
 
 ## Git Workflow
 
