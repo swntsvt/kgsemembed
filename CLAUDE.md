@@ -643,8 +643,16 @@ Seven conditions vary one dimension at a time on D1 at 48 tokens
   existing test results from another freeze or commit. `export` writes every
   bundle file once (a different byte refuses), and checks each result's
   population and, for test, freeze digest and run signature against
-  `PROVENANCE_validation.json`. `report --stage test` refuses to run unless
-  `diagnostics/rank_gate.json` passed on the current test outcomes.
+  `PROVENANCE_validation.json`; it also refuses a stage from several commits,
+  a dirty tree, a smoke run, a sidecar that does not cover every counted
+  reference, or executions over different sources. `report` refuses missing
+  or empty executions. `gate-ranks` compares the 13 registered reproduction
+  targets (`expected_rank_targets`) with their stored #131/#128 sidecars
+  source by source (test reference sources matched by URI): best gold rank,
+  gold-target set, and source and gold text fingerprints; a missing baseline,
+  missing or extra source, empty comparison or any mismatch fails.
+  `report --stage test` refuses to run unless `diagnostics/rank_gate.json`
+  passed and the SHA-256 of every report input still matches it.
 - **Primary contrasts** (test report only): frozen − uri on D1/S/A0 and
   D2/S/A0, MRR and Recall@1, 95% and Bonferroni 97.5% intervals (family:
   the two datasets of one metric, same 2,000 replicates). Examples:

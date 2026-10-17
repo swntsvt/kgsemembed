@@ -521,14 +521,87 @@ def test_fingerprint_comparison_counts_mismatched_and_missing_entities():
     assert inventory.compare_fingerprints(stored, ["a", "b"], ["1", "2"], True) == (2, 1)
 
 
+GATE_LMAP = {"D2/S/A0/uri": {"condition_id": "SO-all-uri-full"}}
+GATE_KEY = ("D2", "D2/S/A0/uri")
+
+
+def _gate_cells(ranks: dict, gold_fp: str = "c") -> dict:
+    rows = {s: {"best_rank": str(r) if r else "", "source_text_fp": f"t{s}", "gold_text_fps": f"g{s}={gold_fp}"}
+            for s, r in ranks.items()}
+    return {("D2", "SO-all-uri-full"): rows}
+
+
+def _baseline(ranks: dict) -> dict:
+    return {"test_sources": [{"source": s, "gold_targets": [f"g{s}"], "best_rank": r} for s, r in ranks.items()],
+            "selection_fingerprints": {"source": {s: f"t{s}" for s in ranks}, "candidate": {f"g{s}": "c" for s in ranks}}}
+
+
+def _gate(cells: dict, baseline) -> dict:
+    return report.rank_gate(cells, {GATE_KEY: baseline}, GATE_LMAP)[0]
+
+
 def test_rank_gate_flags_compensating_entity_differences():
-    lmap = {"D2/S/A0/uri": {"condition_id": "SO-all-uri-full"}}
-    cells = {("D2", "SO-all-uri-full"): {"s1": {"best_rank": "1"}, "s2": {"best_rank": "2"}}}
-    same = report.rank_gate(cells, {("D2", "D2/S/A0/uri"): {"s1": 1, "s2": 2}}, lmap)
-    swapped = report.rank_gate(cells, {("D2", "D2/S/A0/uri"): {"s1": 2, "s2": 1}}, lmap)
-    assert same[0]["status"] == "pass"
-    assert swapped[0]["mrr"] == swapped[0]["stored_mrr"] and swapped[0]["n_rank_mismatch"] == 2
-    assert swapped[0]["status"] == "FAIL"
+    same = _gate(_gate_cells({"s1": 1, "s2": 2}), _baseline({"s1": 1, "s2": 2}))
+    swapped = _gate(_gate_cells({"s1": 1, "s2": 2}), _baseline({"s1": 2, "s2": 1}))
+    assert same["status"] == "pass"
+    assert swapped["mrr"] == swapped["stored_mrr"] and swapped["n_rank_mismatch"] == 2
+    assert swapped["status"] == "FAIL"
+
+
+def test_rank_gate_matches_unranked_sources_as_rank_none():
+    assert _gate(_gate_cells({"s1": None, "s2": 3}), _baseline({"s1": None, "s2": 3}))["status"] == "pass"
+
+
+@pytest.mark.parametrize("cells, baseline, field", [
+    (_gate_cells({"s1": 1}), _baseline({"s1": 1, "s2": 2}), "n_missing"),
+    (_gate_cells({"s1": 1, "s2": 2, "s3": 1}), _baseline({"s1": 1, "s2": 2}), "n_extra"),
+    (_gate_cells({"s1": 1}, gold_fp="other"), _baseline({"s1": 1}), "n_text_mismatch"),
+    ({}, _baseline({"s1": 1}), "n_missing"),
+])
+def test_rank_gate_fails_on_missing_extra_or_changed_sources(cells, baseline, field):
+    row = _gate(cells, baseline)
+    assert row["status"] == "FAIL" and row[field] >= 1
+
+
+def test_rank_gate_fails_on_a_changed_gold_set():
+    baseline = _baseline({"s1": 1})
+    baseline["test_sources"][0]["gold_targets"] = ["gs1", "gs9"]
+    assert _gate(_gate_cells({"s1": 1}), baseline)["n_gold_mismatch"] == 1
+
+
+def test_rank_gate_cannot_pass_without_baseline_records():
+    assert _gate(_gate_cells({"s1": 1}), None)["status"] == "FAIL"
+    assert _gate({}, _baseline({}))["status"] == "FAIL"
+
+
+def test_rank_gate_expects_the_thirteen_registered_reproduction_targets():
+    targets = report.expected_rank_targets()
+    assert len(targets) == 13
+    assert targets[("D1", "D1/B48/C-uri")] == ("data/results_ppas_controlled", "PA-all-base-det-48")
+    assert ("D2", "D2/B24/C-uri") not in targets
+
+
+def _result(commit="c", dirty=False, smoke=None, n_test_refs=2) -> dict:
+    return {"git_commit": commit, "git_dirty": dirty, "ablation": {"smoke_max_sources": smoke},
+            "population": {"n_test_refs": n_test_refs}}
+
+
+def _sidecar(sources=("s1", "s2")) -> dict:
+    return {"reference_sources": {"test": [{"source": s, "gold_targets": ["g"]} for s in sources]}}
+
+
+@pytest.mark.parametrize("results, sidecars, message", [
+    ([_result(), _result(commit="d")], [_sidecar(), _sidecar()], "one clean commit"),
+    ([_result(), _result(dirty=True)], [_sidecar(), _sidecar()], "one clean commit"),
+    ([_result(), _result(smoke=10)], [_sidecar(), _sidecar()], "smoke"),
+    ([_result(), _result()], [_sidecar(), _sidecar(("s1",))], "every test reference"),
+    ([_result(), _result()], [_sidecar(), _sidecar(("s1", "s3"))], "sources differ"),
+])
+def test_export_refuses_partial_or_mixed_runs(results, sidecars, message):
+    keyed = {("D2", f"SO-{i}"): sc for i, sc in enumerate(sidecars)}
+    report.check_complete("test", [_result(), _result()], {("D2", "SO-0"): _sidecar(), ("D2", "SO-1"): _sidecar()})
+    with pytest.raises(ValueError, match=message):
+        report.check_complete("test", results, keyed)
 
 
 def test_primary_interval_widens_under_bonferroni_with_the_same_estimate():
@@ -635,11 +708,12 @@ def _synthetic_bundle(root: Path) -> Path:
     example = {"stage": "test", "dataset": "D1", "direction": "gain", "source": f"{EX}D1s0", "gold_targets": "g",
                "rank_uri": 2, "rank_frozen": 1, "top_uri": "g@0.9", "top_frozen": "g@0.9"}
     report.write_csv(artifacts / "examples" / "test_examples.csv", report.EXAMPLE_COLUMNS, [example])
+    (artifacts / "PROVENANCE_test.json").write_text("{}\n")
     return artifacts
 
 
 def _pass_rank_gate(artifacts: Path) -> None:
-    gate = {"status": "pass", "outcomes_sha256": report.test_outcome_digests(artifacts)}
+    gate = {"status": "pass", "inputs_sha256": report.report_input_digests(artifacts, "test")}
     (artifacts / "diagnostics" / report.GATE_NAME).write_text(json.dumps(gate))
 
 
@@ -668,6 +742,31 @@ def test_test_report_requires_a_passed_rank_gate_on_the_current_outcomes(tmp_pat
     with pytest.raises(RuntimeError, match="different test outcomes"):
         report.report("test", artifacts)
     assert not (artifacts / "report_test.md").exists()
+
+
+@pytest.mark.parametrize("name", ["conditions.csv", "serialization_freeze.json", "examples/test_examples.csv",
+                                  "diagnostics/label_retention.csv", "PROVENANCE_test.json"])
+def test_test_report_gate_covers_every_report_input(tmp_path, name):
+    artifacts = _synthetic_bundle(tmp_path)
+    _pass_rank_gate(artifacts)
+    with (artifacts / name).open("a") as handle:
+        handle.write(" ")
+    with pytest.raises(RuntimeError, match="report inputs"):
+        report.report("test", artifacts)
+
+
+def test_report_refuses_an_incomplete_stage(tmp_path):
+    artifacts = _synthetic_bundle(tmp_path)
+    cells, lmap = report.load_outcomes(artifacts, "test", "test"), report.logical_map(artifacts)
+    report.check_cells(cells, lmap)
+    first = next(iter(lmap.values()))
+    partial = {k: v for k, v in cells.items() if k != (first["dataset"], first["condition_id"])}
+    with pytest.raises(ValueError, match="incomplete"):
+        report.check_cells(partial, lmap)
+    dropped = {k: dict(list(v.items())[1:]) if k == (first["dataset"], first["condition_id"]) else v
+               for k, v in cells.items()}
+    with pytest.raises(ValueError, match="other sources"):
+        report.check_cells(dropped, lmap)
 
 
 def test_bundle_text_scan_finds_entity_text(tmp_path):

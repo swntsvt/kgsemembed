@@ -27,12 +27,15 @@ Subcommands
     Scans every tracked bundle file for dataset entity text (labels and other
     item values of D1/D2, 12 characters or longer); exit status 1 on a hit.
 ``gate-ranks``
-    Test stage, after the freeze: compares every canonically rendered
-    execution's test ranks with the stored #131/#128 sidecars source by
-    source (not only aggregate MRR); exit status 1 on any mismatch.  Writes
-    ``diagnostics/rank_gate.json`` with the digests of the test outcomes it
-    checked; ``report --stage test`` refuses to run unless that record passed
-    and still matches the outcomes.
+    Test stage, after the freeze: for each of the 13 canonically rendered
+    executions with a stored #131/#128 run (:func:`expected_rank_targets`),
+    compares every stored test reference source with the new test outcome
+    of the same source URI: best gold rank, gold-target set, and the text
+    fingerprint of the source and of every gold target.  A missing baseline
+    file, a missing or extra source, an empty comparison, or any difference
+    fails the gate (exit status 1).  Writes ``diagnostics/rank_gate.json``
+    with the SHA-256 of every report input; ``report --stage test`` refuses to
+    run unless that record passed and every digest still matches.
 
 The test report's primary contrasts are frozen order − ``uri`` on D1/S/A0 and
 D2/S/A0 (MRR and Recall@1), with 95% and Bonferroni 97.5% intervals (two
@@ -249,16 +252,63 @@ def check_stage(stage: str, results: List[Dict], artifacts: Path) -> None:
         raise ValueError(f"Test run signature differs from validation: {[k for k in keys if validation[k] != test[k]]}.")
 
 
+def check_complete(stage: str, results: List[Dict], sidecars: Dict[Tuple[str, str], Dict]) -> None:
+    """
+    Refuse a partial, smoke, mixed-commit or dirty stage.
+
+    Every run must come from one clean commit without a smoke restriction;
+    each sidecar must hold a record for every reference source its result
+    counts; and every execution of a dataset must cover the same sources.
+
+    Parameters
+    ----------
+    stage : str
+        Stage being exported.
+    results : List[Dict]
+        Result payloads, in the order of ``sidecars``.
+    sidecars : Dict[Tuple[str, str], Dict]
+        Sidecars by (dataset, condition).
+
+    Raises
+    ------
+    ValueError
+        On any incompleteness.
+    """
+    if len({r["git_commit"] for r in results}) != 1 or any(r["git_dirty"] for r in results):
+        raise ValueError(f"{stage} results must come from one clean commit.")
+    if any(r["ablation"].get("smoke_max_sources") is not None for r in results):
+        raise ValueError(f"{stage} results include a smoke run.")
+    sources: Dict[str, set] = {}
+    for result, ((dataset_id, condition_id), sidecar) in zip(results, sidecars.items()):
+        records = sidecar["reference_sources"][stage]
+        if _expected_records(stage, result) != _counted_records(stage, records):
+            raise ValueError(f"{condition_id}/{dataset_id}: sidecar does not cover every {stage} reference.")
+        if sources.setdefault(dataset_id, {r["source"] for r in records}) != {r["source"] for r in records}:
+            raise ValueError(f"{condition_id}/{dataset_id}: {stage} sources differ from other executions.")
+
+
+def _expected_records(stage: str, result: Dict) -> int:
+    """References (test) or reference sources (validation) the result counts."""
+    population = result["population"]
+    return population["n_test_refs"] if stage == "test" else population["n_val_reference_sources"]
+
+
+def _counted_records(stage: str, records: List[Dict]) -> int:
+    """The same count, from the sidecar's records."""
+    return sum(len(r["gold_targets"]) for r in records) if stage == "test" else len(records)
+
+
 def export(stage: str, results_dir: Path, inventory_dir: Path, artifacts: Path) -> None:
     """Write a stage's tracked bundle from its results and the inventory, never replacing a file."""
     runs = expected_runs(results_dir / stage)
     results = [json.loads(r.read_text(encoding="utf-8")) for *_, r, _s in runs]
+    sidecars = {(d, c): json.loads(sc.read_text(encoding="utf-8")) for c, d, _r, sc in runs}
     check_stage(stage, results, artifacts)
-    outcomes, sidecars = defaultdict(list), {}
-    for condition_id, dataset_id, result_path, sidecar_path in runs:
+    check_complete(stage, results, sidecars)
+    outcomes = defaultdict(list)
+    for condition_id, dataset_id, result_path, _sidecar in runs:
         write_once(artifacts / stage / "results" / condition_id / dataset_id / result_path.name,
                    result_path.read_bytes())
-        sidecars[(dataset_id, condition_id)] = json.loads(sidecar_path.read_text(encoding="utf-8"))
         outcomes[dataset_id] += outcome_rows(stage, dataset_id, condition_id, sidecars[(dataset_id, condition_id)])
     for dataset_id, rows in sorted(outcomes.items()):
         rows.sort(key=lambda r: (r["condition_id"], r["population"], r["source"]))
@@ -606,6 +656,48 @@ def examples_section(artifacts: Path, stage: str) -> List[str]:
             *csv_table(artifacts / "examples" / f"{stage}_examples.csv", columns)]
 
 
+def check_cells(cells: Dict[Tuple[str, str], Cell], lmap: Dict[str, Dict[str, str]]) -> None:
+    """
+    Refuse to report unless every execution has outcomes over the same sources per dataset.
+
+    Parameters
+    ----------
+    cells : Dict[Tuple[str, str], Cell]
+        Outcomes by (dataset, condition).
+    lmap : Dict[str, Dict[str, str]]
+        Logical-condition map.
+
+    Raises
+    ------
+    ValueError
+        If an execution is missing, empty, or covers other sources.
+    """
+    sources: Dict[str, set] = {}
+    for name, row in lmap.items():
+        cell = cells.get((row["dataset"], row["condition_id"]))
+        if not cell:
+            raise ValueError(f"No outcomes for {name} ({row['condition_id']}); the stage is incomplete.")
+        if sources.setdefault(row["dataset"], set(cell)) != set(cell):
+            raise ValueError(f"{name} covers other sources than the rest of {row['dataset']}.")
+
+
+def report_inputs(artifacts: Path, stage: str) -> List[Path]:
+    """Every bundle file a stage's report reads (plus its provenance)."""
+    fixed = [artifacts / "conditions.csv", artifacts / FREEZE_NAME, artifacts / f"PROVENANCE_{stage}.json",
+             artifacts / "examples" / f"{stage}_examples.csv"]
+    fixed += [artifacts / "diagnostics" / f"{n}.csv" for n in ("identity_gates", "label_retention", "selection_changes")]
+    return sorted(fixed + list((artifacts / "outcomes").glob(f"{stage}_*.csv.gz")))
+
+
+def report_input_digests(artifacts: Path, stage: str) -> Dict[str, str]:
+    """SHA-256 of every report input, keyed by bundle-relative path; raise if one is missing."""
+    paths = report_inputs(artifacts, stage)
+    missing = [str(p) for p in paths if not p.exists()]
+    if missing or not any(p.name.endswith(".csv.gz") for p in paths):
+        raise FileNotFoundError(f"Report inputs missing: {missing or 'outcomes'}.")
+    return {str(p.relative_to(artifacts)): sha256_of(p) for p in paths}
+
+
 def require_rank_gate(artifacts: Path) -> None:
     """
     Refuse a test report unless ``gate-ranks`` passed on the current test outcomes.
@@ -618,19 +710,14 @@ def require_rank_gate(artifacts: Path) -> None:
     Raises
     ------
     RuntimeError
-        If the gate record is missing, failed, or names other outcome digests.
+        If the gate record is missing, failed, or names other report-input digests.
     """
     path = artifacts / "diagnostics" / GATE_NAME
     if not path.exists():
         raise RuntimeError("No rank gate record: run gate-ranks before the test report.")
     gate = json.loads(path.read_text(encoding="utf-8"))
-    if gate["status"] != "pass" or gate["outcomes_sha256"] != test_outcome_digests(artifacts):
-        raise RuntimeError("The rank gate failed or was run on different test outcomes; no test report.")
-
-
-def test_outcome_digests(artifacts: Path) -> Dict[str, str]:
-    """SHA-256 of every test outcome file, keyed by bundle-relative path."""
-    return {str(p.relative_to(artifacts)): sha256_of(p) for p in sorted((artifacts / "outcomes").glob("test_*.csv.gz"))}
+    if gate["status"] != "pass" or gate["inputs_sha256"] != report_input_digests(artifacts, "test"):
+        raise RuntimeError("The rank gate failed or was run on different test outcomes or report inputs; no test report.")
 
 
 def csv_table(path: Path, columns: List[str]) -> List[str]:
@@ -665,6 +752,7 @@ def report(stage: str, artifacts: Path) -> Path:
         require_rank_gate(artifacts)
     population = "validation" if stage == "validation" else "test"
     cells, lmap = load_outcomes(artifacts, stage, population), logical_map(artifacts)
+    check_cells(cells, lmap)
     parts = subsets(cells, stage)
     order_lines, series = s_order_table(cells, lmap, parts)
     figures = artifacts / "figures"
@@ -692,6 +780,7 @@ def report(stage: str, artifacts: Path) -> Path:
                 "", "## Identity gates", "", *_gate_summary(artifacts), ""]
     path = artifacts / f"report_{stage}.md"
     path.write_text("\n".join(sections), encoding="utf-8")
+    write_manifest(artifacts, [])
     return path
 
 
@@ -782,65 +871,109 @@ def check_text(artifacts: Path) -> int:
     return len(hits)
 
 
-def rank_gate(cells: Dict[Tuple[str, str], Cell], stored: Dict[Tuple[str, str], Dict[str, Optional[int]]],
+def expected_rank_targets() -> Dict[Tuple[str, str], Tuple[str, str]]:
+    """(dataset, logical name) → (results_dir, condition_id) of every stored run the gate must compare."""
+    from kgsemembed.pipeline.serialization_conditions import reproduction_target
+    targets = {(c.dataset, c.name): reproduction_target(c) for c in LOGICAL_CONDITIONS}
+    return {key: target for key, target in sorted(targets.items()) if target is not None}
+
+
+def _fps(field: str) -> Dict[str, Optional[str]]:
+    """Parse ``uri=fingerprint;...`` (empty fingerprint = not encoded)."""
+    pairs = (entry.rpartition("=") for entry in field.split(";") if entry)
+    return {uri: fp or None for uri, _sep, fp in pairs}
+
+
+def compare_source(ours: Optional[Dict[str, str]], stored: Dict, fingerprints: Dict[str, Dict[str, str]]) -> Dict[str, bool]:
+    """
+    Compare one source's new test outcome with its stored record.
+
+    Parameters
+    ----------
+    ours : Optional[Dict[str, str]]
+        The new outcome row of the same source URI, ``None`` if absent.
+    stored : Dict
+        The stored ``test_sources`` record.
+    fingerprints : Dict[str, Dict[str, str]]
+        The stored run's ``selection_fingerprints`` by side.
+
+    Returns
+    -------
+    Dict[str, bool]
+        Which of ``missing``, ``rank``, ``gold`` and ``text`` differ.
+    """
+    if ours is None:
+        return {"missing": True, "rank": True, "gold": True, "text": True}
+    gold = _fps(ours["gold_text_fps"])
+    rank = int(ours["best_rank"]) if ours["best_rank"] else None
+    text = (ours["source_text_fp"] or None) != fingerprints["source"].get(stored["source"]) or any(
+        gold[t] != fingerprints["candidate"].get(t) for t in gold)
+    return {"missing": False, "rank": rank != stored["best_rank"], "gold": sorted(gold) != sorted(stored["gold_targets"]),
+            "text": text}
+
+
+def rank_gate(cells: Dict[Tuple[str, str], Cell], stored: Dict[Tuple[str, str], Optional[Dict]],
               lmap: Dict[str, Dict[str, str]]) -> List[Dict[str, object]]:
     """
-    Compare each canonically rendered execution's test ranks with the stored run, source by source.
+    Compare each canonically rendered execution with its stored run, source by source.
 
     Parameters
     ----------
     cells : Dict[Tuple[str, str], Cell]
         Test-population outcomes by (dataset, condition).
-    stored : Dict[Tuple[str, str], Dict[str, Optional[int]]]
-        Stored best ranks by (dataset, logical name), from the #131/#128 sidecars.
+    stored : Dict[Tuple[str, str], Optional[Dict]]
+        Stored sidecar (``test_sources`` and ``selection_fingerprints``) by
+        (dataset, logical name); ``None`` when the baseline file is missing.
     lmap : Dict[str, Dict[str, str]]
         Logical-condition map.
 
     Returns
     -------
     List[Dict[str, object]]
-        Per logical condition: sources compared, rank mismatches, MRR of both.
+        Per logical condition: sources compared, missing and extra sources,
+        rank, gold-set and text mismatches, MRR of both, and the status.
     """
     rows = []
-    for (dataset, name), ranks in sorted(stored.items()):
-        cell = cells[(dataset, lmap[name]["condition_id"])]
-        ours = {s: int(r["best_rank"]) if r["best_rank"] else None for s, r in cell.items()}
-        mismatched = sum(ours.get(s, "missing") != rank for s, rank in ranks.items()) + len(set(ours) - set(ranks))
-        mrr = [float(np.mean([1 / k if k else 0 for k in values.values()])) for values in (ours, ranks)]
-        rows.append({"logical": name, "n_sources": len(ranks), "n_rank_mismatch": mismatched,
-                     "mrr": round(mrr[0], 6), "stored_mrr": round(mrr[1], 6),
-                     "status": "pass" if mismatched == 0 else "FAIL"})
+    for (dataset, name), baseline in sorted(stored.items()):
+        cell = cells.get((dataset, lmap[name]["condition_id"]), {}) if name in lmap else {}
+        records = baseline["test_sources"] if baseline else []
+        diffs = [compare_source(cell.get(r["source"]), r, baseline["selection_fingerprints"]) for r in records]
+        counts = {k: sum(d[k] for d in diffs) for k in ("missing", "rank", "gold", "text")}
+        extra = len(set(cell) - {r["source"] for r in records})
+        ours = [1 / int(cell[r["source"]]["best_rank"]) if r["source"] in cell and cell[r["source"]]["best_rank"] else 0
+                for r in records]
+        stored_rr = [1 / r["best_rank"] if r["best_rank"] else 0 for r in records]
+        ok = baseline is not None and records and extra == 0 and not any(counts.values())
+        rows.append({"logical": name, "baseline_found": int(baseline is not None), "n_sources": len(records),
+                     "n_missing": counts["missing"], "n_extra": extra, "n_rank_mismatch": counts["rank"],
+                     "n_gold_mismatch": counts["gold"], "n_text_mismatch": counts["text"],
+                     "mrr": round(float(np.mean(ours)), 6) if ours else "", "stored_mrr":
+                     round(float(np.mean(stored_rr)), 6) if records else "", "status": "pass" if ok else "FAIL"})
     return rows
 
 
-def stored_test_ranks(lmap: Dict[str, Dict[str, str]]) -> Dict[Tuple[str, str], Dict[str, Optional[int]]]:
-    """Load the stored #131/#128 test ranks behind every canonically rendered execution (local sidecars)."""
-    from kgsemembed.pipeline.serialization_conditions import get_logical, reproduction_target
+def stored_baselines() -> Dict[Tuple[str, str], Optional[Dict]]:
+    """Load the stored #131/#128 sidecar behind every expected target (local); ``None`` if absent."""
     stored = {}
-    for name in lmap:
-        logical = get_logical(name)
-        target = reproduction_target(logical)
-        if target is None:
-            continue
-        path = Path(target[0]) / target[1] / logical.dataset / f"{PAIR_NAMES[logical.dataset]}_entities.json"
-        records = json.loads(path.read_text(encoding="utf-8"))["test_sources"]
-        stored[(logical.dataset, name)] = {r["source"]: r["best_rank"] for r in records}
+    for (dataset, name), (results_dir, condition_id) in expected_rank_targets().items():
+        path = Path(results_dir) / condition_id / dataset / f"{PAIR_NAMES[dataset]}_entities.json"
+        stored[(dataset, name)] = json.loads(path.read_text(encoding="utf-8")) if path.exists() else None
     return stored
 
 
 def gate_ranks(artifacts: Path) -> int:
-    """Write the entity-level test-rank reproduction table into the bundle; return failures."""
+    """Write the entity-level reproduction table and the gate record into the bundle; return failures."""
     lmap = logical_map(artifacts)
-    digests = test_outcome_digests(artifacts)
-    if not digests:
-        raise FileNotFoundError("No test outcomes in the bundle: export the test stage first.")
-    rows = rank_gate(load_outcomes(artifacts, "test", "test"), stored_test_ranks(lmap), lmap)
+    inputs = report_input_digests(artifacts, "test")
+    rows = rank_gate(load_outcomes(artifacts, "test", "test"), stored_baselines(), lmap)
     write_csv(artifacts / "diagnostics" / "rank_reproduction.csv", list(rows[0]), rows)
     failed = [r for r in rows if r["status"] != "pass"]
+    if len(rows) != len(expected_rank_targets()):
+        failed.append({"logical": "expected targets"})
     gate = {"status": "FAIL" if failed else "pass", "n_executions": len(rows), "n_failed": len(failed),
-            "outcomes_sha256": digests}
+            "inputs_sha256": inputs}
     (artifacts / "diagnostics" / GATE_NAME).write_text(json.dumps(gate, indent=2) + "\n", encoding="utf-8")
-    print(f"{len(rows)} executions compared source by source with stored test ranks; {len(failed)} failed")
+    print(f"{len(rows)} executions compared source by source with stored test runs; {len(failed)} failed")
     return len(failed)
 
 
