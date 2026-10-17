@@ -34,8 +34,10 @@ Subcommands
     fingerprint of the source and of every gold target.  A missing baseline
     file, a missing or extra source, an empty comparison, or any difference
     fails the gate (exit status 1).  Writes ``diagnostics/rank_gate.json``
-    with the SHA-256 of every report input; ``report --stage test`` refuses to
-    run unless that record passed and every digest still matches.
+    with the SHA-256 of every report input and the commit of the code that ran
+    the gate; ``report --stage test`` refuses to run unless that record passed
+    and every digest still matches.  Earlier attempts kept for audit under
+    ``diagnostics/gate_attempt_*/`` are listed at the top of the test report.
 
 The test report's primary contrasts are frozen order − ``uri`` on D1/S/A0 and
 D2/S/A0 (MRR and Recall@1), with 95% and Bonferroni 97.5% intervals (two
@@ -762,7 +764,8 @@ def report(stage: str, artifacts: Path) -> Path:
     plot_orders(series, figures / f"{stage}_order_effects.png")
     primary = (["## Primary contrasts (pre-specified)", "", *primary_table(cells, lmap, frozen_order(artifacts)), ""]
                if stage == "test" else [])
-    sections = [f"# #134 serialization order: {stage} report", "", _preamble(stage), "",
+    history = gate_history(artifacts) if stage == "test" else []
+    sections = [f"# #134 serialization order: {stage} report", "", _preamble(stage), *history, "",
                 "## How the order was chosen (D2 validation)", "", *selection_section(artifacts), "", *primary,
                 "## Cell metrics", "", *cell_table(cells, lmap, parts), "",
                 "## Block S: each order − uri (selected set fixed)", "", *order_lines, "",
@@ -798,6 +801,35 @@ def _preamble(stage: str) -> str:
                      "sources the #131 probe used and the 751 it did not; the order is chosen on D2 validation by "
                      "the rule in `serialization_freeze.json`, whose intervals are not adjusted for selection.")
     return "\n".join(f"- {n}" for n in notes)
+
+
+def gate_history(artifacts: Path) -> List[str]:
+    """
+    Describe the rank gate that admitted this report and any earlier attempts kept for audit.
+
+    Parameters
+    ----------
+    artifacts : Path
+        Bundle root.
+
+    Returns
+    -------
+    List[str]
+        Preamble bullets: one for the passing record, one per
+        ``diagnostics/gate_attempt_*/`` record.
+    """
+    current = json.loads((artifacts / "diagnostics" / GATE_NAME).read_text(encoding="utf-8"))
+    code = current.get("code", {})
+    lines = [f"- Rank gate: {current['status']}, {current.get('n_executions', '?')} executions, "
+             f"{current.get('n_failed', '?')} failed; code commit `{code.get('commit', 'not recorded')}`"
+             f"{' (modified)' if code.get('dirty') else ''} (`diagnostics/{GATE_NAME}`)."]
+    for path in sorted((artifacts / "diagnostics").glob(f"gate_attempt_*/{GATE_NAME}")):
+        earlier = json.loads(path.read_text(encoding="utf-8"))
+        same = earlier.get("inputs_sha256") == current.get("inputs_sha256")
+        lines.append(f"- Earlier gate attempt kept for audit, superseded: `{path.parent.relative_to(artifacts)}/` "
+                     f"({earlier['status']}, {earlier.get('n_failed', '?')} of {earlier.get('n_executions', '?')} "
+                     f"failed; {'same' if same else 'different'} report inputs). See the PR for its diagnosis.")
+    return lines
 
 
 def _gate_summary(artifacts: Path) -> List[str]:
@@ -884,14 +916,14 @@ def _fps(field: str) -> Dict[str, Optional[str]]:
     Parse an exported ``uri=fingerprint;...`` field.
 
     :func:`outcome_rows` writes a gold target that was never encoded as
-    ``uri=None`` (``str(None)``); an empty fingerprint is the same marker in
-    the ``source_text_fp`` form. Only these two exact values mean "not
-    encoded"; every other value is kept as written and compared verbatim.
+    ``uri=None`` (``str(None)``). An empty fingerprint, which this parser
+    accepted before, still means "not encoded" too. Only these two exact
+    values do; every other value is kept as written and compared verbatim.
 
     Parameters
     ----------
     field : str
-        The exported ``gold_text_fps`` (or ``gold_set_fps``) value.
+        An exported ``gold_text_fps`` value.
 
     Returns
     -------
@@ -979,6 +1011,21 @@ def stored_baselines() -> Dict[Tuple[str, str], Optional[Dict]]:
     return stored
 
 
+def code_state() -> Dict[str, object]:
+    """
+    Return the commit the gate's code runs at, and whether that code is modified.
+
+    Returns
+    -------
+    Dict[str, object]
+        ``commit`` (HEAD) and ``dirty`` (uncommitted changes under
+        ``scripts/`` or ``src/``; bundle files are expected to change).
+    """
+    def git(*args: str) -> str:
+        return subprocess.run(["git", *args], check=True, capture_output=True, text=True).stdout.strip()
+    return {"commit": git("rev-parse", "HEAD"), "dirty": bool(git("status", "--porcelain", "--", "scripts", "src"))}
+
+
 def gate_ranks(artifacts: Path) -> int:
     """Write the entity-level reproduction table and the gate record into the bundle; return failures."""
     lmap = logical_map(artifacts)
@@ -989,7 +1036,7 @@ def gate_ranks(artifacts: Path) -> int:
     if len(rows) != len(expected_rank_targets()):
         failed.append({"logical": "expected targets"})
     gate = {"status": "FAIL" if failed else "pass", "n_executions": len(rows), "n_failed": len(failed),
-            "inputs_sha256": inputs}
+            "code": code_state(), "inputs_sha256": inputs}
     (artifacts / "diagnostics" / GATE_NAME).write_text(json.dumps(gate, indent=2) + "\n", encoding="utf-8")
     print(f"{len(rows)} executions compared source by source with stored test runs; {len(failed)} failed")
     return len(failed)

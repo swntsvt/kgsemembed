@@ -592,6 +592,7 @@ def _stored(source_fp, gold_fp) -> dict:
     (("t", None), ("t", "c"), "FAIL"),
     (("t", "c"), ("t", None), "FAIL"),
     ((None, "c"), ("t", "c"), "FAIL"),
+    (("t", "c"), (None, "c"), "FAIL"),
     (("t", "c"), ("t", "d"), "FAIL"),
     (("t", "c"), ("t", "c"), "pass"),
 ])
@@ -763,6 +764,24 @@ def test_report_rebuilds_byte_identically_from_the_bundle_alone(tmp_path):
     assert "Block B" in text and (artifacts / "figures" / "test_order_effects.png").exists()
     assert "Primary contrasts" in text and "Bonferroni 97.5%" in text and "tie-breaking rule" in text
     assert report.verify_rebuild("test", artifacts) == 0
+
+
+def test_test_report_lists_the_passing_gate_and_earlier_attempts(tmp_path):
+    artifacts = _synthetic_bundle(tmp_path)
+    _pass_rank_gate(artifacts)
+    gate = json.loads((artifacts / "diagnostics" / report.GATE_NAME).read_text())
+    earlier = artifacts / "diagnostics" / "gate_attempt_1_FAIL"
+    earlier.mkdir()
+    (earlier / report.GATE_NAME).write_text(json.dumps({**gate, "status": "FAIL", "n_executions": 13, "n_failed": 13}))
+    text = report.report("test", artifacts).read_text()
+    assert "Rank gate: pass" in text
+    assert "`diagnostics/gate_attempt_1_FAIL/` (FAIL, 13 of 13 failed; same report inputs)" in text
+    assert report.verify_rebuild("test", artifacts) == 0
+
+
+def test_gate_records_the_commit_of_its_code():
+    state = report.code_state()
+    assert len(state["commit"]) == 40 and isinstance(state["dirty"], bool)
 
 
 def test_test_report_requires_a_passed_rank_gate_on_the_current_outcomes(tmp_path):
