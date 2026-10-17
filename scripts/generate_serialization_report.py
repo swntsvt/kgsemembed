@@ -6,8 +6,12 @@ Subcommands
     Results (``data/results_serialization/<stage>/``) and the tokenizer-only
     inventory → the tracked bundle ``artifacts/issue-134/``: result JSONs,
     per-source outcome tables, the logical-condition map, diagnostics,
-    provenance and a SHA-256 manifest (which also lists the local-only
-    sidecars).  Every tracked file is URI-only: no entity text.
+    script-chosen ranking examples, provenance and a SHA-256 manifest (which
+    also lists the local-only sidecars).  Every tracked file is URI-only: no
+    entity text.  Every result must belong to the exported stage (and, for the
+    test stage, to the committed freeze); stage files and shared files are
+    written once and never replaced by different bytes, so a test export
+    cannot overwrite or mix with the validation bundle.
 ``report``
     The bundle alone → ``report_<stage>.md`` and ``figures/<stage>_*`` (PNG
     plus the exact series as CSV).  Reads nothing outside the bundle and writes
@@ -15,13 +19,24 @@ Subcommands
 ``verify-rebuild``
     Copies the bundle to a temporary directory, rebuilds the report there from
     a working directory without ``data/``, and compares every output byte for byte.
+``examples-local``
+    Renders the readable text of every example (source, gold targets and top
+    candidates under ``uri`` and the frozen order) into the local, untracked
+    results directory; nothing it writes enters the bundle.
 ``check-text``
     Scans every tracked bundle file for dataset entity text (labels and other
     item values of D1/D2, 12 characters or longer); exit status 1 on a hit.
 ``gate-ranks``
     Test stage, after the freeze: compares every canonically rendered
     execution's test ranks with the stored #131/#128 sidecars source by
-    source (not only aggregate MRR); exit status 1 on any mismatch.
+    source (not only aggregate MRR); exit status 1 on any mismatch.  Writes
+    ``diagnostics/rank_gate.json`` with the digests of the test outcomes it
+    checked; ``report --stage test`` refuses to run unless that record passed
+    and still matches the outcomes.
+
+The test report's primary contrasts are frozen order − ``uri`` on D1/S/A0 and
+D2/S/A0 (MRR and Recall@1), with 95% and Bonferroni 97.5% intervals (two
+datasets per metric).
 
 Intervals are paired source-level bootstraps (2,000 replicates, a fresh
 ``default_rng(42)`` per contrast, 95% percentile), never pooled across
@@ -34,6 +49,8 @@ python scripts/generate_serialization_report.py export --stage validation
 python scripts/generate_serialization_report.py report --stage validation
 python scripts/generate_serialization_report.py verify-rebuild --stage validation
 python scripts/generate_serialization_report.py check-text
+python scripts/generate_serialization_report.py examples-local --stage validation
+python scripts/generate_serialization_report.py gate-ranks
 """
 
 from __future__ import annotations
@@ -58,7 +75,13 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from freeze_serialization_order import PAIR_NAMES, probed_sample  # noqa: E402
 
-from kgsemembed.evaluation.order_selection import paired_interval  # noqa: E402
+from kgsemembed.evaluation.order_selection import (  # noqa: E402
+    REFERENCE_ORDER,
+    REPORT_REPLICATES,
+    REPORT_SEED,
+    index_matrix,
+    paired_interval,
+)
 from kgsemembed.pipeline.serialization_conditions import (  # noqa: E402
     B_BUDGETS,
     LOGICAL_CONDITIONS,
@@ -75,6 +98,12 @@ OUTCOME_COLUMNS = ("stage", "dataset", "condition_id", "population", "source", "
 CONDITION_COLUMNS = ("name", "dataset", "block", "representation", "budget", "selection", "render", "condition_id",
                      "shared_reason")
 NON_URI = tuple(o for o in SERIALIZATION_ORDERS if o != "uri")
+FREEZE_NAME = "serialization_freeze.json"
+GATE_NAME = "rank_gate.json"
+EXAMPLE_COLUMNS = ("stage", "dataset", "direction", "source", "gold_targets", "rank_uri", "rank_frozen",
+                   "top_uri", "top_frozen")
+EXAMPLES_PER_DIRECTION = 5
+BONFERRONI_FAMILY = 2
 Cell = Dict[str, Dict[str, object]]
 
 
@@ -101,24 +130,57 @@ def outcome_rows(stage: str, dataset_id: str, condition_id: str, sidecar: Dict) 
     return rows
 
 
-def write_gzip_csv(path: Path, columns: Iterable[str], rows: List[Dict[str, object]]) -> None:
-    """Write rows as a gzip CSV with a zero mtime, so identical rows give identical bytes."""
+def csv_bytes(columns: Iterable[str], rows: List[Dict[str, object]]) -> bytes:
+    """Return rows as plain CSV bytes."""
     buffer = io.StringIO()
     writer = csv.DictWriter(buffer, fieldnames=list(columns), lineterminator="\n")
     writer.writeheader()
     writer.writerows(rows)
+    return buffer.getvalue().encode("utf-8")
+
+
+def gzip_bytes(data: bytes) -> bytes:
+    """Gzip with a zero mtime and no file name, so identical input gives identical bytes."""
+    raw = io.BytesIO()
+    with gzip.GzipFile(filename="", mode="wb", fileobj=raw, mtime=0) as handle:
+        handle.write(data)
+    return raw.getvalue()
+
+
+def write_once(path: Path, data: bytes) -> None:
+    """
+    Write a bundle file that may only ever hold these bytes.
+
+    Parameters
+    ----------
+    path : Path
+        Target file.
+    data : bytes
+        Content.
+
+    Raises
+    ------
+    FileExistsError
+        If the file exists with different content.
+    """
+    if path.exists():
+        if path.read_bytes() != data:
+            raise FileExistsError(f"{path} exists with different content; the bundle never replaces a file.")
+        return
     path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("wb") as raw, gzip.GzipFile(filename="", mode="wb", fileobj=raw, mtime=0) as handle:
-        handle.write(buffer.getvalue().encode("utf-8"))
+    path.write_bytes(data)
+
+
+def write_gzip_csv(path: Path, columns: Iterable[str], rows: List[Dict[str, object]]) -> None:
+    """Write rows as a gzip CSV with a zero mtime, so identical rows give identical bytes."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(gzip_bytes(csv_bytes(columns, rows)))
 
 
 def write_csv(path: Path, columns: Iterable[str], rows: List[Dict[str, object]]) -> None:
     """Write rows as a plain CSV."""
     path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("w", newline="", encoding="utf-8") as handle:
-        writer = csv.DictWriter(handle, fieldnames=list(columns), lineterminator="\n")
-        writer.writeheader()
-        writer.writerows(rows)
+    path.write_bytes(csv_bytes(columns, rows))
 
 
 def expected_runs(stage_dir: Path) -> List[Tuple[str, str, Path, Path]]:
@@ -154,30 +216,125 @@ def provenance(stage: str, results: List[Dict]) -> Dict[str, object]:
     }
 
 
+def check_stage(stage: str, results: List[Dict], artifacts: Path) -> None:
+    """
+    Refuse results of another stage, or test results not written under the committed freeze.
+
+    Parameters
+    ----------
+    stage : str
+        Stage being exported.
+    results : List[Dict]
+        Its result payloads.
+    artifacts : Path
+        Bundle root (holds the freeze record and the validation provenance).
+
+    Raises
+    ------
+    ValueError
+        On a population, freeze or run-signature mismatch.
+    """
+    if any(r["serialization"]["population"] != stage for r in results):
+        raise ValueError(f"Some results are not {stage}-stage results.")
+    if stage == "validation":
+        return
+    freeze_sha = sha256_of(artifacts / FREEZE_NAME)
+    if any((r["serialization"]["freeze"] or {}).get("sha256") != freeze_sha for r in results):
+        raise ValueError("Some test results were not written under the committed freeze record.")
+    validation = json.loads((artifacts / "PROVENANCE_validation.json").read_text(encoding="utf-8"))
+    test = provenance(stage, results)
+    keys = ("model_id", "hf_revision", "tokenizer_revision", "dataset_files_sha256", "candidates_sha256",
+            "role_map_sha256", "order_definitions_sha256", "versions", "evaluation_protocol")
+    if any(validation[k] != test[k] for k in keys):
+        raise ValueError(f"Test run signature differs from validation: {[k for k in keys if validation[k] != test[k]]}.")
+
+
 def export(stage: str, results_dir: Path, inventory_dir: Path, artifacts: Path) -> None:
-    """Write a stage's tracked bundle from its results and the inventory."""
+    """Write a stage's tracked bundle from its results and the inventory, never replacing a file."""
     runs = expected_runs(results_dir / stage)
-    results, outcomes = [], defaultdict(list)
+    results = [json.loads(r.read_text(encoding="utf-8")) for *_, r, _s in runs]
+    check_stage(stage, results, artifacts)
+    outcomes, sidecars = defaultdict(list), {}
     for condition_id, dataset_id, result_path, sidecar_path in runs:
-        target = artifacts / stage / "results" / condition_id / dataset_id / result_path.name
-        target.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copyfile(result_path, target)
-        results.append(json.loads(result_path.read_text(encoding="utf-8")))
-        sidecar = json.loads(sidecar_path.read_text(encoding="utf-8"))
-        outcomes[dataset_id] += outcome_rows(stage, dataset_id, condition_id, sidecar)
+        write_once(artifacts / stage / "results" / condition_id / dataset_id / result_path.name,
+                   result_path.read_bytes())
+        sidecars[(dataset_id, condition_id)] = json.loads(sidecar_path.read_text(encoding="utf-8"))
+        outcomes[dataset_id] += outcome_rows(stage, dataset_id, condition_id, sidecars[(dataset_id, condition_id)])
     for dataset_id, rows in sorted(outcomes.items()):
         rows.sort(key=lambda r: (r["condition_id"], r["population"], r["source"]))
-        write_gzip_csv(artifacts / "outcomes" / f"{stage}_{dataset_id}.csv.gz", OUTCOME_COLUMNS, rows)
-    write_csv(artifacts / "conditions.csv", CONDITION_COLUMNS,
-              [{k: getattr(c, k) if getattr(c, k) is not None else "" for k in CONDITION_COLUMNS}
-               for c in LOGICAL_CONDITIONS])
-    (artifacts / "diagnostics").mkdir(parents=True, exist_ok=True)
+        write_once(artifacts / "outcomes" / f"{stage}_{dataset_id}.csv.gz", gzip_bytes(csv_bytes(OUTCOME_COLUMNS, rows)))
+    write_once(artifacts / "conditions.csv", csv_bytes(CONDITION_COLUMNS, [
+        {k: getattr(c, k) if getattr(c, k) is not None else "" for k in CONDITION_COLUMNS} for c in LOGICAL_CONDITIONS]))
     for name in DIAGNOSTICS:
-        shutil.copyfile(inventory_dir / f"{name}.csv", artifacts / "diagnostics" / f"{name}.csv")
-    (artifacts / f"PROVENANCE_{stage}.json").write_text(json.dumps(provenance(stage, results), indent=2) + "\n",
-                                                        encoding="utf-8")
+        write_once(artifacts / "diagnostics" / f"{name}.csv", (inventory_dir / f"{name}.csv").read_bytes())
+    write_once(artifacts / "examples" / f"{stage}_examples.csv",
+               csv_bytes(EXAMPLE_COLUMNS, example_rows(stage, frozen_order(artifacts), sidecars)))
+    write_once(artifacts / f"PROVENANCE_{stage}.json",
+               (json.dumps(provenance(stage, results), indent=2) + "\n").encode("utf-8"))
     write_manifest(artifacts, [s for *_, s in runs])
     print(f"Exported {len(runs)} {stage} runs to {artifacts}")
+
+
+def frozen_order(artifacts: Path) -> str:
+    """Return the order chosen in the bundle's freeze record."""
+    return json.loads((artifacts / FREEZE_NAME).read_text(encoding="utf-8"))["chosen"]
+
+
+def a0_condition(dataset_id: str, order: str) -> str:
+    """Return the execution of the Block S A0 cell rendered in ``order``."""
+    return next(c.condition_id for c in LOGICAL_CONDITIONS if c.name == f"{dataset_id}/S/A0/{order}")
+
+
+def example_rows(stage: str, frozen: str, sidecars: Dict[Tuple[str, str], Dict]) -> List[Dict[str, object]]:
+    """
+    Choose ranking examples by a fixed rule, URI-only.
+
+    For each dataset, among the stage population's reference sources of
+    S/A0, the ``EXAMPLES_PER_DIRECTION`` largest gains and losses in
+    reciprocal rank of the frozen order over ``uri`` (ties by source URI).
+
+    Parameters
+    ----------
+    stage : str
+        Stage; its population supplies the sources.
+    frozen : str
+        Frozen order.
+    sidecars : Dict[Tuple[str, str], Dict]
+        Sidecars by (dataset, condition).
+
+    Returns
+    -------
+    List[Dict[str, object]]
+        Example rows (URIs, ranks and top candidates with scores).
+    """
+    rows = []
+    for dataset_id in sorted(PAIR_NAMES):
+        pair = [{r["source"]: r for r in sidecars[(dataset_id, a0_condition(dataset_id, o))]["reference_sources"][stage]}
+                for o in (REFERENCE_ORDER, frozen)]
+        delta = {s: _rr(pair[1][s]) - _rr(pair[0][s]) for s in pair[0]}
+        gains = sorted((s for s in delta if delta[s] > 0), key=lambda s: (-delta[s], s))
+        losses = sorted((s for s in delta if delta[s] < 0), key=lambda s: (delta[s], s))
+        for direction, chosen in (("gain", gains), ("loss", losses)):
+            rows += [_example(stage, dataset_id, direction, pair[0][s], pair[1][s])
+                     for s in chosen[:EXAMPLES_PER_DIRECTION]]
+    return rows
+
+
+def _rr(record: Dict) -> float:
+    """Reciprocal rank of a reference-source record."""
+    return 1.0 / record["best_rank"] if record["best_rank"] else 0.0
+
+
+def _top(record: Dict) -> str:
+    """Top candidates of a record as ``uri@score`` joined by semicolons."""
+    return ";".join(f"{t}@{score:.4f}" for t, score in record["top"])
+
+
+def _example(stage: str, dataset_id: str, direction: str, uri: Dict, frozen: Dict) -> Dict[str, object]:
+    """One URI-only example row."""
+    return {"stage": stage, "dataset": dataset_id, "direction": direction, "source": uri["source"],
+            "gold_targets": ";".join(uri["gold_targets"]), "rank_uri": uri["best_rank"] or "",
+            "rank_frozen": frozen["best_rank"] or "", "top_uri": _top(uri), "top_frozen": _top(frozen)}
 
 
 def sha256_of(path: Path) -> str:
@@ -370,6 +527,112 @@ def b_table(cells: Dict, lmap: Dict, parts: Dict) -> List[str]:
     return lines
 
 
+def primary_interval(a: np.ndarray, b: np.ndarray) -> Dict[str, Dict[str, float]]:
+    """
+    Paired ``a − b`` with its 95% and Bonferroni-adjusted intervals on one replicate matrix.
+
+    The Bonferroni family is the two datasets of one metric, so the adjusted
+    interval is the 97.5% percentile interval (quantiles 0.0125 and 0.9875) of
+    the same 2,000 replicates (fresh seed 42) that give the 95% interval.
+
+    Parameters
+    ----------
+    a, b : np.ndarray
+        Per-source values aligned by source.
+
+    Returns
+    -------
+    Dict[str, Dict[str, float]]
+        ``"95"`` and ``"bonferroni"``: ``estimate``, ``low``, ``high``, ``n``.
+    """
+    diff = np.asarray(a, dtype=np.float64) - np.asarray(b, dtype=np.float64)
+    means = diff[index_matrix(diff.size, REPORT_REPLICATES, REPORT_SEED)].mean(axis=1)
+    alpha = 0.05 / BONFERRONI_FAMILY
+    out = {}
+    for name, tail in (("95", 0.025), ("bonferroni", alpha / 2)):
+        out[name] = {"estimate": float(diff.mean()), "low": float(np.quantile(means, tail)),
+                     "high": float(np.quantile(means, 1 - tail)), "n": int(diff.size)}
+    return out
+
+
+def primary_table(cells: Dict, lmap: Dict, frozen: str) -> List[str]:
+    """The pre-specified primary contrasts: frozen − uri on D1/S/A0 and D2/S/A0, whole test population."""
+    lines = ["| Dataset | n | Metric | uri | " + frozen + " | Δ [95%] | Δ [Bonferroni 97.5%] |",
+             "|---|---|---|---|---|---|---|"]
+    for dataset in sorted(PAIR_NAMES):
+        a, b = f"{dataset}/S/A0/{frozen}", f"{dataset}/S/A0/{REFERENCE_ORDER}"
+        for field, metric in (("rr", "MRR"), ("hit1", "Recall@1")):
+            sa, va = per_source_values(cells, lmap, a, (dataset, None), field)
+            sb, vb = per_source_values(cells, lmap, b, (dataset, None), field)
+            if sa != sb:
+                raise ValueError(f"{a} and {b} cover different sources.")
+            c = primary_interval(va, vb)
+            lines.append(f"| {dataset} | {va.size} | {metric} | {vb.mean():.4f} | {va.mean():.4f} | "
+                         f"{fmt(c['95'])} | {fmt(c['bonferroni'])} |")
+    return lines
+
+
+def selection_section(artifacts: Path) -> List[str]:
+    """How the order was chosen on D2 validation, from the committed freeze record."""
+    record = json.loads((artifacts / FREEZE_NAME).read_text(encoding="utf-8"))
+    d2 = record["d2_validation"]
+    lines = ["| Candidate | D2 validation MRR | − uri [95%] | best − candidate [95%] | in E |", "|---|---|---|---|---|"]
+    for order, c in d2["candidates"].items():
+        lines.append(f"| {order} | {c['mrr']:.4f} | {fmt({**c['minus_uri'], 'n': 1})} | "
+                     f"{fmt({**c['best_minus'], 'n': 1})} | {'yes' if c['in_E'] else 'no'} |")
+    return [_selection_sentence(record), "", f"uri MRR {d2['uri_mrr']:.4f}; n = {record['rule']['n_sources']} D2 "
+            "validation reference sources; 10,000 shared replicates, seed 20261016.", "", *lines]
+
+
+def _selection_sentence(record: Dict) -> str:
+    """State whether the frozen order won outright or by the tie-breaking precedence."""
+    d2, chosen = record["d2_validation"], record["chosen"]
+    precedence = " > ".join(record["rule"]["precedence"])
+    if chosen == d2["best"]:
+        return f"`{chosen}` was frozen because it had the highest D2 validation MRR."
+    return (f"`{chosen}` was frozen by the pre-specified tie-breaking rule, **not** because it had the highest D2 "
+            f"validation MRR: `{d2['best']}` had the highest ({d2['candidates'][d2['best']]['mrr']:.4f} vs "
+            f"{d2['candidates'][chosen]['mrr']:.4f}), but no candidate's `MRR(best) − MRR(candidate)` interval "
+            f"excluded 0, so E = {{{', '.join(d2['eligible'])}}} and the precedence {precedence} chose `{chosen}`. "
+            "These validation intervals are descriptive and not adjusted for selection.")
+
+
+def examples_section(artifacts: Path, stage: str) -> List[str]:
+    """The script-chosen examples of a stage, URI-only."""
+    columns = ["dataset", "direction", "source", "gold_targets", "rank_uri", "rank_frozen"]
+    return [f"Per dataset, the {EXAMPLES_PER_DIRECTION} largest gains and losses in reciprocal rank of the frozen "
+            "order over uri on S/A0 (ties by source URI). Top candidates with scores are in "
+            f"`examples/{stage}_examples.csv`; readable text is generated locally by `examples-local`.", "",
+            *csv_table(artifacts / "examples" / f"{stage}_examples.csv", columns)]
+
+
+def require_rank_gate(artifacts: Path) -> None:
+    """
+    Refuse a test report unless ``gate-ranks`` passed on the current test outcomes.
+
+    Parameters
+    ----------
+    artifacts : Path
+        Bundle root.
+
+    Raises
+    ------
+    RuntimeError
+        If the gate record is missing, failed, or names other outcome digests.
+    """
+    path = artifacts / "diagnostics" / GATE_NAME
+    if not path.exists():
+        raise RuntimeError("No rank gate record: run gate-ranks before the test report.")
+    gate = json.loads(path.read_text(encoding="utf-8"))
+    if gate["status"] != "pass" or gate["outcomes_sha256"] != test_outcome_digests(artifacts):
+        raise RuntimeError("The rank gate failed or was run on different test outcomes; no test report.")
+
+
+def test_outcome_digests(artifacts: Path) -> Dict[str, str]:
+    """SHA-256 of every test outcome file, keyed by bundle-relative path."""
+    return {str(p.relative_to(artifacts)): sha256_of(p) for p in sorted((artifacts / "outcomes").glob("test_*.csv.gz"))}
+
+
 def csv_table(path: Path, columns: List[str]) -> List[str]:
     """Render selected columns of a bundle CSV as a markdown table."""
     rows = read_csv(path)
@@ -398,6 +661,8 @@ def plot_orders(series: List[Dict[str, object]], path: Path) -> None:
 
 def report(stage: str, artifacts: Path) -> Path:
     """Write a stage's report and figures from the bundle alone; return the report path."""
+    if stage == "test":
+        require_rank_gate(artifacts)
     population = "validation" if stage == "validation" else "test"
     cells, lmap = load_outcomes(artifacts, stage, population), logical_map(artifacts)
     parts = subsets(cells, stage)
@@ -406,7 +671,10 @@ def report(stage: str, artifacts: Path) -> Path:
     figures.mkdir(parents=True, exist_ok=True)
     write_csv(figures / f"{stage}_order_effects.csv", list(series[0]), series)
     plot_orders(series, figures / f"{stage}_order_effects.png")
+    primary = (["## Primary contrasts (pre-specified)", "", *primary_table(cells, lmap, frozen_order(artifacts)), ""]
+               if stage == "test" else [])
     sections = [f"# #134 serialization order: {stage} report", "", _preamble(stage), "",
+                "## How the order was chosen (D2 validation)", "", *selection_section(artifacts), "", *primary,
                 "## Cell metrics", "", *cell_table(cells, lmap, parts), "",
                 "## Block S: each order − uri (selected set fixed)", "", *order_lines, "",
                 f"![order effects](figures/{stage}_order_effects.png)", "",
@@ -420,6 +688,7 @@ def report(stage: str, artifacts: Path) -> Path:
                 *csv_table(artifacts / "diagnostics" / "selection_changes.csv",
                            ["logical", "side", "n_set_differs", "items_gained", "items_lost", "labels_lost",
                             "labels_gained"]),
+                "", "## Ranking examples", "", *examples_section(artifacts, stage),
                 "", "## Identity gates", "", *_gate_summary(artifacts), ""]
     path = artifacts / f"report_{stage}.md"
     path.write_text("\n".join(sections), encoding="utf-8")
@@ -430,6 +699,10 @@ def _preamble(stage: str) -> str:
     """Interpretive notes printed at the top of every report."""
     notes = ["Paired source-level bootstraps: 2,000 replicates, fresh seed 42 per contrast, 95% percentile "
              "intervals; datasets are never pooled. Two pairs (D1, D2) and one model (M2): no generalisation claim."]
+    if stage == "test":
+        notes.append("Primary contrasts: frozen order − uri on D1/S/A0 and D2/S/A0 (MRR, Recall@1), with 95% and "
+                     "Bonferroni-adjusted 97.5% intervals (family: the two datasets of one metric). Every other "
+                     "table is secondary and unadjusted. Written only after `gate-ranks` passed.")
     if stage == "validation":
         notes.append("Validation stage: descriptive only. D1 validation is exploratory and split into the 400 "
                      "sources the #131 probe used and the 751 it did not; the order is chosen on D2 validation by "
@@ -558,23 +831,87 @@ def stored_test_ranks(lmap: Dict[str, Dict[str, str]]) -> Dict[Tuple[str, str], 
 def gate_ranks(artifacts: Path) -> int:
     """Write the entity-level test-rank reproduction table into the bundle; return failures."""
     lmap = logical_map(artifacts)
+    digests = test_outcome_digests(artifacts)
+    if not digests:
+        raise FileNotFoundError("No test outcomes in the bundle: export the test stage first.")
     rows = rank_gate(load_outcomes(artifacts, "test", "test"), stored_test_ranks(lmap), lmap)
     write_csv(artifacts / "diagnostics" / "rank_reproduction.csv", list(rows[0]), rows)
     failed = [r for r in rows if r["status"] != "pass"]
+    gate = {"status": "FAIL" if failed else "pass", "n_executions": len(rows), "n_failed": len(failed),
+            "outcomes_sha256": digests}
+    (artifacts / "diagnostics" / GATE_NAME).write_text(json.dumps(gate, indent=2) + "\n", encoding="utf-8")
     print(f"{len(rows)} executions compared source by source with stored test ranks; {len(failed)} failed")
     return len(failed)
+
+
+def readable_examples(stage: str, artifacts: Path, results_dir: Path) -> Path:
+    """
+    Render the readable text of every example locally (never into the bundle).
+
+    Parameters
+    ----------
+    stage : str
+        Stage whose examples are rendered.
+    artifacts : Path
+        Bundle root (examples and freeze record).
+    results_dir : Path
+        Local results root; the output goes to ``<results_dir>/<stage>/examples_readable.md``.
+
+    Returns
+    -------
+    Path
+        The written file.
+    """
+    from serialization_inventory import logical_selector, token_counter
+    from kgsemembed.datasets import load_dataset
+    from kgsemembed.pipeline.ppas_ablation import build_pair_context
+    from kgsemembed.pipeline.serialization_conditions import get_logical
+    frozen, count = frozen_order(artifacts), token_counter()
+    rows = read_csv(artifacts / "examples" / f"{stage}_examples.csv")
+    lines = [f"# #134 {stage} examples (local only: contains dataset text; do not commit)", ""]
+    for dataset_id in sorted({r["dataset"] for r in rows}):
+        context = build_pair_context(load_dataset(dataset_id, Path("data"))[0], None, count, Path("data"))
+        texts = {o: _texts(context, logical_selector(get_logical(f"{dataset_id}/S/A0/{o}"), count))
+                 for o in (REFERENCE_ORDER, frozen)}
+        lines += [line for r in rows if r["dataset"] == dataset_id for line in _example_lines(r, texts, frozen)]
+    path = results_dir / stage / "examples_readable.md"
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return path
+
+
+def _texts(context: object, selector: object) -> Dict[str, str]:
+    """Rendered text of every source and candidate entity under one selector."""
+    out = {}
+    for side in (context.source, context.candidate):
+        for uri, entity_type, items in zip(side.uris, side.entity_types, side.items):
+            out[uri] = selector.select(items, uri, entity_type).text
+    return out
+
+
+def _example_lines(row: Dict[str, str], texts: Dict[str, Dict[str, str]], frozen: str) -> List[str]:
+    """Markdown block of one example: source, gold targets and top candidates under both orders."""
+    lines = [f"## {row['dataset']} {row['direction']}: rank {row['rank_uri'] or '–'} → {row['rank_frozen'] or '–'}",
+             "", f"Source `{row['source']}`"]
+    gold = row["gold_targets"].split(";")
+    for order, column in ((REFERENCE_ORDER, "top_uri"), (frozen, "top_frozen")):
+        lines += ["", f"**{order}**", "", f"- source: {texts[order].get(row['source'], '')}"]
+        lines += [f"- gold `{g}`: {texts[order].get(g, '(not a candidate)')}" for g in gold]
+        for entry in filter(None, row[column].split(";")):
+            uri, score = entry.rsplit("@", 1)
+            lines.append(f"- top {score}{' (gold)' if uri in gold else ''} `{uri}`: {texts[order].get(uri, '')}")
+    return lines + [""]
 
 
 def main() -> None:
     """Parse arguments and run a subcommand."""
     parser = argparse.ArgumentParser(description="#134 artifact bundle and reports.")
     sub = parser.add_subparsers(dest="command", required=True)
-    for name in ("export", "report", "verify-rebuild", "check-text", "gate-ranks"):
+    for name in ("export", "report", "verify-rebuild", "check-text", "gate-ranks", "examples-local"):
         p = sub.add_parser(name)
         p.add_argument("--artifacts_dir", default=str(ARTIFACTS))
         if name not in ("check-text", "gate-ranks"):
             p.add_argument("--stage", required=True, choices=("validation", "test"))
-        if name == "export":
+        if name in ("export", "examples-local"):
             p.add_argument("--results_dir", default=str(RESULTS))
             p.add_argument("--inventory_dir", default=str(INVENTORY))
     args = parser.parse_args()
@@ -587,6 +924,8 @@ def main() -> None:
         sys.exit(1 if verify_rebuild(args.stage, artifacts) else 0)
     elif args.command == "gate-ranks":
         sys.exit(1 if gate_ranks(artifacts) else 0)
+    elif args.command == "examples-local":
+        print(f"Wrote {readable_examples(args.stage, artifacts, Path(args.results_dir))}")
     else:
         sys.exit(1 if check_text(artifacts) else 0)
 

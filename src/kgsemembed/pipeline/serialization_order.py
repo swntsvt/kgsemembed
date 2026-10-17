@@ -8,8 +8,11 @@ cache, ranking and evaluation) for the ``SO-*`` conditions of
   (their candidates are the only ones encoded) and computes no test rank: the
   threshold and every metric come from validation sources.
 * ``--population test`` runs the full pair exactly as #131 did, and refuses to
-  start unless the freeze record is committed, pushed, on a clean tree and
-  matches the current order definitions (:func:`verify_freeze`).
+  start unless the freeze record is committed, pushed, on a clean tree,
+  matches the current order definitions, rule and validation files, and no
+  frozen implementation file changed since the validation run
+  (:func:`verify_freeze`).  It refuses smoke subsets and existing test
+  results written under another freeze or commit.
 
 Results go to ``<results_dir>/<population>/<condition>/<dataset>/``; the
 default root ``data/results_serialization/`` holds nothing else, and no
@@ -36,6 +39,7 @@ from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 from kgsemembed.datasets import AlignmentPair, load_dataset
+from kgsemembed.evaluation import order_selection
 from kgsemembed.embeddings import EmbeddingEncoder, load_sentence_transformer
 from kgsemembed.evaluation import RankedList
 from kgsemembed.evaluation.metrics import compute_all_metrics
@@ -55,7 +59,7 @@ from kgsemembed.pipeline.serialization_conditions import (
     get_serialization_condition,
 )
 from kgsemembed.verbalisation.selection import EligibleItem, PolicySelector, Selection, make_token_counter
-from kgsemembed.verbalisation.serialization import order_definitions_sha256
+from kgsemembed.verbalisation.serialization import SERIALIZATION_ORDERS, order_definitions_sha256
 
 _LOGGER = logging.getLogger("kgsemembed.pipeline.serialization_order")
 
@@ -64,6 +68,11 @@ VALIDATION, TEST = "validation", "test"
 POPULATIONS = (VALIDATION, TEST)
 FREEZE_PATH = Path("artifacts/issue-134/serialization_freeze.json")
 _TOP_K = 4
+FROZEN_IMPLEMENTATION = ("src/kgsemembed", ":(exclude)src/kgsemembed/pipeline/serialization_order.py")
+"""Pathspec that must be identical between the validation commit and the test
+run: every module that loads data, builds items, selects, renders, encodes,
+ranks or scores.  Only this runner is excluded, so its guards can be extended
+after the freeze; its diff since the validation commit is reviewed instead."""
 _FORBIDDEN_DIRS = (base._HISTORICAL_RESULTS_DIR, base.DEFAULT_RESULTS_DIR, base.CONTROLLED_RESULTS_DIR,
                    base.VALIDATION_RESULTS_DIR, base.ROLE_RESULTS_DIR)
 
@@ -336,9 +345,11 @@ def verify_freeze(path: Path = FREEZE_PATH) -> Dict[str, object]:
     """
     Verify the freeze record before any test rank is computed.
 
-    The record must exist, match the current order definitions, be tracked
-    and committed on a clean tree, be pushed to a remote branch, and its
-    validation commit must precede the commit that froze it.
+    The record must exist, match the current order definitions and selection
+    rule, be tracked and committed on a clean tree, be pushed to a remote
+    branch, follow its validation commit, list validation files that are
+    unchanged on disk, and no :data:`FROZEN_IMPLEMENTATION` file may differ
+    from the validation commit.
 
     Parameters
     ----------
@@ -358,8 +369,29 @@ def verify_freeze(path: Path = FREEZE_PATH) -> Dict[str, object]:
     if not path.exists():
         raise FreezeError(f"No freeze record at {path}; run the validation stage and commit the freeze first.")
     record = json.loads(path.read_text(encoding="utf-8"))
+    _check_definitions(record)
+    commit = _check_committed(path, str(record.get("validation_commit")))
+    _check_implementation(str(record["validation_commit"]))
+    _check_validation_files(record.get("validation_files_sha256") or {})
+    digest = hashlib.sha256(path.read_bytes()).hexdigest()
+    return {**record, "_sha256": digest, "_commit": commit}
+
+
+def _check_definitions(record: Dict[str, object]) -> None:
+    """Refuse a record whose orders, rule constants or chosen order differ from the code."""
     if record.get("order_definitions_sha256") != order_definitions_sha256():
         raise FreezeError("The freeze record's order definitions differ from the current code.")
+    rule = record.get("rule") or {}
+    expected = {"replicates": order_selection.SELECTION_REPLICATES, "seed": order_selection.SELECTION_SEED,
+                "precedence": list(order_selection.PRECEDENCE), "reference": order_selection.REFERENCE_ORDER}
+    if any(rule.get(k) != v for k, v in expected.items()):
+        raise FreezeError("The freeze record's selection rule differs from the current code.")
+    if record.get("chosen") not in SERIALIZATION_ORDERS or record.get("chosen") == order_selection.REFERENCE_ORDER:
+        raise FreezeError(f"The freeze record's chosen order {record.get('chosen')!r} is not a candidate.")
+
+
+def _check_committed(path: Path, validation_commit: str) -> str:
+    """Require a tracked, pushed record on a clean tree after its validation commit; return its commit."""
     if _git("ls-files", "--error-unmatch", str(path)).returncode != 0:
         raise FreezeError(f"{path} is not tracked by git.")
     if _git("status", "--porcelain").stdout.strip():
@@ -367,10 +399,52 @@ def verify_freeze(path: Path = FREEZE_PATH) -> Dict[str, object]:
     commit = _git("log", "-n", "1", "--format=%H", "--", str(path)).stdout.strip()
     if not _git("branch", "-r", "--contains", commit).stdout.strip():
         raise FreezeError(f"The freezing commit {commit[:12]} is not on any remote branch; push it first.")
-    if _git("merge-base", "--is-ancestor", str(record.get("validation_commit")), commit).returncode != 0:
+    if _git("merge-base", "--is-ancestor", validation_commit, commit).returncode != 0:
         raise FreezeError("The validation commit recorded in the freeze does not precede the freezing commit.")
-    digest = hashlib.sha256(path.read_bytes()).hexdigest()
-    return {**record, "_sha256": digest, "_commit": commit}
+    return commit
+
+
+def _check_implementation(validation_commit: str) -> None:
+    """Refuse when a frozen implementation file differs between the validation commit and HEAD."""
+    diff = _git("diff", "--name-only", validation_commit, "HEAD", "--", *FROZEN_IMPLEMENTATION)
+    if diff.returncode != 0 or diff.stdout.strip():
+        changed = diff.stdout.split() or [diff.stderr.strip()]
+        raise FreezeError(f"Implementation changed since the validation commit: {changed}.")
+
+
+def _check_validation_files(digests: Dict[str, str]) -> None:
+    """Refuse when a validation result the freeze was computed from is missing or changed."""
+    if not digests:
+        raise FreezeError("The freeze record lists no validation files.")
+    for name, digest in sorted(digests.items()):
+        path = Path(name)
+        if not path.exists() or hashlib.sha256(path.read_bytes()).hexdigest() != digest:
+            raise FreezeError(f"Validation file {name} is missing or differs from the freeze record.")
+
+
+def guard_test_results(stage_dir: Path, freeze: Dict[str, object]) -> None:
+    """
+    Refuse existing test results written under another freeze or commit.
+
+    Parameters
+    ----------
+    stage_dir : Path
+        ``<results_dir>/test``.
+    freeze : Dict[str, object]
+        Verified freeze record.
+
+    Raises
+    ------
+    FreezeError
+        If a stored test result names a different freeze digest or commit,
+        or was written from a dirty tree.
+    """
+    head = _git("rev-parse", "HEAD").stdout.strip()
+    for path in sorted(stage_dir.glob("*/*/*_results.json")):
+        result = json.loads(path.read_text(encoding="utf-8"))
+        recorded = (result.get("serialization") or {}).get("freeze") or {}
+        if recorded.get("sha256") != freeze["_sha256"] or result.get("git_commit") != head or result.get("git_dirty"):
+            raise FreezeError(f"{path} was written under another freeze or commit; move it aside first.")
 
 
 def guard_results_dir(results_dir: Path) -> None:
@@ -440,6 +514,34 @@ def _select(condition_ids: Optional[List[str]]) -> List[AblationCondition]:
     return [c for c in SERIALIZATION_CONDITIONS if c.condition_id in wanted]
 
 
+def verify_test_stage(args: argparse.Namespace, root: Path) -> Dict[str, object]:
+    """
+    Check every test-stage precondition before the model is loaded.
+
+    Parameters
+    ----------
+    args : argparse.Namespace
+        Parsed command-line arguments.
+    root : Path
+        Results root.
+
+    Returns
+    -------
+    Dict[str, object]
+        The verified freeze record.
+
+    Raises
+    ------
+    FreezeError
+        On a smoke subset, a failed freeze check or mixed test results.
+    """
+    if args.max_sources is not None:
+        raise FreezeError("The test stage runs on full pairs only; --max_sources is refused.")
+    freeze = verify_freeze(Path(args.freeze))
+    guard_test_results(root / TEST, freeze)
+    return freeze
+
+
 def run_stage(args: argparse.Namespace) -> int:
     """
     Verify the stage's preconditions, load M2 once, and run the requested conditions.
@@ -456,7 +558,7 @@ def run_stage(args: argparse.Namespace) -> int:
     """
     root = Path(args.results_dir)
     guard_results_dir(root)
-    freeze = verify_freeze(Path(args.freeze)) if args.population == TEST else None
+    freeze = verify_test_stage(args, root) if args.population == TEST else None
     model, model_info = load_sentence_transformer(ABLATION_MODEL_KEY)
     if not str(model_info["device"]).startswith("mps"):
         raise RuntimeError(f"Expected an MPS device, got {model_info['device']}.")

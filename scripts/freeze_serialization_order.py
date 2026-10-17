@@ -12,10 +12,15 @@ not adjusted for selection, the chosen order's validation estimate is
 optimistically biased by having been chosen, and the primary inferential
 claims rest only on the test comparisons.
 
+``--verify`` recomputes the record from the same validation results with the
+current code and compares every field but ``created`` with the committed
+record; exit status 1 on any difference.
+
 Usage
 -----
 python scripts/freeze_serialization_order.py \\
     --results_dir data/results_serialization/ --output artifacts/issue-134/serialization_freeze.json
+python scripts/freeze_serialization_order.py --verify
 """
 
 from __future__ import annotations
@@ -162,13 +167,46 @@ def build_record(results_dir: Path) -> Dict[str, object]:
     }
 
 
+def differing_fields(committed: Dict, recomputed: Dict) -> List[str]:
+    """
+    Return the top-level fields, ``created`` excepted, in which two records differ.
+
+    Parameters
+    ----------
+    committed : Dict
+        The record as committed.
+    recomputed : Dict
+        The record rebuilt from the validation results.
+
+    Returns
+    -------
+    List[str]
+        Sorted names of differing or missing fields.
+    """
+    keys = (set(committed) | set(recomputed)) - {"created"}
+    return sorted(k for k in keys if json.dumps(committed.get(k), sort_keys=True)
+                  != json.dumps(recomputed.get(k), sort_keys=True))
+
+
+def verify_record(results_dir: Path, output: Path) -> int:
+    """Rebuild the record from the validation results and compare it with the committed one."""
+    committed = json.loads(output.read_text(encoding="utf-8"))
+    recomputed = json.loads(json.dumps(build_record(results_dir), ensure_ascii=False))
+    bad = differing_fields(committed, recomputed)
+    print(f"Recomputed freeze record: chosen {recomputed['chosen']}; {len(bad)} fields differ {bad}")
+    return len(bad)
+
+
 def main() -> None:
-    """Parse arguments and write the record once."""
+    """Parse arguments and write the record once, or verify it."""
     parser = argparse.ArgumentParser(description="Freeze the #134 serialization order from validation results.")
     parser.add_argument("--results_dir", default="data/results_serialization/")
     parser.add_argument("--output", default=str(DEFAULT_OUTPUT))
+    parser.add_argument("--verify", action="store_true", help="Recompute and compare with the committed record.")
     args = parser.parse_args()
     output = Path(args.output)
+    if args.verify:
+        sys.exit(1 if verify_record(Path(args.results_dir), output) else 0)
     if output.exists():
         sys.exit(f"{output} exists; a freeze record is written once and never overwritten.")
     record = build_record(Path(args.results_dir))

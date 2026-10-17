@@ -1,5 +1,6 @@
 """Tests for the text-serialization-order experiment (#134)."""
 
+import hashlib
 import json
 import subprocess
 import sys
@@ -14,11 +15,18 @@ _REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(_REPO_ROOT / "scripts") not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT / "scripts"))
 
+import freeze_serialization_order as freeze  # noqa: E402
 import generate_serialization_report as report  # noqa: E402
 import serialization_inventory as inventory  # noqa: E402
 
 from kgsemembed.datasets import AlignmentPair  # noqa: E402
-from kgsemembed.evaluation.order_selection import PRECEDENCE, choose_order, paired_interval  # noqa: E402
+from kgsemembed.evaluation.order_selection import (  # noqa: E402
+    PRECEDENCE,
+    SELECTION_REPLICATES,
+    SELECTION_SEED,
+    choose_order,
+    paired_interval,
+)
 from kgsemembed.pipeline import ppas_ablation as base  # noqa: E402
 from kgsemembed.pipeline import serialization_order as runner  # noqa: E402
 from kgsemembed.pipeline.ablation_conditions import ABLATION_CONDITIONS, ROLE_MAP, AblationCondition, \
@@ -298,16 +306,35 @@ def frozen_repo(tmp_path, monkeypatch):
         _git(repo, "config", key, value)
     _git(repo, "remote", "add", "origin", str(remote))
     (repo / "code.txt").write_text("validation code\n")
+    (repo / "src" / "kgsemembed" / "pipeline").mkdir(parents=True)
+    (repo / "src" / "kgsemembed" / "selection.py").write_text("frozen\n")
+    (repo / "src" / "kgsemembed" / "pipeline" / "serialization_order.py").write_text("runner\n")
+    (repo / ".gitignore").write_text("data/\n")
     _git(repo, "add", ".")
     _git(repo, "commit", "-q", "-m", "validation")
     validation_commit = _git(repo, "rev-parse", "HEAD")
+    (repo / "data").mkdir()
+    (repo / "data" / "val.json").write_text("validation result\n")
     record = repo / "freeze.json"
-    record.write_text(json.dumps({"order_definitions_sha256": order_definitions_sha256(), "chosen": "label",
-                                  "validation_commit": validation_commit}))
+    record.write_text(json.dumps(_freeze_record(validation_commit, repo / "data" / "val.json")))
     _git(repo, "add", ".")
     _git(repo, "commit", "-q", "-m", "freeze")
     monkeypatch.chdir(repo)
     return repo, record
+
+
+def _freeze_record(validation_commit: str, validation_file: Path) -> dict:
+    return {"order_definitions_sha256": order_definitions_sha256(), "chosen": "label",
+            "rule": {"replicates": SELECTION_REPLICATES, "seed": SELECTION_SEED, "precedence": list(PRECEDENCE),
+                     "reference": "uri"},
+            "validation_commit": validation_commit,
+            "validation_files_sha256": {"data/val.json": hashlib.sha256(validation_file.read_bytes()).hexdigest()}}
+
+
+def _commit_and_push(repo: Path, message: str) -> None:
+    _git(repo, "add", ".")
+    _git(repo, "commit", "-q", "-m", message)
+    _git(repo, "push", "-q", "origin", "main")
 
 
 def test_freeze_guard_refuses_an_absent_record(tmp_path):
@@ -344,6 +371,64 @@ def test_freeze_guard_refuses_changed_order_definitions(frozen_repo):
     _git(repo, "push", "-q", "origin", "main")
     with pytest.raises(runner.FreezeError, match="order definitions"):
         runner.verify_freeze(Path(record.name))
+
+
+def test_freeze_guard_refuses_changed_implementation(frozen_repo):
+    repo, record = frozen_repo
+    (repo / "src" / "kgsemembed" / "selection.py").write_text("changed after validation\n")
+    _commit_and_push(repo, "change")
+    with pytest.raises(runner.FreezeError, match="Implementation changed.*selection.py"):
+        runner.verify_freeze(Path(record.name))
+
+
+def test_freeze_guard_allows_changes_to_the_runner_only(frozen_repo):
+    repo, record = frozen_repo
+    (repo / "src" / "kgsemembed" / "pipeline" / "serialization_order.py").write_text("extra guard\n")
+    _commit_and_push(repo, "guard")
+    assert runner.verify_freeze(Path(record.name))["chosen"] == "label"
+
+
+def test_freeze_guard_refuses_changed_validation_results(frozen_repo):
+    repo, record = frozen_repo
+    _git(repo, "push", "-q", "origin", "main")
+    (repo / "data" / "val.json").write_text("rerun\n")
+    with pytest.raises(runner.FreezeError, match="Validation file data/val.json"):
+        runner.verify_freeze(Path(record.name))
+
+
+@pytest.mark.parametrize("field, value", [("seed", 1), ("replicates", 10), ("precedence", ["core", "label", "role"])])
+def test_freeze_guard_refuses_a_changed_rule(frozen_repo, field, value):
+    repo, record = frozen_repo
+    data = json.loads(record.read_text())
+    record.write_text(json.dumps({**data, "rule": {**data["rule"], field: value}}))
+    _commit_and_push(repo, "tamper")
+    with pytest.raises(runner.FreezeError, match="selection rule"):
+        runner.verify_freeze(Path(record.name))
+
+
+def test_test_stage_refuses_a_smoke_subset(tmp_path):
+    args = runner._build_arg_parser().parse_args(["--population", "test", "--max_sources", "10"])
+    with pytest.raises(runner.FreezeError, match="max_sources"):
+        runner.verify_test_stage(args, tmp_path)
+
+
+def test_test_stage_refuses_results_from_another_freeze(tmp_path, monkeypatch):
+    head = subprocess.run(["git", "rev-parse", "HEAD"], capture_output=True, text=True).stdout.strip()
+    stage_dir = tmp_path / "test"
+    path = stage_dir / "SO-all-uri-full" / "D2" / "d2_anatomy_results.json"
+    path.parent.mkdir(parents=True)
+    freeze_record = {"_sha256": "a" * 64}
+    path.write_text(json.dumps({"git_commit": head, "git_dirty": False, "serialization": {"freeze": {"sha256": "a" * 64}}}))
+    runner.guard_test_results(stage_dir, freeze_record)
+    path.write_text(json.dumps({"git_commit": head, "git_dirty": False, "serialization": {"freeze": {"sha256": "b" * 64}}}))
+    with pytest.raises(runner.FreezeError, match="another freeze"):
+        runner.guard_test_results(stage_dir, freeze_record)
+
+
+def test_freeze_verification_reports_differing_fields():
+    committed = {"chosen": "label", "created": "t1", "rule": {"seed": 1}}
+    assert freeze.differing_fields(committed, {**committed, "created": "t2"}) == []
+    assert freeze.differing_fields(committed, {**committed, "chosen": "core", "extra": 1}) == ["chosen", "extra"]
 
 
 def test_results_guard_refuses_historical_trees():
@@ -446,6 +531,63 @@ def test_rank_gate_flags_compensating_entity_differences():
     assert swapped[0]["status"] == "FAIL"
 
 
+def test_primary_interval_widens_under_bonferroni_with_the_same_estimate():
+    rng = np.random.default_rng(3)
+    a, b = rng.random(200), rng.random(200)
+    out = report.primary_interval(a, b)
+    assert out["95"]["estimate"] == out["bonferroni"]["estimate"] == pytest.approx(float((a - b).mean()))
+    assert out["bonferroni"]["low"] < out["95"]["low"] and out["bonferroni"]["high"] > out["95"]["high"]
+    assert out["95"]["low"] == pytest.approx(paired_interval(a, b)["low"])
+
+
+def _record(source: str, rank, gold: str = "g") -> dict:
+    return {"source": source, "gold_targets": [gold], "best_rank": rank, "top": [[gold, 0.9]]}
+
+
+def test_examples_are_the_largest_gains_and_losses_with_uri_ties():
+    sidecars = {}
+    for dataset in ("D1", "D2"):
+        uri = [_record(f"s{i}", r) for i, r in enumerate([5, 1, 2, 3, 1, 4, 2])]
+        frozen = [_record(f"s{i}", r) for i, r in enumerate([1, 1, 1, 1, 2, None, 1])]
+        sidecars[(dataset, report.a0_condition(dataset, "uri"))] = {"reference_sources": {"test": uri}}
+        sidecars[(dataset, report.a0_condition(dataset, "label"))] = {"reference_sources": {"test": frozen}}
+    rows = [r for r in report.example_rows("test", "label", sidecars) if r["dataset"] == "D1"]
+    assert [(r["direction"], r["source"]) for r in rows] == [
+        ("gain", "s0"), ("gain", "s3"), ("gain", "s2"), ("gain", "s6"), ("loss", "s4"), ("loss", "s5")]
+    assert rows[0]["top_uri"] == "g@0.9000" and rows[-1]["rank_frozen"] == ""
+
+
+def test_selection_sentence_says_when_the_tie_break_chose_the_order():
+    record = {"chosen": "label", "rule": {"precedence": ["label", "core", "role"]},
+              "d2_validation": {"best": "core", "eligible": ["label", "core"],
+                                "candidates": {"label": {"mrr": 0.82}, "core": {"mrr": 0.83}}}}
+    assert "not** because it had the highest" in report._selection_sentence(record)
+    record["d2_validation"]["best"] = "label"
+    assert "because it had the highest" in report._selection_sentence(record)
+
+
+def test_bundle_files_are_never_replaced_by_different_bytes(tmp_path):
+    path = tmp_path / "outcomes" / "validation_D1.csv.gz"
+    report.write_once(path, b"validation")
+    report.write_once(path, b"validation")
+    with pytest.raises(FileExistsError):
+        report.write_once(path, b"test")
+
+
+def test_export_refuses_results_of_another_stage(tmp_path):
+    results = [{"serialization": {"population": "validation", "freeze": None}}]
+    report.check_stage("validation", results, tmp_path)
+    with pytest.raises(ValueError, match="not test-stage"):
+        report.check_stage("test", results, tmp_path)
+
+
+def test_export_refuses_test_results_from_another_freeze(tmp_path):
+    (tmp_path / report.FREEZE_NAME).write_text("{}")
+    results = [{"serialization": {"population": "test", "freeze": {"sha256": "0" * 64}}}]
+    with pytest.raises(ValueError, match="committed freeze"):
+        report.check_stage("test", results, tmp_path)
+
+
 def test_label_offset_counts_tokens_before_the_label():
     assert inventory.label_offset("label: A | type: Class", ["label: A"], _words) == 0
     assert inventory.label_offset("type: Class | label: A", ["label: A"], _words) == 3
@@ -484,14 +626,48 @@ def _synthetic_bundle(root: Path) -> Path:
     changes = [{"logical": "D1/B48/C-uri", "side": "source", "n_set_differs": 1, "items_gained": "{}",
                 "items_lost": "{}", "labels_lost": 0, "labels_gained": 0}]
     report.write_csv(artifacts / "diagnostics" / "selection_changes.csv", list(changes[0]), changes)
+    interval = {"estimate": 0.01, "low": -0.01, "high": 0.03}
+    record = {"chosen": "label", "rule": {"precedence": list(PRECEDENCE), "n_sources": 12},
+              "d2_validation": {"best": "core", "eligible": list(PRECEDENCE), "uri_mrr": 0.7,
+                                "candidates": {o: {"mrr": 0.75, "minus_uri": interval, "best_minus": interval,
+                                                   "in_E": True} for o in PRECEDENCE}}}
+    (artifacts / report.FREEZE_NAME).write_text(json.dumps(record))
+    example = {"stage": "test", "dataset": "D1", "direction": "gain", "source": f"{EX}D1s0", "gold_targets": "g",
+               "rank_uri": 2, "rank_frozen": 1, "top_uri": "g@0.9", "top_frozen": "g@0.9"}
+    report.write_csv(artifacts / "examples" / "test_examples.csv", report.EXAMPLE_COLUMNS, [example])
     return artifacts
+
+
+def _pass_rank_gate(artifacts: Path) -> None:
+    gate = {"status": "pass", "outcomes_sha256": report.test_outcome_digests(artifacts)}
+    (artifacts / "diagnostics" / report.GATE_NAME).write_text(json.dumps(gate))
 
 
 def test_report_rebuilds_byte_identically_from_the_bundle_alone(tmp_path):
     artifacts = _synthetic_bundle(tmp_path)
+    _pass_rank_gate(artifacts)
     path = report.report("test", artifacts)
-    assert "Block B" in path.read_text() and (artifacts / "figures" / "test_order_effects.png").exists()
+    text = path.read_text()
+    assert "Block B" in text and (artifacts / "figures" / "test_order_effects.png").exists()
+    assert "Primary contrasts" in text and "Bonferroni 97.5%" in text and "tie-breaking rule" in text
     assert report.verify_rebuild("test", artifacts) == 0
+
+
+def test_test_report_requires_a_passed_rank_gate_on_the_current_outcomes(tmp_path):
+    artifacts = _synthetic_bundle(tmp_path)
+    with pytest.raises(RuntimeError, match="No rank gate"):
+        report.report("test", artifacts)
+    _pass_rank_gate(artifacts)
+    gate_path = artifacts / "diagnostics" / report.GATE_NAME
+    gate_path.write_text(json.dumps({**json.loads(gate_path.read_text()), "status": "FAIL"}))
+    with pytest.raises(RuntimeError, match="failed"):
+        report.report("test", artifacts)
+    _pass_rank_gate(artifacts)
+    outcomes = artifacts / "outcomes" / "test_D1.csv.gz"
+    outcomes.write_bytes(outcomes.read_bytes() + b"\0")
+    with pytest.raises(RuntimeError, match="different test outcomes"):
+        report.report("test", artifacts)
+    assert not (artifacts / "report_test.md").exists()
 
 
 def test_bundle_text_scan_finds_entity_text(tmp_path):

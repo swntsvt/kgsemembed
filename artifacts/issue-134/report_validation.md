@@ -3,6 +3,18 @@
 - Paired source-level bootstraps: 2,000 replicates, fresh seed 42 per contrast, 95% percentile intervals; datasets are never pooled. Two pairs (D1, D2) and one model (M2): no generalisation claim.
 - Validation stage: descriptive only. D1 validation is exploratory and split into the 400 sources the #131 probe used and the 751 it did not; the order is chosen on D2 validation by the rule in `serialization_freeze.json`, whose intervals are not adjusted for selection.
 
+## How the order was chosen (D2 validation)
+
+`label` was frozen by the pre-specified tie-breaking rule, **not** because it had the highest D2 validation MRR: `core` had the highest (0.8291 vs 0.8257), but no candidate's `MRR(best) − MRR(candidate)` interval excluded 0, so E = {label, core, role} and the precedence label > core > role chose `label`. These validation intervals are descriptive and not adjusted for selection.
+
+uri MRR 0.7899; n = 299 D2 validation reference sources; 10,000 shared replicates, seed 20261016.
+
+| Candidate | D2 validation MRR | − uri [95%] | best − candidate [95%] | in E |
+|---|---|---|---|---|
+| label | 0.8257 | +0.0358 [+0.0173, +0.0548] | +0.0034 [-0.0095, +0.0166] | yes |
+| core | 0.8291 | +0.0393 [+0.0196, +0.0604] | +0.0000 [+0.0000, +0.0000] | yes |
+| role | 0.8221 | +0.0322 [+0.0152, +0.0505] | +0.0070 [-0.0093, +0.0241] | yes |
+
 ## Cell metrics
 
 | Logical condition | Execution | D1 untouched (751) MRR / R@1 (n) | D1 probed (400) MRR / R@1 (n) | D2 MRR / R@1 (n) |
@@ -363,6 +375,33 @@
 | D2/B48/X-label | candidate | 885 | {"core": 2, "definition": 206, "disjointness": 1, "synonym": 859} | {"core": 1214, "synonym": 202} | 0 | 0 |
 | D2/B48/X-role | source | 10 | {"synonym": 10} | {"core": 6, "identifier": 4} | 0 | 0 |
 | D2/B48/X-role | candidate | 806 | {"core": 6, "definition": 41, "disjointness": 2, "synonym": 1046} | {"core": 1027, "definition": 61, "synonym": 9} | 0 | 0 |
+
+## Ranking examples
+
+Per dataset, the 5 largest gains and losses in reciprocal rank of the frozen order over uri on S/A0 (ties by source URI). Top candidates with scores are in `examples/validation_examples.csv`; readable text is generated locally by `examples-local`.
+
+| dataset | direction | source | gold_targets | rank_uri | rank_frozen |
+|---|---|---|---|---|---|
+| D1 | gain | http://snomed.info/id/84582007 | http://purl.org/sig/ont/fma/fma12163 | 20 | 1 |
+| D1 | gain | http://snomed.info/id/28892005 | http://purl.org/sig/ont/fma/fma8958 | 19 | 1 |
+| D1 | gain | http://snomed.info/id/7657000 | http://purl.org/sig/ont/fma/fma70248 | 18 | 1 |
+| D1 | gain | http://snomed.info/id/28144008 | http://purl.org/sig/ont/fma/fma72641 | 17 | 1 |
+| D1 | gain | http://snomed.info/id/51691006 | http://purl.org/sig/ont/fma/fma50573 | 17 | 1 |
+| D1 | loss | http://snomed.info/id/36169008 | http://purl.org/sig/ont/fma/fma274684;http://purl.org/sig/ont/fma/fma67329 | 1 | 6 |
+| D1 | loss | http://snomed.info/id/22470006 | http://purl.org/sig/ont/fma/fma9167 | 1 | 2 |
+| D1 | loss | http://snomed.info/id/244087008 | http://purl.org/sig/ont/fma/fma59534 | 1 | 2 |
+| D1 | loss | http://snomed.info/id/25447008 | http://purl.org/sig/ont/fma/fma233422 | 1 | 2 |
+| D1 | loss | http://snomed.info/id/64554007 | http://purl.org/sig/ont/fma/fma42878 | 1 | 2 |
+| D2 | gain | http://mouse.owl#MA_0002440 | http://human.owl#NCI_C12437 | 6 | 1 |
+| D2 | gain | http://mouse.owl#MA_0000441 | http://human.owl#NCI_C12428 | 5 | 1 |
+| D2 | gain | http://mouse.owl#MA_0002537 | http://human.owl#NCI_C13409 | 5 | 1 |
+| D2 | gain | http://mouse.owl#MA_0002697 | http://human.owl#NCI_C33277 | 5 | 1 |
+| D2 | gain | http://mouse.owl#MA_0000179 | http://human.owl#NCI_C12459 | 3 | 1 |
+| D2 | loss | http://mouse.owl#MA_0000140 | http://human.owl#NCI_C12910 | 1 | 3 |
+| D2 | loss | http://mouse.owl#MA_0000704 | http://human.owl#NCI_C49330 | 1 | 2 |
+| D2 | loss | http://mouse.owl#MA_0001748 | http://human.owl#NCI_C49296 | 1 | 2 |
+| D2 | loss | http://mouse.owl#MA_0001791 | http://human.owl#NCI_C48944 | 1 | 2 |
+| D2 | loss | http://mouse.owl#MA_0000565 | http://human.owl#NCI_C33105 | 3 | 4 |
 
 ## Identity gates
 
