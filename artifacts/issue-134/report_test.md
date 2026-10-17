@@ -1,7 +1,8 @@
 # #134 serialization order: test report
 
 - Paired source-level bootstraps: 2,000 replicates, fresh seed 42 per contrast, 95% percentile intervals; datasets are never pooled. Two pairs (D1, D2) and one model (M2): no generalisation claim.
-- Primary contrasts: frozen order − uri on D1/S/A0 and D2/S/A0 (MRR, Recall@1), with 95% and Bonferroni-adjusted 97.5% intervals (family: the two datasets of one metric). Every other table is secondary and unadjusted. Written only after `gate-ranks` passed.
+- Primary contrasts: frozen order − uri on D1/S/A0 and D2/S/A0 (MRR, source-level Hit@1), with 95% and Bonferroni-adjusted 97.5% intervals (family: the two datasets of one metric). Every other table is secondary and unadjusted. Written only after `gate-ranks` passed.
+- Source-level Hit@1 (the freeze record's "Recall@1"): the fraction of evaluated test reference sources whose best-ranked gold target is ranked first, each source counted once (an unranked source is a miss). It is not the pipeline's Recall@1 (`metrics.recall_at_1` in the run JSONs), which divides the references ranked first by the number of test references, so the two differ where a source has several gold targets. `R@1` in the tables below is the same source-level Hit@1.
 - Rank gate: pass, 13 executions, 0 failed; code commit `6977bb4053200599251131f2813dc13cf00629bc` (`diagnostics/rank_gate.json`).
 - Earlier gate attempt kept for audit, superseded: `diagnostics/gate_attempt_1_FAIL/` (FAIL, 13 of 13 failed; same report inputs). See the PR for its diagnosis.
 
@@ -22,9 +23,9 @@ uri MRR 0.7899; n = 299 D2 validation reference sources; 10,000 shared replicate
 | Dataset | n | Metric | uri | label | Δ [95%] | Δ [Bonferroni 97.5%] |
 |---|---|---|---|---|---|---|
 | D1 | 4605 | MRR | 0.4525 | 0.6437 | +0.1912 [+0.1826, +0.1997] | +0.1912 [+0.1819, +0.2009] |
-| D1 | 4605 | Recall@1 | 0.3349 | 0.5412 | +0.2063 [+0.1941, +0.2187] | +0.2063 [+0.1924, +0.2198] |
+| D1 | 4605 | Source-level Hit@1 | 0.3349 | 0.5412 | +0.2063 [+0.1941, +0.2187] | +0.2063 [+0.1924, +0.2198] |
 | D2 | 1198 | MRR | 0.7356 | 0.7752 | +0.0396 [+0.0295, +0.0501] | +0.0396 [+0.0284, +0.0519] |
-| D2 | 1198 | Recall@1 | 0.6686 | 0.7245 | +0.0559 [+0.0401, +0.0718] | +0.0559 [+0.0384, +0.0743] |
+| D2 | 1198 | Source-level Hit@1 | 0.6686 | 0.7245 | +0.0559 [+0.0401, +0.0718] | +0.0559 [+0.0384, +0.0743] |
 
 ## Cell metrics
 
