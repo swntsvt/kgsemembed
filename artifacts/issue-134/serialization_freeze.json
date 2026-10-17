@@ -1,0 +1,211 @@
+{
+  "issue": 134,
+  "stage": "frozen",
+  "created": "2026-10-17T05:08:21+00:00",
+  "chosen": "label",
+  "rule": {
+    "population": "D2 validation reference sources, Block S A0 (no budget)",
+    "n_sources": 299,
+    "candidates": [
+      "label",
+      "core",
+      "role"
+    ],
+    "reference": "uri",
+    "precedence": [
+      "label",
+      "core",
+      "role"
+    ],
+    "replicates": 10000,
+    "seed": 20261016,
+    "interval": "95% percentile, shared index matrix",
+    "eligible_if": "lower bound of MRR(best) − MRR(o) <= 0"
+  },
+  "d2_validation": {
+    "chosen": "label",
+    "best": "core",
+    "eligible": [
+      "label",
+      "core",
+      "role"
+    ],
+    "uri_mrr": 0.7898672162364604,
+    "candidates": {
+      "label": {
+        "mrr": 0.8256914533148781,
+        "minus_uri": {
+          "estimate": 0.035824237078417684,
+          "low": 0.01732060631016581,
+          "high": 0.054810710501775016
+        },
+        "best_minus": {
+          "estimate": 0.0034333928643650404,
+          "low": -0.009463502676871285,
+          "high": 0.016635656645668087
+        },
+        "in_E": true,
+        "recall_at_1": 0.7859531772575251
+      },
+      "core": {
+        "mrr": 0.8291248461792432,
+        "minus_uri": {
+          "estimate": 0.03925762994278273,
+          "low": 0.019553460982084648,
+          "high": 0.06042163121550552
+        },
+        "best_minus": {
+          "estimate": 0.0,
+          "low": 0.0,
+          "high": 0.0
+        },
+        "in_E": true,
+        "recall_at_1": 0.782608695652174
+      },
+      "role": {
+        "mrr": 0.8220882931899789,
+        "minus_uri": {
+          "estimate": 0.032221076953518425,
+          "low": 0.015227085978769223,
+          "high": 0.050531517686287976
+        },
+        "best_minus": {
+          "estimate": 0.007036552989264297,
+          "low": -0.009334774122362652,
+          "high": 0.024120344978746818
+        },
+        "in_E": true,
+        "recall_at_1": 0.7792642140468228
+      }
+    },
+    "uri_recall_at_1": 0.7391304347826086
+  },
+  "d1_validation_exploratory": {
+    "untouched": {
+      "n_sources": 751,
+      "mrr_minus_uri": {
+        "estimate": 0.1986088064813335,
+        "low": 0.17793973644005007,
+        "high": 0.22110167756197507,
+        "n": 751
+      },
+      "recall_at_1_minus_uri": {
+        "estimate": 0.2197070572569907,
+        "low": 0.1904127829560586,
+        "high": 0.2529960053262317,
+        "n": 751
+      }
+    },
+    "probed": {
+      "n_sources": 400,
+      "mrr_minus_uri": {
+        "estimate": 0.17362747333935416,
+        "low": 0.14597593096241995,
+        "high": 0.2016361677546203,
+        "n": 400
+      },
+      "recall_at_1_minus_uri": {
+        "estimate": 0.185,
+        "low": 0.145,
+        "high": 0.2225,
+        "n": 400
+      }
+    },
+    "probed_sample_sha256": "a773ea69dc13c136fa5d20f79e381958de56e54e604226441aa5776aa56688dc",
+    "interpretation": "exploratory consistency check; cannot change the choice"
+  },
+  "status_of_intervals": "descriptive validation uncertainty, not adjusted for selection; the chosen order's validation estimate is optimistically biased; no inferential claim",
+  "primary_contrasts": [
+    "D1/S/A0/label − D1/S/A0/uri (MRR, Recall@1; 95% and Bonferroni 97.5% intervals, 2,000 replicates, seed 42)",
+    "D2/S/A0/label − D2/S/A0/uri (MRR, Recall@1; 95% and Bonferroni 97.5% intervals, 2,000 replicates, seed 42)"
+  ],
+  "secondary_contrasts": [
+    "every order − uri within each Block S row (MRR, Recall@1)",
+    "A-core − A0, C+syn − A-core and C+id / C+def − A-core within each order",
+    "Block B: serialization at the reference set and at the order's own set, selection at uri and at the order's rendering, combined policy, interaction, and the difference from the no-budget serialization effect",
+    "every contrast split into sources whose own or gold-target text differs between the two cells, and the rest"
+  ],
+  "order_definitions": {
+    "uri": "canonical (predicate URI, object)",
+    "core": [
+      [
+        "role",
+        "core"
+      ],
+      [
+        "rest"
+      ]
+    ],
+    "label": [
+      [
+        "predicate",
+        "http://www.w3.org/2000/01/rdf-schema#label"
+      ],
+      [
+        "rest"
+      ]
+    ],
+    "role": [
+      [
+        "predicate",
+        "http://www.w3.org/2000/01/rdf-schema#label"
+      ],
+      [
+        "role",
+        "preferred_name"
+      ],
+      [
+        "role",
+        "synonym"
+      ],
+      [
+        "role",
+        "definition"
+      ],
+      [
+        "predicate",
+        "http://www.w3.org/2000/01/rdf-schema#subClassOf"
+      ],
+      [
+        "predicate",
+        "http://www.w3.org/1999/02/22-rdf-syntax-ns#type"
+      ],
+      [
+        "role",
+        "disjointness"
+      ],
+      [
+        "role",
+        "non_english"
+      ],
+      [
+        "role",
+        "identifier"
+      ],
+      [
+        "role",
+        "other"
+      ]
+    ]
+  },
+  "order_definitions_sha256": "9429a87cfc824b14bc947d822ac2df93585550c8d5bf4564cbdc99d6c9a14769",
+  "validation_commit": "4809a986a673f0a5a5d8c9acc8c87426f4c3dd23",
+  "validation_files_sha256": {
+    "data/results_serialization/validation/SO-all-uri-full/D1/d1_snomed_fma_results.json": "808ba6857cb23c728bd39d1ac5d2e8b43a19e831f89f01ac6645a50b3035405d",
+    "data/results_serialization/validation/SO-all-uri-full/D1/d1_snomed_fma_entities.json": "ff8bbbc153e81866dec02e7f8baebbcebd293d5d5b0dcf6471775ab0b68aec13",
+    "data/results_serialization/validation/SO-all-core-full/D1/d1_snomed_fma_results.json": "9b04326a3c048bd48a9f137cb702c11b7982d6fcf52093d1ce56468fbdb0f539",
+    "data/results_serialization/validation/SO-all-core-full/D1/d1_snomed_fma_entities.json": "2045e3ac26d0114f22eaafa2c1e38ee1c57a52047f6084801e3b370d82787186",
+    "data/results_serialization/validation/SO-all-label-full/D1/d1_snomed_fma_results.json": "9d0229766051c7063789dc4606217773ff1de956cbe73a817cc4a849a77d75b0",
+    "data/results_serialization/validation/SO-all-label-full/D1/d1_snomed_fma_entities.json": "f42b0edf33bee4100b3bb878d743d4a79fd235e13c7577f4fb018f021ecdba6d",
+    "data/results_serialization/validation/SO-all-role-full/D1/d1_snomed_fma_results.json": "c2ae39bab2a6dafc900b5c5ce9e3107127d7c92d8ed417f1c1d29ea72983e66a",
+    "data/results_serialization/validation/SO-all-role-full/D1/d1_snomed_fma_entities.json": "43a8aa8921b52a20a7db6efed9b7e55788fa78f4172348dfecb7984249259e59",
+    "data/results_serialization/validation/SO-all-uri-full/D2/d2_anatomy_results.json": "f543d679b983f1c398ed007b215a0d0b96ccd1c7e594a7c3074a2b3cc8524832",
+    "data/results_serialization/validation/SO-all-uri-full/D2/d2_anatomy_entities.json": "ccb87486479682a7efe647125f74ba3588e74efa217e834368d0cddc4d27d13c",
+    "data/results_serialization/validation/SO-all-core-full/D2/d2_anatomy_results.json": "c7f389b1c355808ebb4004eee1a110a925a8ce56660ce81380d5abe040ae2301",
+    "data/results_serialization/validation/SO-all-core-full/D2/d2_anatomy_entities.json": "3ade939bde2c25b2d5246e8546cf2d159c8bc9bfb383138211333da0e3efed13",
+    "data/results_serialization/validation/SO-all-label-full/D2/d2_anatomy_results.json": "c6474fded682525965a5fa3d7b20ad5053399c843cbc8a359a0ad1cc3617beff",
+    "data/results_serialization/validation/SO-all-label-full/D2/d2_anatomy_entities.json": "b05e56c8960ec44036ad8226676b4c41aef329f61d53f72434a6b4f6238a0cd4",
+    "data/results_serialization/validation/SO-all-role-full/D2/d2_anatomy_results.json": "4a0a2095ebbe2ee21d0557897046a749b8c9f49707cdc2b8191022cd2a6a1142",
+    "data/results_serialization/validation/SO-all-role-full/D2/d2_anatomy_entities.json": "8ca70390425722ff8fda59d87a5a2682f5a73467aa5a3d346ae648e5c163a614"
+  }
+}

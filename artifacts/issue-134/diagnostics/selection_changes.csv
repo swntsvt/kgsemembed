@@ -1,0 +1,31 @@
+logical,reference,side,n_entities,n_set_differs,items_gained,items_lost,mean_tokens_reference,mean_tokens,labels_lost,labels_gained
+D1/B48/C-uri,D1/B48/F-uri,source,24182,0,{},{},36.2513,36.2513,0,0
+D1/B48/C-uri,D1/B48/F-uri,candidate,50103,37983,"{""definition"": 409, ""disjointness"": 7, ""identifier"": 3385, ""non_english"": 5293, ""other"": 40, ""preferred_name"": 28004, ""synonym"": 17272}","{""core"": 58087, ""disjointness"": 7, ""non_english"": 114, ""other"": 5, ""preferred_name"": 405, ""synonym"": 489}",42.66,42.3151,17647,0
+D1/B48/C-label,D1/B48/F-uri,source,24182,0,{},{},36.2513,36.2513,0,0
+D1/B48/C-label,D1/B48/F-uri,candidate,50103,37056,"{""definition"": 252, ""disjointness"": 5, ""identifier"": 3352, ""non_english"": 4037, ""other"": 35, ""preferred_name"": 24977, ""synonym"": 10469}","{""core"": 45854, ""disjointness"": 7, ""identifier"": 4, ""non_english"": 201, ""preferred_name"": 599, ""synonym"": 691}",42.66,43.1465,0,0
+D1/B48/C-role,D1/B48/F-uri,source,24182,5843,"{""core"": 2, ""definition"": 3, ""preferred_name"": 5846, ""synonym"": 300}","{""core"": 5327, ""definition"": 11, ""synonym"": 1366}",36.2513,37.4103,0,0
+D1/B48/C-role,D1/B48/F-uri,candidate,50103,38400,"{""core"": 15, ""definition"": 91, ""disjointness"": 1113, ""identifier"": 126, ""non_english"": 131, ""other"": 1, ""preferred_name"": 29246, ""synonym"": 19211}","{""core"": 28206, ""definition"": 38, ""disjointness"": 7, ""identifier"": 30123, ""non_english"": 2745, ""other"": 40, ""synonym"": 210}",42.66,44.9705,0,0
+D1/B48/X-label,D1/B48/F-uri,source,24182,0,{},{},36.2513,36.2513,0,0
+D1/B48/X-label,D1/B48/F-uri,candidate,50103,37056,"{""definition"": 252, ""disjointness"": 5, ""identifier"": 3352, ""non_english"": 4037, ""other"": 35, ""preferred_name"": 24977, ""synonym"": 10469}","{""core"": 45854, ""disjointness"": 7, ""identifier"": 4, ""non_english"": 201, ""preferred_name"": 599, ""synonym"": 691}",42.66,43.1465,0,0
+D1/B48/X-role,D1/B48/F-uri,source,24182,5843,"{""core"": 2, ""definition"": 3, ""preferred_name"": 5846, ""synonym"": 300}","{""core"": 5327, ""definition"": 11, ""synonym"": 1366}",36.2513,37.4103,0,0
+D1/B48/X-role,D1/B48/F-uri,candidate,50103,38400,"{""core"": 15, ""definition"": 91, ""disjointness"": 1113, ""identifier"": 126, ""non_english"": 131, ""other"": 1, ""preferred_name"": 29246, ""synonym"": 19211}","{""core"": 28206, ""definition"": 38, ""disjointness"": 7, ""identifier"": 30123, ""non_english"": 2745, ""other"": 40, ""synonym"": 210}",42.66,44.9705,0,0
+D2/B24/C-uri,D2/B24/F-uri,source,2744,292,"{""core"": 6, ""identifier"": 23, ""synonym"": 302}","{""core"": 356, ""synonym"": 1}",19.2522,19.4096,113,0
+D2/B24/C-uri,D2/B24/F-uri,candidate,3218,2908,"{""core"": 43, ""definition"": 151, ""synonym"": 3441}","{""core"": 3991, ""synonym"": 25}",20.3766,20.7194,1972,0
+D2/B24/C-label,D2/B24/F-uri,source,2744,271,"{""identifier"": 23, ""synonym"": 254}","{""core"": 325, ""synonym"": 1}",19.2522,19.438,0,0
+D2/B24/C-label,D2/B24/F-uri,candidate,3218,2292,"{""core"": 21, ""definition"": 39, ""synonym"": 2414}","{""core"": 2826, ""synonym"": 47}",20.3766,21.5911,0,20
+D2/B24/C-role,D2/B24/F-uri,source,2744,504,"{""core"": 246, ""synonym"": 264}","{""core"": 562}",19.2522,20.0459,0,0
+D2/B24/C-role,D2/B24/F-uri,candidate,3218,2436,"{""core"": 171, ""definition"": 1, ""synonym"": 2459}","{""core"": 2952, ""definition"": 4, ""synonym"": 40}",20.3766,22.1877,0,20
+D2/B24/X-label,D2/B24/F-uri,source,2744,271,"{""identifier"": 23, ""synonym"": 254}","{""core"": 325, ""synonym"": 1}",19.2522,19.438,0,0
+D2/B24/X-label,D2/B24/F-uri,candidate,3218,2292,"{""core"": 21, ""definition"": 39, ""synonym"": 2414}","{""core"": 2826, ""synonym"": 47}",20.3766,21.5911,0,20
+D2/B24/X-role,D2/B24/F-uri,source,2744,504,"{""core"": 246, ""synonym"": 264}","{""core"": 562}",19.2522,20.0459,0,0
+D2/B24/X-role,D2/B24/F-uri,candidate,3218,2436,"{""core"": 171, ""definition"": 1, ""synonym"": 2459}","{""core"": 2952, ""definition"": 4, ""synonym"": 40}",20.3766,22.1877,0,20
+D2/B48/C-uri,D2/B48/F-uri,source,2744,10,"{""synonym"": 10}","{""core"": 10}",21.8663,21.875,0,0
+D2/B48/C-uri,D2/B48/F-uri,candidate,3218,963,"{""core"": 6, ""definition"": 331, ""disjointness"": 1, ""synonym"": 986}","{""core"": 1784, ""synonym"": 223}",37.3226,37.9475,548,0
+D2/B48/C-label,D2/B48/F-uri,source,2744,10,"{""synonym"": 10}","{""core"": 10}",21.8663,21.875,0,0
+D2/B48/C-label,D2/B48/F-uri,candidate,3218,885,"{""core"": 2, ""definition"": 206, ""disjointness"": 1, ""synonym"": 859}","{""core"": 1214, ""synonym"": 202}",37.3226,37.8639,0,0
+D2/B48/C-role,D2/B48/F-uri,source,2744,10,"{""synonym"": 10}","{""core"": 6, ""identifier"": 4}",21.8663,21.8786,0,0
+D2/B48/C-role,D2/B48/F-uri,candidate,3218,806,"{""core"": 6, ""definition"": 41, ""disjointness"": 2, ""synonym"": 1046}","{""core"": 1027, ""definition"": 61, ""synonym"": 9}",37.3226,38.0668,0,0
+D2/B48/X-label,D2/B48/F-uri,source,2744,10,"{""synonym"": 10}","{""core"": 10}",21.8663,21.875,0,0
+D2/B48/X-label,D2/B48/F-uri,candidate,3218,885,"{""core"": 2, ""definition"": 206, ""disjointness"": 1, ""synonym"": 859}","{""core"": 1214, ""synonym"": 202}",37.3226,37.8639,0,0
+D2/B48/X-role,D2/B48/F-uri,source,2744,10,"{""synonym"": 10}","{""core"": 6, ""identifier"": 4}",21.8663,21.8786,0,0
+D2/B48/X-role,D2/B48/F-uri,candidate,3218,806,"{""core"": 6, ""definition"": 41, ""disjointness"": 2, ""synonym"": 1046}","{""core"": 1027, ""definition"": 61, ""synonym"": 9}",37.3226,38.0668,0,0

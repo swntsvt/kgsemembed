@@ -1,0 +1,261 @@
+{
+  "condition_id": "SO-all-sel_role-ren_role-48",
+  "dataset_id": "D2",
+  "pair_name": "d2_anatomy",
+  "strategy": "V6-KV-select",
+  "model_key": "M2",
+  "model_id": "BAAI/bge-large-en-v1.5",
+  "apply_ppas": false,
+  "ppas_effective": false,
+  "token_budget": 48,
+  "metrics": {
+    "f1": 0.7560975609756098,
+    "precision": 0.7977941176470589,
+    "recall": 0.7185430463576159,
+    "threshold": 0.88,
+    "mrr": 0.8841196846631629,
+    "recall_at_1": 0.8377483443708609,
+    "recall_at_5": 0.9139072847682119,
+    "recall_at_10": 0.9437086092715232
+  },
+  "counts": {
+    "tp": 217,
+    "fp": 55,
+    "fn": 85
+  },
+  "per_entity_type": {},
+  "population": {
+    "population": "validation",
+    "n_val_refs": 302,
+    "n_val_population_refs": 302,
+    "n_val_reference_sources": 299,
+    "n_val_ranked_sources": 556,
+    "n_val_unmatched_sources": 257,
+    "reference_complete": true
+  },
+  "n_source_entities": 556,
+  "n_candidates_per_entity": 20,
+  "candidates_sha256": "b4f1129bad0e2f7946ac724d48000f105171458ad82007f05c8880c4a6cce73d",
+  "candidates_file": "data/candidates/D2/d2_anatomy_candidates.json",
+  "dataset_files_sha256": {
+    "d2_anatomy/source.rdf": "93756393d6306c8f332c884401aa447cc4b2557f0a6be3e0efd988a943cb68f8",
+    "d2_anatomy/target.rdf": "5c1ca432d9845f1abb36ecfce313df46d8c56d2fb4137d0590ec4e4a6a9b05bf",
+    "d2_anatomy/reference.rdf": "b6a6b12f3e7a786e5b58c4898024f0f483426e9036bdc3939aa61b046dbc26c4"
+  },
+  "ablation": {
+    "policy": "role_priority",
+    "seed": null,
+    "nominal_token_budget": 48,
+    "budget_includes_special_tokens": true,
+    "token_counting": "model tokenizer on the final joined text, special tokens included, no truncation",
+    "tokenizer": "BAAI/bge-large-en-v1.5",
+    "tokenizer_revision": "d4aa6901d3a41ba39fb536a557fa166f842b0e09",
+    "representation": "Structured key-value items (V6 rendering) from _collect_triples; literal datatype suffix stripped; empty and duplicate items dropped; selected items joined in canonical order",
+    "item_separator": " | ",
+    "deterministic_order": "lexicographic (predicate URI, object term)",
+    "policy_label": "",
+    "role_arm": "A0",
+    "excluded_roles": [],
+    "role_map": {
+      "name": "roles_v1",
+      "config_hash": "d4c5bd86becb0725c9c59bae44d19d05cc18db872d9ff90046601a9f45c434cf",
+      "roles": {
+        "http://purl.obolibrary.org/obo/IAO_0000115": "definition",
+        "http://purl.org/sig/ont/fma/AAL": "identifier",
+        "http://purl.org/sig/ont/fma/CMA_label": "identifier",
+        "http://purl.org/sig/ont/fma/DK__Freesurfer_": "identifier",
+        "http://purl.org/sig/ont/fma/Eponym": "other",
+        "http://purl.org/sig/ont/fma/FMAID": "identifier",
+        "http://purl.org/sig/ont/fma/JHU_DTI-81": "other",
+        "http://purl.org/sig/ont/fma/JHU_White-Matter_Tractography_Atlas": "other",
+        "http://purl.org/sig/ont/fma/Neurolex": "identifier",
+        "http://purl.org/sig/ont/fma/RadLex_ID": "identifier",
+        "http://purl.org/sig/ont/fma/Talairach": "identifier",
+        "http://purl.org/sig/ont/fma/definition": "definition",
+        "http://purl.org/sig/ont/fma/fma0329122": "identifier",
+        "http://purl.org/sig/ont/fma/homonym_for": "other",
+        "http://purl.org/sig/ont/fma/homonym_of": "other",
+        "http://purl.org/sig/ont/fma/non-English_equivalent": "non_english",
+        "http://purl.org/sig/ont/fma/preferred_name": "preferred_name",
+        "http://purl.org/sig/ont/fma/slot_synonym": "synonym",
+        "http://purl.org/sig/ont/fma/synonym": "synonym",
+        "http://www.geneontology.org/formats/oboInOwl#hasAlternativeId": "identifier",
+        "http://www.geneontology.org/formats/oboInOwl#hasBroadSynonym": "synonym",
+        "http://www.geneontology.org/formats/oboInOwl#hasDbXref": "identifier",
+        "http://www.geneontology.org/formats/oboInOwl#hasDefinition": "definition",
+        "http://www.geneontology.org/formats/oboInOwl#hasExactSynonym": "synonym",
+        "http://www.geneontology.org/formats/oboInOwl#hasNarrowSynonym": "synonym",
+        "http://www.geneontology.org/formats/oboInOwl#hasRelatedSynonym": "synonym",
+        "http://www.geneontology.org/formats/oboInOwl#hasSynonym": "synonym",
+        "http://www.w3.org/1999/02/22-rdf-syntax-ns#type": "core",
+        "http://www.w3.org/2000/01/rdf-schema#comment": "definition",
+        "http://www.w3.org/2000/01/rdf-schema#label": "core",
+        "http://www.w3.org/2000/01/rdf-schema#subClassOf": "core",
+        "http://www.w3.org/2002/07/owl#disjointWith": "disjointness",
+        "http://www.w3.org/2004/02/skos/core#altLabel": "synonym",
+        "http://www.w3.org/2004/02/skos/core#definition": "definition",
+        "http://www.w3.org/2004/02/skos/core#prefLabel": "preferred_name"
+      }
+    },
+    "filter_mode": "all",
+    "order_mode": "role_priority",
+    "predicate_config": {
+      "name": "base",
+      "config_hash": "eb299c6ac2d9cc54735618672736ad573ad3c71c725543037a2e86b8457558bb",
+      "tiers_sha256": "34f65847c146167e7356959bfc6fe5717a43a4be05c9993fcc01a898aa12776d",
+      "covered_predicates": [
+        "http://purl.obolibrary.org/obo/IAO_0000115",
+        "http://purl.obolibrary.org/obo/hasExactSynonym",
+        "http://purl.obolibrary.org/obo/hasSynonym",
+        "http://www.w3.org/1999/02/22-rdf-syntax-ns#type",
+        "http://www.w3.org/2000/01/rdf-schema#comment",
+        "http://www.w3.org/2000/01/rdf-schema#domain",
+        "http://www.w3.org/2000/01/rdf-schema#label",
+        "http://www.w3.org/2000/01/rdf-schema#range",
+        "http://www.w3.org/2000/01/rdf-schema#subClassOf",
+        "http://www.w3.org/2000/01/rdf-schema#subPropertyOf",
+        "http://www.w3.org/2002/07/owl#equivalentClass",
+        "http://www.w3.org/2002/07/owl#equivalentProperty",
+        "http://www.w3.org/2002/07/owl#inverseOf",
+        "http://www.w3.org/2002/07/owl#sameAs",
+        "http://www.w3.org/2004/02/skos/core#altLabel",
+        "http://www.w3.org/2004/02/skos/core#definition",
+        "http://www.w3.org/2004/02/skos/core#exactMatch",
+        "http://www.w3.org/2004/02/skos/core#prefLabel"
+      ],
+      "predicate_roles": {}
+    },
+    "tier_config_sha256": "34f65847c146167e7356959bfc6fe5717a43a4be05c9993fcc01a898aa12776d",
+    "encoder": {
+      "batch_size": 32,
+      "normalize_embeddings": true,
+      "pad_to_multiple_of": 64,
+      "max_seq_length": 512,
+      "query_prefix": null,
+      "doc_prefix": null,
+      "similarity": "cosine (dot product of unit-normalised embeddings)",
+      "embedding_cache": "per pair, keyed by (role, text)"
+    },
+    "threshold_procedure": "tuned on the validation population only, grid 0.10-0.99 step 0.01, ties to the lower median; one top-ranked prediction per source",
+    "smoke_max_sources": null,
+    "status": "completed",
+    "source": {
+      "n_entities": 556,
+      "n_sampling_invoked": 3,
+      "n_empty_text": 0,
+      "n_no_eligible_items": 0,
+      "n_oversized_items": 0,
+      "n_model_truncated": 0,
+      "n_truncated_tokens": 0,
+      "n_selected_items": 1753,
+      "tokens": {
+        "mean": 21.93884892086331,
+        "median": 21.0,
+        "p90": 29.0,
+        "max": 48,
+        "total": 12198
+      },
+      "model_input_tokens_total": 12198,
+      "eligible_items": {
+        "mean": 3.158273381294964,
+        "median": 3.0,
+        "p90": 4.0,
+        "max": 6,
+        "total": 1756
+      },
+      "n_items_before_filter": 1756,
+      "n_filtered_items": 0,
+      "n_covered_items": 1686,
+      "n_tiered_items": 1686,
+      "n_skipped_items": 3,
+      "vocabulary_item_coverage": 0.9601366742596811,
+      "predicate_coverage_mean": 1.0,
+      "budget": {
+        "n_over_budget": 0,
+        "utilisation_mean": 0.45705935251798563,
+        "utilisation_sampled_mean": 0.8888888888888888
+      },
+      "role_removal": {}
+    },
+    "candidate": {
+      "n_entities": 2687,
+      "n_sampling_invoked": 869,
+      "n_empty_text": 0,
+      "n_no_eligible_items": 0,
+      "n_oversized_items": 232,
+      "n_model_truncated": 0,
+      "n_truncated_tokens": 0,
+      "n_selected_items": 11546,
+      "tokens": {
+        "mean": 37.61555638258281,
+        "median": 38.0,
+        "p90": 47.0,
+        "max": 48,
+        "total": 101073
+      },
+      "model_input_tokens_total": 101073,
+      "eligible_items": {
+        "mean": 4.880163751395608,
+        "median": 4.0,
+        "p90": 6.0,
+        "max": 20,
+        "total": 13113
+      },
+      "n_items_before_filter": 13113,
+      "n_filtered_items": 0,
+      "n_covered_items": 8423,
+      "n_tiered_items": 8423,
+      "n_skipped_items": 1567,
+      "vocabulary_item_coverage": 0.6423396629299168,
+      "predicate_coverage_mean": 1.0,
+      "budget": {
+        "n_over_budget": 0,
+        "utilisation_mean": 0.7836574246371418,
+        "utilisation_sampled_mean": 0.8988300728807058
+      },
+      "role_removal": {}
+    },
+    "selection_sha256": "61e0b07ad2868a504c0998619115979cf16d35a957051fc245230e0c00a3d0a2",
+    "runtime": {
+      "source": {
+        "selection_seconds": 0.03247549990192056,
+        "n_texts_encoded": 1,
+        "encode_seconds": 0.06986629194580019
+      },
+      "candidate": {
+        "selection_seconds": 0.5301767499186099,
+        "n_texts_encoded": 393,
+        "encode_seconds": 3.5192914169747382
+      }
+    }
+  },
+  "hf_revision": "d4aa6901d3a41ba39fb536a557fa166f842b0e09",
+  "kgsemembed_version": "0.1.0",
+  "python_version": "3.12.14 (main, Aug 12 2026, 13:57:54) [Clang 21.0.0 (clang-2100.1.1.101)]",
+  "run_timestamp": "2026-10-17T04:53:39.419755Z",
+  "versions": {
+    "python": "3.12.14",
+    "torch": "2.11.0",
+    "transformers": "5.5.4",
+    "sentence_transformers": "5.4.0",
+    "numpy": "2.5.3",
+    "scipy": "1.18.1",
+    "rdflib": "7.6.0"
+  },
+  "random_seed": 42,
+  "split_seed": 42,
+  "evaluation_protocol": 2,
+  "git_commit": "4809a986a673f0a5a5d8c9acc8c87426f4c3dd23",
+  "git_dirty": false,
+  "serialization": {
+    "population": "validation",
+    "selection_order": "role_priority",
+    "render_order": "role",
+    "logical_conditions": [
+      "D2/B48/C-role"
+    ],
+    "order_definitions_sha256": "9429a87cfc824b14bc947d822ac2df93585550c8d5bf4564cbdc99d6c9a14769",
+    "item_set_sha256": "adeaaa66a63a6c4ee47d95f3d5446b7539c1ee64a2ceb6925c8eeddfe679d4d5",
+    "freeze": null
+  }
+}

@@ -1,0 +1,131 @@
+gate,subject,side,n_entities,n_mismatch,status,detail
+fixed_set_identity,D1/S/A0/uri = D1/S/A0/core = D1/S/A0/label = D1/S/A0/role,source,24182,0,pass,
+fixed_set_identity,D1/S/A0/uri = D1/S/A0/core = D1/S/A0/label = D1/S/A0/role,candidate,50103,0,pass,
+fixed_set_identity,D1/S/A-core/uri = D1/S/A-core/core = D1/S/A-core/label = D1/S/A-core/role,source,24182,0,pass,
+fixed_set_identity,D1/S/A-core/uri = D1/S/A-core/core = D1/S/A-core/label = D1/S/A-core/role,candidate,50103,0,pass,
+fixed_set_identity,D1/S/C+syn/uri = D1/S/C+syn/core = D1/S/C+syn/label = D1/S/C+syn/role,source,24182,0,pass,
+fixed_set_identity,D1/S/C+syn/uri = D1/S/C+syn/core = D1/S/C+syn/label = D1/S/C+syn/role,candidate,50103,0,pass,
+fixed_set_identity,D1/S/C+id/uri = D1/S/C+id/core = D1/S/C+id/label = D1/S/C+id/role,source,24182,0,pass,
+fixed_set_identity,D1/S/C+id/uri = D1/S/C+id/core = D1/S/C+id/label = D1/S/C+id/role,candidate,50103,0,pass,
+fixed_set_identity,D1/B48/F-uri = D1/B48/F-core = D1/B48/F-label = D1/B48/F-role = D1/B48/C-core,source,24182,0,pass,
+fixed_set_identity,D1/B48/F-uri = D1/B48/F-core = D1/B48/F-label = D1/B48/F-role = D1/B48/C-core,candidate,50103,0,pass,
+fixed_set_identity,D1/B48/C-label = D1/B48/X-label,source,24182,0,pass,
+fixed_set_identity,D1/B48/C-label = D1/B48/X-label,candidate,50103,0,pass,
+fixed_set_identity,D1/B48/C-role = D1/B48/X-role,source,24182,0,pass,
+fixed_set_identity,D1/B48/C-role = D1/B48/X-role,candidate,50103,0,pass,
+shared_execution_identity,D1/S/A-core/core = D1/S/A-core/uri,source,24182,0,pass,"A-core keeps only core items, whose canonical order is already core-first"
+shared_execution_identity,D1/S/A-core/core = D1/S/A-core/uri,candidate,50103,0,pass,"A-core keeps only core items, whose canonical order is already core-first"
+shared_execution_identity,D1/B48/C-core = D1/B48/F-core,source,24182,0,pass,coupled core-first is the fixed core-first selection rendered core-first
+shared_execution_identity,D1/B48/C-core = D1/B48/F-core,candidate,50103,0,pass,coupled core-first is the fixed core-first selection rendered core-first
+reproduces_stored_texts,D1/S/A0/uri = data/results_predicate_roles/PR-all-full,source,24182,0,pass,
+reproduces_stored_texts,D1/S/A0/uri = data/results_predicate_roles/PR-all-full,candidate,50103,0,pass,
+reproduces_stored_texts,D1/S/A-core/uri = data/results_predicate_roles/PR-core-full,source,24182,0,pass,
+reproduces_stored_texts,D1/S/A-core/uri = data/results_predicate_roles/PR-core-full,candidate,50103,0,pass,
+reproduces_stored_texts,D1/S/C+syn/uri = data/results_predicate_roles/PR-core-plus-syn-full,source,24182,0,pass,
+reproduces_stored_texts,D1/S/C+syn/uri = data/results_predicate_roles/PR-core-plus-syn-full,candidate,50103,0,pass,
+reproduces_stored_texts,D1/S/C+id/uri = data/results_predicate_roles/PR-core-plus-id-full,source,24182,0,pass,
+reproduces_stored_texts,D1/S/C+id/uri = data/results_predicate_roles/PR-core-plus-id-full,candidate,50103,0,pass,
+reproduces_stored_texts,D1/B48/F-uri = data/results_predicate_roles/PR-all-48,source,24182,0,pass,
+reproduces_stored_texts,D1/B48/F-uri = data/results_predicate_roles/PR-all-48,candidate,50103,0,pass,
+reproduces_stored_texts,D1/B48/C-uri = data/results_ppas_controlled/PA-all-base-det-48,source,24182,0,pass,
+reproduces_stored_texts,D1/B48/C-uri = data/results_ppas_controlled/PA-all-base-det-48,candidate,50103,0,pass,
+within_budget,D1/B48/F-uri,source,24182,0,pass,max 48 <= 48
+within_budget,D1/B48/F-uri,candidate,50103,0,pass,max 48 <= 48
+within_budget,D1/B48/F-core,source,24182,0,pass,max 48 <= 48
+within_budget,D1/B48/F-core,candidate,50103,0,pass,max 48 <= 48
+within_budget,D1/B48/F-label,source,24182,0,pass,max 48 <= 48
+within_budget,D1/B48/F-label,candidate,50103,0,pass,max 48 <= 48
+within_budget,D1/B48/F-role,source,24182,0,pass,max 48 <= 48
+within_budget,D1/B48/F-role,candidate,50103,0,pass,max 48 <= 48
+within_budget,D1/B48/C-uri,source,24182,0,pass,max 48 <= 48
+within_budget,D1/B48/C-uri,candidate,50103,0,pass,max 48 <= 48
+within_budget,D1/B48/C-core,source,24182,0,pass,max 48 <= 48
+within_budget,D1/B48/C-core,candidate,50103,0,pass,max 48 <= 48
+within_budget,D1/B48/C-label,source,24182,0,pass,max 48 <= 48
+within_budget,D1/B48/C-label,candidate,50103,0,pass,max 48 <= 48
+within_budget,D1/B48/C-role,source,24182,0,pass,max 48 <= 48
+within_budget,D1/B48/C-role,candidate,50103,0,pass,max 48 <= 48
+within_budget,D1/B48/X-label,source,24182,0,pass,max 48 <= 48
+within_budget,D1/B48/X-label,candidate,50103,0,pass,max 48 <= 48
+within_budget,D1/B48/X-role,source,24182,0,pass,max 48 <= 48
+within_budget,D1/B48/X-role,candidate,50103,0,pass,max 48 <= 48
+fixed_set_identity,D2/S/A0/uri = D2/S/A0/core = D2/S/A0/label = D2/S/A0/role,source,2744,0,pass,
+fixed_set_identity,D2/S/A0/uri = D2/S/A0/core = D2/S/A0/label = D2/S/A0/role,candidate,3218,0,pass,
+fixed_set_identity,D2/S/A-core/uri = D2/S/A-core/core = D2/S/A-core/label = D2/S/A-core/role,source,2744,0,pass,
+fixed_set_identity,D2/S/A-core/uri = D2/S/A-core/core = D2/S/A-core/label = D2/S/A-core/role,candidate,3218,0,pass,
+fixed_set_identity,D2/S/C+syn/uri = D2/S/C+syn/core = D2/S/C+syn/label = D2/S/C+syn/role,source,2744,0,pass,
+fixed_set_identity,D2/S/C+syn/uri = D2/S/C+syn/core = D2/S/C+syn/label = D2/S/C+syn/role,candidate,3218,0,pass,
+fixed_set_identity,D2/S/C+def/uri = D2/S/C+def/core = D2/S/C+def/label = D2/S/C+def/role,source,2744,0,pass,
+fixed_set_identity,D2/S/C+def/uri = D2/S/C+def/core = D2/S/C+def/label = D2/S/C+def/role,candidate,3218,0,pass,
+fixed_set_identity,D2/B24/F-uri = D2/B24/F-core = D2/B24/F-label = D2/B24/F-role = D2/B24/C-core,source,2744,0,pass,
+fixed_set_identity,D2/B24/F-uri = D2/B24/F-core = D2/B24/F-label = D2/B24/F-role = D2/B24/C-core,candidate,3218,0,pass,
+fixed_set_identity,D2/B48/F-uri = D2/B48/F-core = D2/B48/F-label = D2/B48/F-role = D2/B48/C-core,source,2744,0,pass,
+fixed_set_identity,D2/B48/F-uri = D2/B48/F-core = D2/B48/F-label = D2/B48/F-role = D2/B48/C-core,candidate,3218,0,pass,
+fixed_set_identity,D2/B24/C-label = D2/B24/X-label,source,2744,0,pass,
+fixed_set_identity,D2/B24/C-label = D2/B24/X-label,candidate,3218,0,pass,
+fixed_set_identity,D2/B48/C-label = D2/B48/X-label,source,2744,0,pass,
+fixed_set_identity,D2/B48/C-label = D2/B48/X-label,candidate,3218,0,pass,
+fixed_set_identity,D2/B24/C-role = D2/B24/X-role,source,2744,0,pass,
+fixed_set_identity,D2/B24/C-role = D2/B24/X-role,candidate,3218,0,pass,
+fixed_set_identity,D2/B48/C-role = D2/B48/X-role,source,2744,0,pass,
+fixed_set_identity,D2/B48/C-role = D2/B48/X-role,candidate,3218,0,pass,
+shared_execution_identity,D2/S/A-core/core = D2/S/A-core/uri,source,2744,0,pass,"A-core keeps only core items, whose canonical order is already core-first"
+shared_execution_identity,D2/S/A-core/core = D2/S/A-core/uri,candidate,3218,0,pass,"A-core keeps only core items, whose canonical order is already core-first"
+shared_execution_identity,D2/B24/C-core = D2/B24/F-core,source,2744,0,pass,coupled core-first is the fixed core-first selection rendered core-first
+shared_execution_identity,D2/B24/C-core = D2/B24/F-core,candidate,3218,0,pass,coupled core-first is the fixed core-first selection rendered core-first
+shared_execution_identity,D2/B48/C-core = D2/B48/F-core,source,2744,0,pass,coupled core-first is the fixed core-first selection rendered core-first
+shared_execution_identity,D2/B48/C-core = D2/B48/F-core,candidate,3218,0,pass,coupled core-first is the fixed core-first selection rendered core-first
+reproduces_stored_texts,D2/S/A0/uri = data/results_predicate_roles/PR-all-full,source,2744,0,pass,
+reproduces_stored_texts,D2/S/A0/uri = data/results_predicate_roles/PR-all-full,candidate,3218,0,pass,
+reproduces_stored_texts,D2/S/A-core/uri = data/results_predicate_roles/PR-core-full,source,2744,0,pass,
+reproduces_stored_texts,D2/S/A-core/uri = data/results_predicate_roles/PR-core-full,candidate,3218,0,pass,
+reproduces_stored_texts,D2/S/C+syn/uri = data/results_predicate_roles/PR-core-plus-syn-full,source,2744,0,pass,
+reproduces_stored_texts,D2/S/C+syn/uri = data/results_predicate_roles/PR-core-plus-syn-full,candidate,3218,0,pass,
+reproduces_stored_texts,D2/S/C+def/uri = data/results_predicate_roles/PR-core-plus-def-full,source,2744,0,pass,
+reproduces_stored_texts,D2/S/C+def/uri = data/results_predicate_roles/PR-core-plus-def-full,candidate,3218,0,pass,
+reproduces_stored_texts,D2/B24/F-uri = data/results_predicate_roles/PR-all-24,source,2744,0,pass,
+reproduces_stored_texts,D2/B24/F-uri = data/results_predicate_roles/PR-all-24,candidate,3218,0,pass,
+reproduces_stored_texts,D2/B48/F-uri = data/results_predicate_roles/PR-all-48,source,2744,0,pass,
+reproduces_stored_texts,D2/B48/F-uri = data/results_predicate_roles/PR-all-48,candidate,3218,0,pass,
+reproduces_stored_texts,D2/B48/C-uri = data/results_ppas_validation/PA-all-base-det-48,source,2744,0,pass,
+reproduces_stored_texts,D2/B48/C-uri = data/results_ppas_validation/PA-all-base-det-48,candidate,3218,0,pass,
+within_budget,D2/B24/F-uri,source,2744,0,pass,max 24 <= 24
+within_budget,D2/B24/F-uri,candidate,3218,0,pass,max 24 <= 24
+within_budget,D2/B24/F-core,source,2744,0,pass,max 24 <= 24
+within_budget,D2/B24/F-core,candidate,3218,0,pass,max 24 <= 24
+within_budget,D2/B24/F-label,source,2744,0,pass,max 24 <= 24
+within_budget,D2/B24/F-label,candidate,3218,0,pass,max 24 <= 24
+within_budget,D2/B24/F-role,source,2744,0,pass,max 24 <= 24
+within_budget,D2/B24/F-role,candidate,3218,0,pass,max 24 <= 24
+within_budget,D2/B24/C-uri,source,2744,0,pass,max 24 <= 24
+within_budget,D2/B24/C-uri,candidate,3218,0,pass,max 24 <= 24
+within_budget,D2/B24/C-core,source,2744,0,pass,max 24 <= 24
+within_budget,D2/B24/C-core,candidate,3218,0,pass,max 24 <= 24
+within_budget,D2/B24/C-label,source,2744,0,pass,max 24 <= 24
+within_budget,D2/B24/C-label,candidate,3218,0,pass,max 24 <= 24
+within_budget,D2/B24/C-role,source,2744,0,pass,max 24 <= 24
+within_budget,D2/B24/C-role,candidate,3218,0,pass,max 24 <= 24
+within_budget,D2/B24/X-label,source,2744,0,pass,max 24 <= 24
+within_budget,D2/B24/X-label,candidate,3218,0,pass,max 24 <= 24
+within_budget,D2/B24/X-role,source,2744,0,pass,max 24 <= 24
+within_budget,D2/B24/X-role,candidate,3218,0,pass,max 24 <= 24
+within_budget,D2/B48/F-uri,source,2744,0,pass,max 48 <= 48
+within_budget,D2/B48/F-uri,candidate,3218,0,pass,max 48 <= 48
+within_budget,D2/B48/F-core,source,2744,0,pass,max 48 <= 48
+within_budget,D2/B48/F-core,candidate,3218,0,pass,max 48 <= 48
+within_budget,D2/B48/F-label,source,2744,0,pass,max 48 <= 48
+within_budget,D2/B48/F-label,candidate,3218,0,pass,max 48 <= 48
+within_budget,D2/B48/F-role,source,2744,0,pass,max 48 <= 48
+within_budget,D2/B48/F-role,candidate,3218,0,pass,max 48 <= 48
+within_budget,D2/B48/C-uri,source,2744,0,pass,max 48 <= 48
+within_budget,D2/B48/C-uri,candidate,3218,0,pass,max 48 <= 48
+within_budget,D2/B48/C-core,source,2744,0,pass,max 48 <= 48
+within_budget,D2/B48/C-core,candidate,3218,0,pass,max 48 <= 48
+within_budget,D2/B48/C-label,source,2744,0,pass,max 48 <= 48
+within_budget,D2/B48/C-label,candidate,3218,0,pass,max 48 <= 48
+within_budget,D2/B48/C-role,source,2744,0,pass,max 48 <= 48
+within_budget,D2/B48/C-role,candidate,3218,0,pass,max 48 <= 48
+within_budget,D2/B48/X-label,source,2744,0,pass,max 48 <= 48
+within_budget,D2/B48/X-label,candidate,3218,0,pass,max 48 <= 48
+within_budget,D2/B48/X-role,source,2744,0,pass,max 48 <= 48
+within_budget,D2/B48/X-role,candidate,3218,0,pass,max 48 <= 48
