@@ -17,7 +17,7 @@ Phase 2 datasets: D1 (SNOMED-FMA Body), D2 (Anatomy MA-NCI), D3 (Conference,
 21 pairs), D4 (memoryalpha-stexpanded, schema and instance), D5
 (DBpedia-Wikidata 15K EN, OpenEA). Five datasets total.
 
-**Current focus**: Issue #136 — V1/V2 read the synonym and definition predicates D1/D2 actually use (re-runs lower most D1/D2 V1/V2 scores; stored results not yet replaced). Previously #134 — text-serialization-order experiment on D1 and D2 (effect of item order with the selected set held fixed; order frozen on D2 validation before any test evaluation); #128, #130 and #131 merged (Phase 2)
+**Current focus**: Issue #136 — V1/V2 read the synonym and definition predicates D1/D2 actually use (re-runs lower most D1/D2 V1/V2 scores and replace the stored cells). Previously #134 — text-serialization-order experiment on D1 and D2 (effect of item order with the selected set held fixed; order frozen on D2 validation before any test evaluation); #128, #130 and #131 merged (Phase 2)
 
 ## Git Workflow
 
@@ -444,7 +444,7 @@ selection policy (and random seed) is the only difference.
   `rdfs:label` + `subClassOf` and drops synonym lists that deterministic
   order keeps. PPAS beating full text says the full V6 key-value text is
   noisy, not that less text is better in general: this representation's full
-  MRR (0.4525) is far below C3 V2+V6/M2 (0.8036) on D1.
+  MRR (0.4525) is far below C3 V2+V6/M2 (0.8036 before #136, 0.7652 after) on D1.
 
 ### Controlled policies P1–P7 (#128)
 
@@ -759,8 +759,14 @@ Seven conditions vary one dimension at a time on D1 at 48 tokens
   C20 V2/M2 0.8905 → 0.7723, C10 0.8115 → 0.7075). On D1, V1/V2 and V2+V6
   fall (C20 −0.154, C2 −0.081, C3 −0.038) while V2+V8 under M1/M2/M4 rises
   (C10/C19 +0.059, C18 +0.114, C11 +0.037). This matches #131: synonyms and
-  definitions added to core text hurt (C+syn, C+def). The stored
-  `data/results/` V1/V2 D1/D2 cells are not yet replaced.
+  definitions added to core text hurt (C+syn, C+def).
+- **Stored results replaced**: the 24 re-runs are copied into `data/results/`
+  (byte-identical); the replaced files and the previous `report.md` are kept
+  in `data/results_pre136/`. In the regenerated report the best D2 F1 moves
+  from C20 (0.8261) to C4 V3/M2 (0.7830), best D1 stays C17 (0.4666 →
+  0.4391), and C20 vs C10 (group E) goes from W/T/L 4/0/22, p 0.2188,
+  delta-F1 −0.0671 to 5/0/21, p 0.6875, −0.0329: on D1 F1, V8 now helps
+  (C10 0.3452 vs C20 0.2707). No comparison is significant, before or after.
 
 ```bash
 # Text inventory (no model): dump under the old code, dump under the new, compare.
