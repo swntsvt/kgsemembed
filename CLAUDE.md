@@ -816,8 +816,9 @@ python scripts/annotation_fix_report.py --old_dir data/results/ \
   the check: an unmatched source is judgeable only when its top target is a
   reference target, so those counts depend on each method's ranking.
 - **Results (6d1878a; 26/26 pairs clean; 294/294 C-results matched; one pair
-  per column, descriptive)**: B0 MRR D1 0.7035, D2 0.8175, D3 0.7200,
-  D4_schema 0.8879, D4_instance 0.9049, D5 0.1808; F1 0.2986 / 0.6626 /
+  per column, descriptive; D1 re-run at 65b0d33 after the known-pair fix)**:
+  B0 MRR D1 0.7055, D2 0.8175, D3 0.7200,
+  D4_schema 0.8879, D4_instance 0.9049, D5 0.1808; F1 0.3062 / 0.6626 /
   0.5140 / 0.8090 / 0.8802 / 0.1730. Best MRR gain over B0: D1 +0.074 and
   D2 +0.085 (C4), D3 +0.043 (C1), D4 +0.033 / +0.039 (C3). Only about half
   the conditions beat B0 on D1/D2 MRR. Better ranking need not mean better
@@ -839,9 +840,12 @@ python scripts/annotation_fix_report.py --old_dir data/results/ \
   prediction. Before the fix they were unmatched sources, and a correct
   prediction was a false positive. B0 D1: FP 7,576 → 7,261, F1 0.2986 →
   0.3062, MRR 0.7035 → 0.7055; D2–D5 unchanged (D5 checked identical). D1
-  results without `population.n_train_refs == 726` predate the fix; every
-  D1 condition and B0 must be re-run before D1 is compared (the D1 numbers
-  above are pre-fix). Historical ablation trees (#122–#134) are not re-run.
+  results without `population.n_train_refs == 726` predate the fix. All 15
+  D1 conditions and B0 were re-run at 65b0d33 (clean): MRR +0.000 to
+  +0.002, F1 +0.004 to +0.012 (best D1 F1 C17 0.4391 → 0.4515); no
+  above/below count against B0 changed. Pre-fix D1 results and the previous
+  `report.md` are kept in `data/results_pre137/`. Historical ablation trees
+  (#122–#134) are not re-run.
 - `artifacts/issue-137/` (tracked): `evaluation_protocol.md` (protocol,
   metric definitions, scope, limitations, D5 analysis),
   `baseline_comparison.md`, `dataset_provenance.md`.

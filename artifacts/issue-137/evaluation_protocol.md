@@ -56,7 +56,7 @@ stage-1 candidate recall@20 (section 4).
 
 **Integrity.** Every D1–D4 file the loaders read is byte-identical to its
 counterpart in a local copy of the OAEI MELT track repository
-(`oaei.webdatacommons.org/`). That covers the 3 D1 files, the 3 D2 files, all
+(`oaei.webdatacommons.org/`). That covers the 4 D1 files, the 3 D2 files, all
 63 D3 files and the 3 D4 files; the SHA-256 values are in
 `dataset_provenance.md`. D5 is not distributed through that repository. Its
 files are recorded by SHA-256 only, and their identity with the OpenEA v2.0
@@ -184,18 +184,16 @@ The full tables are in `baseline_comparison.md`. The main table (`--metric
 f1`) and its ranking companions (`--metric mrr`, `--metric recall_at_1`) carry
 B0 as their first row (`scripts/generate_results_table.py --baseline_dir`).
 
-> **D1 pending re-run.** The D1 numbers below, here and in
-> `baseline_comparison.md`, were produced before the D1 known-pair fix
-> (section 3). They are regenerated once every D1 condition and B0 have been
-> re-run; D2–D5 are unaffected.
+D1 numbers are from the re-run after the D1 known-pair fix (section 3; all
+15 D1 conditions and B0 at commit 65b0d33, clean tree). D2–D5 are unaffected.
 
 B0 per column:
 
 | Metric | D1 | D2 | D3 | D4_schema | D4_instance | D5 |
 |---|---|---|---|---|---|---|
-| MRR | 0.7035 | 0.8175 | 0.7200 | 0.8879 | 0.9049 | 0.1808 |
-| Recall@1 | 0.5373 | 0.7446 | 0.6528 | 0.8636 | 0.8696 | 0.1544 |
-| F1 | 0.2986 | 0.6626 | 0.5140 | 0.8090 | 0.8802 | 0.1730 |
+| MRR | 0.7055 | 0.8175 | 0.7200 | 0.8879 | 0.9049 | 0.1808 |
+| Recall@1 | 0.5398 | 0.7446 | 0.6528 | 0.8636 | 0.8696 | 0.1544 |
+| F1 | 0.3062 | 0.6626 | 0.5140 | 0.8090 | 0.8802 | 0.1730 |
 | Candidate recall@20 | 0.8578 | 0.9465 | 0.8621 | 0.9318 | 0.9725 | 0.2667 |
 
 The effect of re-ranking depends on the dataset. Descriptively, on one pair
@@ -276,13 +274,15 @@ only from Mean*, as before.
   published system scores (LogMap, AML, BERTMap, BERTMapLt, OpenEA models) as
   head-to-head results. If an external number is quoted, give its source and
   protocol and the differences above.
-- **D1 validation mappings (fixed).** Results produced before the fix
+- **D1 validation mappings (fixed, re-run).** Results produced before the fix
   treated Bio-ML's 726 validation mappings as unmatched sources, counting a
   correct prediction for one as a false positive. They are now known pairs
   (section 3). On B0 the fix moves D1 FP from 7,576 to 7,261, F1 from 0.2986
-  to 0.3062 and MRR from 0.7035 to 0.7055; most D1 false positives come from
-  the 17,870 genuinely unmatched SNOMED sources (3,615 validation, 14,255 test), so absolute D1 precision
-  stays low. D1 results without `"n_train_refs": 726` in their population
+  to 0.3062 and MRR from 0.7035 to 0.7055. Across the 15 re-run D1
+  conditions, MRR rises by 0.000–0.002 and F1 by 0.004–0.012, and no
+  above/below count against B0 changes. Most D1 false positives come from
+  the 17,870 genuinely unmatched SNOMED sources (3,615 validation, 14,255
+  test), so absolute D1 precision stays low. D1 results without `"n_train_refs": 726` in their population
   record predate the fix and are not comparable. That Bio-ML ignores these
   mappings is stated from the track's design and not re-verified here;
   check it before citing.
