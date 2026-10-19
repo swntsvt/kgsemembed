@@ -43,6 +43,7 @@ from kgsemembed.datasets import AlignmentPair, load_dataset  # noqa: E402
 from kgsemembed.datasets.loader import _resolve_entity_type, extract_entity_uris  # noqa: E402
 from kgsemembed.evaluation.population import build_populations, without_known_pairs  # noqa: E402
 from scripts.dataset_provenance import TrackedFile, tracked_files  # noqa: E402
+from scripts.dataset_provenance import _table as _provenance_table  # noqa: E402
 
 _ALIGNMENT_NS = "{http://knowledgeweb.semanticweb.org/heterogeneity/alignment}"
 _RDF_RESOURCE = "{http://www.w3.org/1999/02/22-rdf-syntax-ns#}resource"
@@ -51,6 +52,7 @@ _D5_SPLITS = ("train_links", "valid_links", "test_links")
 
 EntityPair = Tuple[str, str]
 CandidateMap = Dict[str, List[str]]
+Cell = Tuple[Optional[str], Optional[str], Optional[str], Optional[str]]
 
 
 @dataclass(frozen=True)
@@ -198,7 +200,29 @@ def _text(cell: ET.Element, tag: str) -> Optional[str]:
 
 
 def _is_partial(measure: Optional[str]) -> bool:
-    return measure is not None and float(measure) < 1.0
+    return bool(measure) and float(measure) < 1.0
+
+
+def alignment_cells(data: bytes) -> List[Cell]:
+    """
+    Read every cell of an EDOAL alignment in document order, unfiltered.
+
+    Parameters
+    ----------
+    data : bytes
+        Alignment file content.
+
+    Returns
+    -------
+    List[Cell]
+        ``(entity1, entity2, relation, measure)`` per cell; a missing element
+        or resource is ``None``.
+    """
+    cells = ET.fromstring(data).iter(f"{_ALIGNMENT_NS}Cell")
+    return [
+        (_resource(c, "entity1"), _resource(c, "entity2"), _text(c, "relation"), _text(c, "measure"))
+        for c in cells
+    ]
 
 
 def audit_edoal(path: Path, local: str) -> FileAudit:
@@ -217,14 +241,11 @@ def audit_edoal(path: Path, local: str) -> FileAudit:
     FileAudit
         Raw cell counts and every equivalence pair.
     """
-    cells = list(ET.parse(str(path)).getroot().iter(f"{_ALIGNMENT_NS}Cell"))
-    relations = Counter(_text(cell, "relation") or "" for cell in cells)
-    ends = [(_resource(cell, "entity1"), _resource(cell, "entity2")) for cell in cells]
-    malformed = sum(1 for (s, t), cell in zip(ends, cells) if not (s and t and _text(cell, "relation")))
-    equivalences = tuple(
-        (s, t) for (s, t), cell in zip(ends, cells) if s and t and _text(cell, "relation") == "="
-    )
-    partial = sum(1 for cell in cells if _is_partial(_text(cell, "measure")))
+    cells = alignment_cells(path.read_bytes())
+    relations = Counter(relation or "" for _, _, relation, _ in cells)
+    malformed = sum(1 for s, t, relation, _ in cells if not (s and t and relation))
+    equivalences = tuple((s, t) for s, t, relation, _ in cells if s and t and relation == "=")
+    partial = sum(1 for *_, measure in cells if _is_partial(measure))
     return FileAudit(local, len(cells), dict(relations), partial, malformed, equivalences)
 
 
@@ -525,8 +546,7 @@ def _n(value: int) -> str:
 
 
 def _table(header: List[str], rows: List[List[str]]) -> List[str]:
-    lines = ["| " + " | ".join(header) + " |", "|" + "|".join("---" for _ in header) + "|"]
-    return lines + ["| " + " | ".join(row) + " |" for row in rows] + [""]
+    return _provenance_table(header, rows) + [""]
 
 
 def _with_total(rows: List[Tuple[List[str], List[int]]], label: List[str]) -> List[List[str]]:

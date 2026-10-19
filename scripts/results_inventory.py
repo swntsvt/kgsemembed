@@ -36,12 +36,14 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from kgsemembed.evaluation.metrics import EVALUATION_PROTOCOL_VERSION  # noqa: E402
 from kgsemembed.verbalisation.base import annotation_predicates_digest  # noqa: E402
+from scripts.dataset_provenance import _table as _provenance_table  # noqa: E402
 
 _REPO_ROOT = Path(__file__).resolve().parents[1]
 _D1_KNOWN_PAIRS = 726
 _ANNOTATION_COMPONENTS = frozenset({"V1", "V2"})
 _ANNOTATION_DATASETS = frozenset({"D1", "D2"})
 _GIT_TIMEOUT_SECONDS = 30
+_REF_PREFIXES = ("refs/heads/", "refs/remotes/", "refs/tags/")
 
 
 @dataclass(frozen=True)
@@ -105,7 +107,8 @@ class CommitInfo:
     date, subject : str
         Committer date and subject line (empty when missing).
     on_develop : bool
-        ``develop`` contains the commit.
+        ``origin/develop`` (or, without it, the local ``develop``) contains
+        the commit.
     refs : Tuple[str, ...]
         Local branches, remote-tracking branches and tags containing it.
     """
@@ -235,7 +238,39 @@ def _git(*args: str) -> Optional[str]:
     return completed.stdout.strip()
 
 
-def commit_info(commit: str) -> CommitInfo:
+def short_ref(refname: str) -> str:
+    """Strip the ``refs/heads/``, ``refs/remotes/`` or ``refs/tags/`` prefix of a full ref name."""
+    for prefix in _REF_PREFIXES:
+        if refname.startswith(prefix):
+            return refname[len(prefix):]
+    return refname
+
+
+def containing_refs(commit: str) -> Tuple[str, ...]:
+    """
+    List the branches, remote-tracking branches and tags that contain a commit.
+
+    Parameters
+    ----------
+    commit : str
+        Full commit hash.
+
+    Returns
+    -------
+    Tuple[str, ...]
+        Short ref names, sorted; symbolic ``*/HEAD`` refs are left out.
+    """
+    listed = _git("for-each-ref", "--contains", commit, "--format=%(refname)", *_REF_PREFIXES)
+    names = (line for line in (listed or "").splitlines() if line and not line.endswith("/HEAD"))
+    return tuple(sorted(short_ref(name) for name in names))
+
+
+def develop_ref() -> str:
+    """Return ``origin/develop`` when this clone has it, else the local ``develop``."""
+    return "origin/develop" if _git("rev-parse", "--verify", "--quiet", "origin/develop") else "develop"
+
+
+def commit_info(commit: str, develop: str) -> CommitInfo:
     """
     Resolve a source commit against the local repository.
 
@@ -243,6 +278,8 @@ def commit_info(commit: str) -> CommitInfo:
     ----------
     commit : str
         Full commit hash from a result file.
+    develop : str
+        Ref the ``on_develop`` test uses, from :func:`develop_ref`.
 
     Returns
     -------
@@ -253,13 +290,8 @@ def commit_info(commit: str) -> CommitInfo:
     if shown is None:
         return CommitInfo(commit, False, "", "", False, ())
     date, subject = shown.split("\x00", 1)
-    on_develop = _git("merge-base", "--is-ancestor", commit, "develop") is not None
-    listed = _git(
-        "for-each-ref", "--contains", commit, "--format=%(refname:short)",
-        "refs/heads", "refs/remotes", "refs/tags",
-    )
-    refs = tuple(sorted(ref for ref in (listed or "").splitlines() if ref and ref != "origin/HEAD"))
-    return CommitInfo(commit, True, date, subject, on_develop, refs)
+    on_develop = _git("merge-base", "--is-ancestor", commit, develop) is not None
+    return CommitInfo(commit, True, date, subject, on_develop, containing_refs(commit))
 
 
 # ---------------------------------------------------------------------------
@@ -268,8 +300,7 @@ def commit_info(commit: str) -> CommitInfo:
 
 
 def _table(header: List[str], rows: List[List[str]]) -> List[str]:
-    lines = ["| " + " | ".join(header) + " |", "|" + "|".join("---" for _ in header) + "|"]
-    return lines + ["| " + " | ".join(row) + " |" for row in rows] + [""]
+    return _provenance_table(header, rows) + [""]
 
 
 def _condition_key(condition_id: str) -> Tuple[str, int]:
@@ -400,9 +431,10 @@ def _preamble(records: Sequence[ResultRecord], current: str) -> List[str]:
         "- **Annotation digest** matters only where V1 or V2 text is read on D1 or D2; elsewhere the",
         "  #136 change left the text byte-identical, so `absent` is expected.",
         f"- **n_train_refs** must be {_D1_KNOWN_PAIRS} on D1 (#137 known pairs); D5 records its training links.",
-        "- **Local refs** are read from this clone, so they can differ on another machine. Squash merges",
-        "  mean no result commit is an ancestor of `develop`; a commit with no ref may still be",
-        "  reachable on GitHub through `refs/pull/<n>/head`.",
+        "- **On develop** tests `origin/develop` (the local `develop` only when the clone has no",
+        "  remote-tracking copy). **Local refs** are read from this clone, so they can differ on",
+        "  another machine. Squash merges mean no result commit is an ancestor of `develop`; a",
+        "  commit with no ref may still be reachable on GitHub through `refs/pull/<n>/head`.",
         "",
     ]
 
@@ -447,7 +479,8 @@ def main() -> None:
     np.random.seed(42)
     args = _build_arg_parser().parse_args()
     records = [record for root in args.results_dirs for record in load_records(Path(root))]
-    infos = [commit_info(commit) for commit in sorted({record.git_commit for record in records})]
+    develop = develop_ref()
+    infos = [commit_info(commit, develop) for commit in sorted({record.git_commit for record in records})]
     output = Path(args.output)
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text("\n".join(build_report(records, infos)), encoding="utf-8")

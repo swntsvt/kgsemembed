@@ -41,13 +41,42 @@ def test_compare_alignment_tells_formatting_from_content() -> None:
     base = _alignment(("a", "x"), ("b", "y"))
     assert checks.compare_alignment(base, base) == "identical"
     assert checks.compare_alignment(base, _alignment(("a", "x"), ("b", "y"), indent="  ")) == \
-        "same cells, formatting differs"
+        "same cells and header, whitespace differs"
     assert checks.compare_alignment(base, _alignment(("b", "y"), ("a", "x"))) == "same cells, order differs"
     assert checks.compare_alignment(base, _alignment(("a", "x"))) == "DIFFERENT cells (2 local, 1 release)"
 
 
 def test_alignment_cells_reads_relation_and_measure() -> None:
     assert checks.alignment_cells(_alignment(("a", "x"))) == [("a", "x", "=", "1.0")]
+
+
+def test_compare_alignment_detects_a_header_difference() -> None:
+    base = _alignment(("a", "x"))
+    other = base.replace(b"<Alignment>", b"<Alignment><onto1>http://other</onto1>")
+    assert checks.compare_alignment(base, other) == "same cells, header differs"
+    spaced = base.replace(b"<Alignment>", b"<Alignment>\n   ")
+    assert checks.compare_alignment(base, spaced) == "same cells and header, whitespace differs"
+
+
+def test_compare_alignment_detects_a_moved_map_wrapper() -> None:
+    onto = b"<onto1>http://o</onto1>"
+    outside = _alignment(("a", "x")).replace(b"<Alignment>", b"<Alignment>" + onto)
+    inside = outside.replace(onto + b"<map><Cell>", b"<map>" + onto + b"<Cell>")
+    assert inside != outside
+    assert checks.alignment_header(inside) == checks.alignment_header(outside)
+    assert checks.compare_alignment(outside, inside) == "same cells and header, element nesting differs"
+
+
+def test_alignment_header_skips_cells() -> None:
+    header = checks.alignment_header(_alignment(("a", "x"), ("b", "y")))
+    tags = [tag.split("}")[1] for tag, _, _ in header]
+    assert tags == ["RDF", "Alignment"]
+
+
+def test_d5_status() -> None:
+    assert checks.d5_status("", "a") == "missing locally"
+    assert checks.d5_status("a", "") == "not in archive"
+    assert (checks.d5_status("a", "a"), checks.d5_status("a", "b")) == ("identical", "DIFFERENT")
 
 
 def test_check_d3_maps_case_and_reports_unpaired_members(tmp_path: Path) -> None:
@@ -72,8 +101,10 @@ def test_check_d5_compares_every_loader_file(tmp_path: Path) -> None:
         members[checks.OPENEA_PREFIX + name] = name.encode()
     members[checks.OPENEA_PREFIX + "ent_links"] = b"changed"
     del members[checks.OPENEA_PREFIX + "rel_triples_1"]
+    (local / "rel_triples_2").unlink()
     rows = {r[0]: r for r in checks.check_d5(tmp_path, _zip(tmp_path / "openea.zip", members))}
     assert rows["rel_triples_1"][3] == "not in archive"
+    assert rows["rel_triples_2"][1:] == ["", hashlib.sha256(b"rel_triples_2").hexdigest(), "missing locally"]
     assert rows["ent_links"][3] == "DIFFERENT"
     assert rows["attr_triples_1"][3] == "identical"
     assert rows["attr_triples_1"][2] == hashlib.sha256(b"attr_triples_1").hexdigest()

@@ -83,13 +83,32 @@ def tracked_files(data_dir: Path) -> List[TrackedFile]:
     ]
 
 
-def sha256(path: Path) -> str:
-    """Return the SHA-256 hex digest of a file, read in chunks."""
-    digest = hashlib.sha256()
+def file_digest(path: Path, algorithm: str) -> str:
+    """
+    Return the hex digest of a file under a :mod:`hashlib` algorithm.
+
+    Parameters
+    ----------
+    path : Path
+        File to hash, read in chunks.
+    algorithm : str
+        :mod:`hashlib` algorithm name, e.g. ``"sha256"``.
+
+    Returns
+    -------
+    str
+        Hex digest.
+    """
+    digest = hashlib.new(algorithm)
     with path.open("rb") as handle:
         while chunk := handle.read(_CHUNK):
             digest.update(chunk)
     return digest.hexdigest()
+
+
+def sha256(path: Path) -> str:
+    """Return the SHA-256 hex digest of a file, read in chunks."""
+    return file_digest(path, "sha256")
 
 
 def correspondence_count(path: Path) -> int:

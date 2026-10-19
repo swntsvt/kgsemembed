@@ -74,9 +74,12 @@ Aggregation:
 
 *Recall ceiling* = test reference sources with at least one gold target in
 their list ÷ test references: the best recall any condition could reach with
-a perfect order and threshold. On D1 it is 0.077 below candidate recall@20
-because 563 test sources have two or more gold targets but can predict only
-one. D3's column value is a mean of per-pair values (candidate recall@20
+a perfect order and threshold. It combines two limits. One prediction
+per source alone caps recall at test reference sources ÷ test references
+(D1: 4,605 / 5,226 = 0.881). The stage-1 lists then remove every source whose
+gold targets are all missing (D1: 525), giving 0.781. On D1 the ceiling is
+0.077 below candidate recall@20 because 563 test sources have two or more gold
+targets but can predict only one. D3's column value is a mean of per-pair values (candidate recall@20
 0.8621), so its pooled figures here are for orientation only. Counts are from
 `reference_statistics.md` §4.
 
@@ -219,8 +222,10 @@ results.
 - Every file is byte-identical to MELT `conference/conference-v1`.
 - **Reference = ra1, confirmed** (`release_checks.md`): all 21
   `reference.rdf` files hold exactly the cells, in order, of the Conference
-  track's `reference-alignment.zip`. 20 are byte-identical; `conference-confof`
-  differs only in whitespace and line breaks.
+  track's `reference-alignment.zip`. 20 are byte-identical. `conference-confof`
+  has the same cells and header elements, but in the original its first
+  `<map>` is opened before the `onto1`/`onto2` declarations and encloses them.
+  The MELT copy used here moves that `<map>` after them; nothing else changes.
 - ra1 is the original reference. ra2 is its conflict-resolved transitive
   closure, and rar2 additionally resolves consistency and conservativity
   violations [OAEI Conference evaluation].

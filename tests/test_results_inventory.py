@@ -80,11 +80,32 @@ def test_candidate_hashes_group_by_pair() -> None:
 
 
 def test_commit_info_for_missing_and_existing_commits() -> None:
-    missing = inventory.commit_info("0" * 40)
+    missing = inventory.commit_info("0" * 40, "develop")
     assert (missing.exists, missing.refs, missing.on_develop) == (False, (), False)
     head = inventory._git("rev-parse", "HEAD")
-    info = inventory.commit_info(head)
+    info = inventory.commit_info(head, "HEAD")
     assert info.exists and info.subject and len(info.date) == 10
+    assert info.on_develop
+
+
+def test_short_ref_strips_known_prefixes_only() -> None:
+    assert inventory.short_ref("refs/heads/develop") == "develop"
+    assert inventory.short_ref("refs/remotes/origin/fix/issue-1") == "origin/fix/issue-1"
+    assert inventory.short_ref("refs/tags/results/issue-120") == "results/issue-120"
+    assert inventory.short_ref("refs/pull/146/head") == "refs/pull/146/head"
+
+
+def test_containing_refs_never_lists_symbolic_head(monkeypatch) -> None:
+    listed = "refs/remotes/origin/HEAD\nrefs/remotes/origin/main\nrefs/tags/t\n"
+    monkeypatch.setattr(inventory, "_git", lambda *args: listed)
+    assert inventory.containing_refs("a" * 40) == ("origin/main", "t")
+
+
+def test_develop_ref_prefers_the_remote_tracking_branch(monkeypatch) -> None:
+    monkeypatch.setattr(inventory, "_git", lambda *args: "abc")
+    assert inventory.develop_ref() == "origin/develop"
+    monkeypatch.setattr(inventory, "_git", lambda *args: None)
+    assert inventory.develop_ref() == "develop"
 
 
 def test_group_section_lists_conditions_in_numeric_order() -> None:

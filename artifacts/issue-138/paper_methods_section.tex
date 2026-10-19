@@ -29,7 +29,8 @@ removed by its authors.
 All input files are byte-identical to the published releases: D1--D4 to the
 OAEI track repository distributed through MELT~\cite{hertling2019melt}, D3's
 references additionally to the Conference track's ra1 archive (all 21 contain
-the same correspondences; one differs only in whitespace), and D5 to the
+the same correspondences and ontology declarations; in one, the MELT copy
+moves a wrapper element that the original misplaces), and D5 to the
 OpenEA v2.0 archive, whose checksum matches the published one. Every
 reference correspondence is an equivalence with confidence 1.0; none was
 filtered, normalised or deduplicated. The D4 schema/instance partition, by the
@@ -114,8 +115,10 @@ reference \emph{correspondences} whose target is in the source's top $k$.
 top-1 predictions on the test population; recall is over all test
 references, including those whose source was never ranked (167 on D5).
 Because each source predicts one target, a source with several gold targets
-can recover only one of them, which caps D1 recall at 0.781 even before
-candidate generation. Each column reports one pair, except D3, which reports
+can recover only one of them. On D1 this rule alone caps recall at 0.881
+(4,605 test sources for 5,226 test references); together with the stage-1
+candidate lists, which miss every gold target of 525 test sources, the cap
+is 0.781. Each column reports one pair, except D3, which reports
 the unweighted mean over its 21 pairs. Statistical tests treat the dataset
 columns as observations, since D3's pairs share ontologies and are not
 independent.

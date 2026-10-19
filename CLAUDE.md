@@ -907,8 +907,9 @@ python scripts/annotation_fix_report.py --old_dir data/results/ \
     only verified BibTeX fields.
 - **Provenance**: every input file of all five datasets is byte-identical to
   its published release.
-  - D3's references are ra1 (20 byte-identical; `conference-confof` differs in
-    whitespace only).
+  - D3's references are ra1: 20 byte-identical. `conference-confof` has the
+    same cells and header, but the original opens its first `<map>` before
+    the `onto1`/`onto2` declarations, enclosing them; MELT moved it after.
   - D5 matches the OpenEA v2.0 archive.
   - No reference cell is non-`=`, partial, malformed or duplicated, so the
     loader's filters drop nothing.
@@ -917,8 +918,10 @@ python scripts/annotation_fix_report.py --old_dir data/results/ \
 - **Reference structure**: D1's 6,530 test mappings cover 5,756 sources and
   6,104 targets. 1,477 mappings belong to a source with several targets, and
   563 of 4,605 test sources have 2+ gold targets.
-  - One prediction per source therefore caps D1 recall at 0.781, below
-    candidate recall@20 0.858.
+  - One prediction per source alone caps D1 recall at 0.881 (4,605 /
+    5,226). With the stage-1 lists, which miss every gold target of 525 test
+    sources, the cap is 0.781, against candidate recall@20 0.858. Don't
+    credit 0.781 to the top-1 rule alone.
   - D2–D5 are almost or entirely 1:1.
   - D5 has 188 reference sources with no triples (167 test) and 6 absent
     targets.
