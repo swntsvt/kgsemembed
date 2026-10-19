@@ -69,6 +69,15 @@ def test_flags_report_every_reason() -> None:
     assert inventory.flags(_record(), _DIGEST, {("D2", "p"): {"c", "x"}}) == ["candidate hash differs within the pair"]
 
 
+def test_v8_text_before_145_is_flagged_only_where_it_changed() -> None:
+    current = inventory.v8_exclusions_digest()
+    assert inventory.flags(_record(strategy="V2+V8"), _DIGEST, {}) == ["V8 text before #145"]
+    assert inventory.flags(_record(strategy="V2+V8", v8_exclusions_sha256=current), _DIGEST, {}) == []
+    assert inventory.flags(_record(strategy="V8", dataset_id="D4_schema"), _DIGEST, {}) == []
+    assert inventory.flags(_record(strategy="V8", dataset_id="D3"), _DIGEST, {}) == []
+    assert inventory.reads_v8_exclusions(_record(strategy="V8", dataset_id="D5"))
+
+
 def test_absent_digest_is_not_flagged_where_text_did_not_change() -> None:
     record = _record(strategy="V3", annotation_predicates_sha256=None)
     assert inventory.flags(record, _DIGEST, {}) == []

@@ -19,7 +19,7 @@ Phase 2 datasets: D1 (SNOMED-FMA Body), D2 (Anatomy MA-NCI), D3 (Conference,
 21 pairs), D4 (memoryalpha-stexpanded, schema and instance), D5
 (DBpedia-Wikidata 15K EN, OpenEA). Five datasets total.
 
-**Current focus**: Issue #139 — re-ranking MRR and source-level Hits@1 as the paper's primary metrics (F1 secondary), one definition of each metric's unit, ceiling and 1:N handling, and tables that show the top-20 ceiling, D3 micro F1 and F1's reference counts (`artifacts/issue-139/`). Previously #138 — dataset and reference-alignment provenance, each dataset's protocol against its benchmark's official one, and the paper's datasets/protocol text (`artifacts/issue-138/`); #137 — stage-1 n-gram ranking baseline (B0) and the written evaluation protocol (`artifacts/issue-137/`); #136 — V1/V2 read the synonym and definition predicates D1/D2 actually use; #134 — text-serialization-order experiment on D1 and D2 (effect of item order with the selected set held fixed; order frozen on D2 validation before any test evaluation); #128, #130 and #131 merged (Phase 2)
+**Current focus**: Issue #145 — V8 excludes annotation predicates (FMA, oboInOwl, OWL axiom annotations, DBkWik page text, description/name vocabularies) instead of listing them as relationships; text inventory, per-predicate classification and V8 re-runs (`artifacts/issue-145/`). Previously #139 — re-ranking MRR and source-level Hits@1 as the paper's primary metrics (F1 secondary), one definition of each metric's unit, ceiling and 1:N handling, and tables that show the top-20 ceiling, D3 micro F1 and F1's reference counts (`artifacts/issue-139/`). Previously #138 — dataset and reference-alignment provenance, each dataset's protocol against its benchmark's official one, and the paper's datasets/protocol text (`artifacts/issue-138/`); #137 — stage-1 n-gram ranking baseline (B0) and the written evaluation protocol (`artifacts/issue-137/`); #136 — V1/V2 read the synonym and definition predicates D1/D2 actually use; #134 — text-serialization-order experiment on D1 and D2 (effect of item order with the selected set held fixed; order frozen on D2 validation before any test evaluation); #128, #130 and #131 merged (Phase 2)
 
 ## Git Workflow
 
@@ -785,7 +785,8 @@ Seven conditions vary one dimension at a time on D1 at 48 tokens
 - `get_annotation_values()` accepts `en`, `en-*` and untagged literals and
   resolves a non-literal object (D2's reified `oboInOwl:Synonym` nodes) to
   its own `rdfs:label`. `get_all_literals()` is unchanged; V8 still uses it
-  (its own annotation leak is #145). V7 inherits the fix through V2.
+  (for a predicate entity's `rdfs:comment` definition; V8's annotation leak
+  was fixed separately in #145). V7 inherits the fix through V2.
 - Every result records `annotation_predicates_sha256`
   (`annotation_predicates_digest()`; predicate lists plus value rules,
   pinned in `tests/test_v1_v2.py`). Results without it predate #136.
@@ -825,6 +826,61 @@ python -m kgsemembed.pipeline.run_experiment \
     --datasets D1 D2 --data_dir data/ --results_dir data/results_issue136/
 python scripts/annotation_fix_report.py --old_dir data/results/ \
     --new_dir data/results_issue136/
+```
+
+## V8 annotation-predicate exclusion (#145)
+
+- **Bug**: V8 (`RelationalSignatureVerbaliser`) excluded only `rdf:type`,
+  `rdfs:label`, `rdfs:comment`, three SKOS predicates and `IAO_0000115`, so
+  every other annotation predicate appeared as a "relationship" (D2:
+  `Outgoing relationships: has definition, has related synonym, sub class
+  of.`). V8's measured effect (C20 vs C10, group E) mixed relational
+  structure with the *presence* of annotations.
+- **Exclusion set** (`EXCLUSION_FAMILIES` in `verbalisation/v8.py`, fixed
+  from predicate semantics, never from alignments; both directions):
+  `type_and_label`; `roles_v1_annotation` (every `roles_v1` predicate whose
+  role is not `core` or `disjointness`: FMA/SNOMED/oboInOwl names, synonyms,
+  definitions, identifiers, non-English, other); `owl_annotation` (OWL 2
+  built-ins: `rdfs:comment`/`seeAlso`/`isDefinedBy`, `owl:versionInfo`, …);
+  `owl_axiom_annotation` (`owl:annotatedSource`/`Property`/`Target`: every
+  FMA class is the `annotatedSource` of one); `skos_documentation`,
+  `dublin_core` (title/description/rights), `schema_org`
+  (name/alternateName/description), `foaf` (names, nick, depiction,
+  thumbnail); `dbkwik_page` (D4 abstract, thumbnail, wiki-link anchor text,
+  external links).
+- **Kept**: `owl:disjointWith` (a logical axiom, as on D3), OWL/RDFS
+  structure and restriction syntax, SKOS `broader`/`related`,
+  `dcterms:subject`, wiki links, D4 infobox properties and every DBpedia and
+  Wikidata property on D5 (facts, including literal attributes and
+  identifiers such as `imdbId`/`P345`).
+- `exclusion_family(predicate)` names the rule; every result records
+  `v8_exclusions_sha256` (`v8_exclusions_digest()`, pinned in
+  `tests/test_v8.py`). V8 results without it predate #145;
+  `scripts/results_inventory.py` flags them on D1, D2, D4_instance and D5.
+- **Inventory** (`artifacts/issue-145/`): `v8_text_inventory.md` — V8 text
+  changes for D1 100% of candidates (0 sources: SNOMED's SKOS annotations
+  were already excluded), D2 11.5% of sources / 99.6% of candidates,
+  D4_instance ~100% of both sides, D5 10.4% / 72.9%; D3 and D4_schema are
+  byte-identical, so their results stand. `predicate_classification.md`
+  (+ `.csv`: every predicate per dataset, side and direction, with its
+  decision and whether it was excluded before #145); no predicate declared
+  `owl:AnnotationProperty` in any dataset is kept.
+- **Re-runs**: C9, C10, C11, C12, C13, C15, C16, C18, C19 on D1, D2, D4 and
+  D5 into `data/results_issue145/` (D4_schema re-runs must reproduce);
+  `scripts/v8_fix_report.py` → `artifacts/issue-145/results_comparison.md`
+  (per-condition before/after, C10 − C20 per column, group E before/after).
+
+```bash
+# Text inventory and predicate classification (no model, ~5 min each).
+PYTHONPATH=<checkout of 6c71421>/src python scripts/v8_inventory.py dump --output old.json
+python scripts/v8_inventory.py dump --output new.json
+python scripts/v8_inventory.py compare --old old.json --new new.json
+python scripts/v8_inventory.py predicates
+# Re-runs (long: run in tmux) and the before/after report.
+python -m kgsemembed.pipeline.run_experiment \
+    --conditions C9 C10 C11 C12 C13 C15 C16 C18 C19 --datasets D1 D2 D4 D5 \
+    --data_dir data/ --results_dir data/results_issue145/
+python scripts/v8_fix_report.py --old_dir data/results/ --new_dir data/results_issue145/
 ```
 
 ## Stage-1 n-gram baseline (#137)
@@ -1145,7 +1201,7 @@ Every file written by `run_experiment.py` contains:
                  "n_val_unmatched_sources", "n_test_unmatched_sources",
                  "reference_complete"},
   "n_source_entities", "n_candidates_per_entity", "candidates_sha256",
-  "annotation_predicates_sha256",
+  "annotation_predicates_sha256", "v8_exclusions_sha256",
   "hf_revision", "kgsemembed_version",
   "python_version", "run_timestamp",
   "versions": {"python", "torch", "transformers", "sentence_transformers",
