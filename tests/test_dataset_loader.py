@@ -299,12 +299,17 @@ def test_split_shuffles_rather_than_slicing_sorted_order() -> None:
 
 
 def _write_pair_dataset(root: Path, name: str, count: int) -> None:
-    """Write one ``source/target/reference`` pair directory under *root*."""
+    """Write one ``source/target/reference`` pair directory under *root*.
+
+    D1 also gets an empty Bio-ML ``input.rdf`` (validation mappings).
+    """
     pair_dir = root / name
     pair_dir.mkdir(parents=True)
     (pair_dir / "source.rdf").write_text(_ontology_xml("src", count), encoding="utf-8")
     (pair_dir / "target.rdf").write_text(_ontology_xml("tgt", count), encoding="utf-8")
     (pair_dir / "reference.rdf").write_text(_edoal_xml(count), encoding="utf-8")
+    if name == "d1_snomed_fma":
+        (pair_dir / "input.rdf").write_text(_edoal_xml(0), encoding="utf-8")
 
 
 @pytest.mark.parametrize(
@@ -320,6 +325,24 @@ def test_d1_and_d2_dispatch_to_20_80_val_test_split(
     assert len(pair.val_refs) == 20
     assert len(pair.test_refs) == 80
     assert set(pair.val_refs).isdisjoint(pair.test_refs)
+
+
+def test_d1_loads_bio_ml_validation_mappings_as_known_pairs(tmp_path: Path) -> None:
+    _write_pair_dataset(tmp_path, "d1_snomed_fma", 100)
+    pair_dir = tmp_path / "d1_snomed_fma"
+    (pair_dir / "input.rdf").write_text(_edoal_xml(3), encoding="utf-8")
+    (pair_dir / "reference.rdf").write_text(_edoal_xml(100), encoding="utf-8")
+    pair = load_dataset("D1", tmp_path)[0]
+
+    assert pair.train_refs == _parse_alignment_refs(pair_dir / "input.rdf")
+    assert len(pair.val_refs) == 20 and len(pair.test_refs) == 80
+
+
+def test_d1_without_bio_ml_validation_mappings_raises(tmp_path: Path) -> None:
+    _write_pair_dataset(tmp_path, "d1_snomed_fma", 10)
+    (tmp_path / "d1_snomed_fma" / "input.rdf").unlink()
+    with pytest.raises(DataError, match="input.rdf"):
+        load_dataset("D1", tmp_path)
 
 
 def test_d3_dispatch_retains_20_80_val_test_split(tmp_path: Path) -> None:

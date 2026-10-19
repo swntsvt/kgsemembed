@@ -135,3 +135,15 @@ def test_partial_reference_keeps_only_predictions_that_touch_the_gold_standard()
                           train_refs=[("q", "r")]))
     kept = judgeable_ranked_lists(pair, _JUDGE_LISTS)
     assert [ranked[0][0] for ranked in kept] == ["t", "u2", "u3"]
+
+
+def test_known_pairs_are_removed_from_every_ranked_list() -> None:
+    pair = _pair(["t", "k"], test_refs=[("t", "y")], train_refs=[("t", "w"), ("k", "z")])
+    ranked = [[("t", "w", 0.9), ("t", "y", 0.8)], [("k", "z", 0.9), ("k", "q", 0.5)]]
+    assert judgeable_ranked_lists(pair, ranked) == [[("t", "y", 0.8)], [("k", "q", 0.5)]]
+
+
+def test_lists_are_unchanged_without_known_pairs() -> None:
+    pair = _pair(["t"], test_refs=[("t", "y")])
+    ranked = [[("t", "w", 0.9), ("t", "y", 0.8)]]
+    assert judgeable_ranked_lists(pair, ranked) is ranked

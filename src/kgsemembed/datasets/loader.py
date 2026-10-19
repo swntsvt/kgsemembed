@@ -34,6 +34,7 @@ _RDF_NS = "http://www.w3.org/1999/02/22-rdf-syntax-ns#"
 _EQUIVALENCE_RELATION = "="
 
 _SPLIT_SEED = 42
+_D1_KNOWN_MAPPINGS = "input.rdf"
 
 _CLASS_TYPES = (OWL.Class, RDFS.Class, SKOS.Concept)
 _PREDICATE_TYPES = (OWL.ObjectProperty, OWL.DatatypeProperty, RDF.Property)
@@ -78,7 +79,10 @@ class AlignmentPair:
     test_refs : list[EntityPair]
         Test reference pairs, used only for final metric computation.
     train_refs : list[EntityPair]
-        Training reference pairs; empty for tracks with no train slice.
+        Known correct pairs outside the validation and test slices: D5's
+        OpenEA training links and D1's Bio-ML validation mappings.  Never
+        trained on; excluded from scoring (see
+        :mod:`kgsemembed.evaluation.population`).  Empty for other tracks.
     source_id : str
         Short identifier of the source ontology, e.g. ``"mouse"``.
     target_id : str
@@ -689,12 +693,30 @@ def load_pair_from_dir(
 
 
 def _load_d1(data_dir: Path) -> list[AlignmentPair]:
+    """
+    Load D1 with Bio-ML's validation mappings as known pairs.
+
+    ``reference.rdf`` holds only the 6,530 test mappings of Bio-ML's
+    unsupervised setting; its 726 validation mappings ship separately as
+    ``input.rdf``.  They are loaded into ``train_refs`` so that predicting one
+    is neither a true nor a false positive, as Bio-ML's own evaluation ignores
+    them.  ``reference.rdf`` alone is split 20/80, exactly as before.
+
+    Parameters
+    ----------
+    data_dir : Path
+        Dataset root directory.
+
+    Returns
+    -------
+    list[AlignmentPair]
+        The single D1 pair.
+    """
     pair_dir = data_dir / "d1_snomed_fma"
-    return [
-        _load_rdf_pair(
-            pair_dir, "d1_snomed_fma", ("snomed", "fma"), "D1", "class", _split_val_test_20_80
-        )
-    ]
+    pair = _load_rdf_pair(
+        pair_dir, "d1_snomed_fma", ("snomed", "fma"), "D1", "class", _split_val_test_20_80
+    )
+    return [replace(pair, train_refs=_parse_alignment_refs(pair_dir / _D1_KNOWN_MAPPINGS))]
 
 
 def _load_d2(data_dir: Path) -> list[AlignmentPair]:

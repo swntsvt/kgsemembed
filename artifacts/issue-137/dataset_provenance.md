@@ -5,6 +5,7 @@
 | D1 | d1_snomed_fma/source.rdf | a0fb689dde7b95bfe737f780fc869d73b1b3b59ae8586df6076996507f92a091 | 13054990 |  | identical |
 | D1 | d1_snomed_fma/target.rdf | c1777ae5546dd78fc8750e312460da58d1ea9322e84a5f0a54c7b7312fd6fd57 | 171920643 |  | identical |
 | D1 | d1_snomed_fma/reference.rdf | de7358d1841fed495d47257dd244e0fc630cdde088cd352b164fb6b3b9f7d388 | 1666982 | 6530 | identical |
+| D1 | d1_snomed_fma/input.rdf | a1754cc474a3035e36cf514ef901e60ee92e2855c0f229a9542e68745aebc914 | 185626 | 726 | identical |
 | D2 | d2_anatomy/source.rdf | 93756393d6306c8f332c884401aa447cc4b2557f0a6be3e0efd988a943cb68f8 | 1402405 |  | identical |
 | D2 | d2_anatomy/target.rdf | 5c1ca432d9845f1abb36ecfce313df46d8c56d2fb4137d0590ec4e4a6a9b05bf | 3436928 |  | identical |
 | D2 | d2_anatomy/reference.rdf | b6a6b12f3e7a786e5b58c4898024f0f483426e9036bdc3939aa61b046dbc26c4 | 329284 | 1516 | identical |
@@ -82,9 +83,3 @@
 | D5 | d5_openea/D_W_15K_V2/721_5fold/1/train_links | f704721dc162e4c252b9970c3c8911b73a6b594e2b16fcf1fe0caa5060639333 | 226522 | 3000 | not in the MELT repository |
 | D5 | d5_openea/D_W_15K_V2/721_5fold/1/valid_links | 8f74fa11c6f1129d9cfa43375e415ad8f867fb1960748643873c659db40ccb70 | 113206 | 1500 | not in the MELT repository |
 | D5 | d5_openea/D_W_15K_V2/721_5fold/1/test_links | 596bfba524efb6416546a47b01c8434a623d54134289551497e8be04e85d4301 | 792491 | 10500 | not in the MELT repository |
-
-## Release files not read by the experiments
-
-| Dataset | Release file | SHA-256 | Correspondences |
-|---|---|---|---|
-| D1 | bio-ml-equiv-unsupervised/2022/snomed.body-fma.body/input.rdf | a1754cc474a3035e36cf514ef901e60ee92e2855c0f229a9542e68745aebc914 | 726 |

@@ -830,10 +830,18 @@ python scripts/annotation_fix_report.py --old_dir data/results/ \
   byte-identical to the OAEI MELT release (D1 = Bio-ML 2022
   `bio-ml-equiv-unsupervised/2022/snomed.body-fma.body`; SNOMED CT
   20220317, FMA 4.14.0). D1's `reference.rdf` is that setting's 6,530 test
-  mappings out of 7,256. The 726 Bio-ML validation mappings (`input.rdf`)
-  are not loaded, so their sources count as unmatched (false positives when
-  predicted correctly), lowering absolute D1 precision/F1 for every method
-  alike. D5 is recorded by SHA-256 only.
+  mappings out of 7,256. D5 is recorded by SHA-256 only.
+- **D1 known pairs (fix)**: the 726 Bio-ML validation mappings
+  (`input.rdf`, now required by the loader) are loaded into `train_refs`.
+  556 sources with no other reference are excluded from both populations;
+  for the other 157, the known pair is removed from the ranked list
+  (`judgeable_ranked_lists`), so it is neither a distractor nor a
+  prediction. Before the fix they were unmatched sources, and a correct
+  prediction was a false positive. B0 D1: FP 7,576 → 7,261, F1 0.2986 →
+  0.3062, MRR 0.7035 → 0.7055; D2–D5 unchanged (D5 checked identical). D1
+  results without `population.n_train_refs == 726` predate the fix; every
+  D1 condition and B0 must be re-run before D1 is compared (the D1 numbers
+  above are pre-fix). Historical ablation trees (#122–#134) are not re-run.
 - `artifacts/issue-137/` (tracked): `evaluation_protocol.md` (protocol,
   metric definitions, scope, limitations, D5 analysis),
   `baseline_comparison.md`, `dataset_provenance.md`.
@@ -846,8 +854,11 @@ python scripts/annotation_fix_report.py --old_dir data/results/ \
 
 ```
 D1  SNOMED-FMA Body (Bio-ML, OAEI)        Classes only
-    data/d1_snomed_fma/source.rdf, target.rdf, reference.rdf
+    data/d1_snomed_fma/source.rdf, target.rdf, reference.rdf, input.rdf
     Split: 0/20/80 by source entity, seeded shuffle, EDOAL reference
+    reference.rdf = Bio-ML unsupervised test mappings (6,530), split 20/80;
+    input.rdf = its validation mappings (726), loaded as train_refs (known
+    pairs, never scored)
 
 D2  Anatomy MA-NCI (OAEI Anatomy Track)    Classes only
     data/d2_anatomy/source.rdf, target.rdf, reference.rdf
@@ -921,7 +932,8 @@ with version 2 and are rejected by `evaluation/stats.py`.
 - **Populations** (`evaluation/population.py`): each source is scored in
   exactly one of validation or test. A source with a test reference is test;
   else with a validation reference, validation; else with a training reference
-  (D5 only), excluded. Unmatched sources (no reference anywhere) are split
+  (D5 train links, D1 Bio-ML validation mappings), excluded. A training
+  (known) pair is also removed from every ranked list before scoring. Unmatched sources (no reference anywhere) are split
   between validation and test at the slice's reference-source ratio by a
   stable `zlib.crc32` draw; their predictions are false positives (the OAEI
   complete-reference convention), so tuning sees the same FP pressure as test.

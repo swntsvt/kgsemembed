@@ -15,7 +15,7 @@ unchanged: thresholds are tuned on the validation population only.
 Results are written to ``{results_dir}/B0/{dataset_id}/{pair}_results.json``
 with the C-condition schema (no model fields), beside a
 ``{pair}_entities.json`` sidecar holding each test reference source's best
-gold rank.  B0 is not a registered condition and never writes into
+gold rank, counted as MRR counts it (known D1 pairs removed).  B0 is not a registered condition and never writes into
 ``data/results/``.
 
 Usage
@@ -36,6 +36,7 @@ from typing import Dict, List, Optional, Tuple
 from kgsemembed.candidates.ngram import NgramConfig, load_candidates, score_pair_candidates
 from kgsemembed.datasets import AlignmentPair, load_dataset
 from kgsemembed.evaluation.metrics import EntityPair, RankedList, _reference_map, compute_recall_at_k
+from kgsemembed.evaluation.population import judgeable_ranked_lists
 from kgsemembed.pipeline.run_experiment import (
     _COUNT_KEYS,
     _METRIC_KEYS,
@@ -273,7 +274,7 @@ def evaluate_pair(pair: AlignmentPair, data_dir: str | Path) -> Tuple[dict, List
     ranked_lists = build_ranked_lists(pair, scored)
     payload = result_payload(pair, _evaluate_pair(pair, ranked_lists), stored)
     payload["candidate_recall_at_20"] = compute_recall_at_k(ranked_lists, pair.test_refs, NGRAM_CONFIG.top_k)
-    return payload, gold_rank_records(ranked_lists, pair.test_refs)
+    return payload, gold_rank_records(judgeable_ranked_lists(pair, ranked_lists), pair.test_refs)
 
 
 def run_pair(pair: AlignmentPair, data_dir: str | Path, results_dir: str | Path, force: bool) -> None:

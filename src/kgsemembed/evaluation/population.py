@@ -9,6 +9,12 @@ Assignment rules
 * Otherwise, a source with a validation reference is scored on validation.
 * Otherwise, a source with a training reference is excluded from both: it is
   a known match, so counting its prediction as a false positive would be wrong.
+  Training references are D5's OpenEA training links and D1's Bio-ML
+  validation mappings (``input.rdf``).
+* A known (training) pair is also removed from every ranked list, so for a
+  scored source it is neither a distractor ranked above the gold target nor a
+  prediction; Bio-ML's evaluation ignores these mappings in the same way.  See
+  :func:`judgeable_ranked_lists`.
 * A source with no reference in any slice is *unmatched*.  Under the OAEI
   convention that the reference alignment is complete, predicting a target for
   it is a false positive.  Unmatched sources are shared between validation and
@@ -150,16 +156,29 @@ def restrict_ranked_lists(
 
 
 
+def _without_known_pairs(
+    pair: AlignmentPair, ranked_lists: List[RankedList]
+) -> List[RankedList]:
+    """Remove every ``(source, target)`` training pair from the ranked lists."""
+    known = set(pair.train_refs)
+    if not known:
+        return ranked_lists
+    return [[entry for entry in ranked if entry[:2] not in known] for ranked in ranked_lists]
+
+
 def judgeable_ranked_lists(
     pair: AlignmentPair, ranked_lists: List[RankedList]
 ) -> List[RankedList]:
     """
-    Drop the predictions a partial reference alignment cannot judge.
+    Drop the candidates and predictions the reference alignment cannot judge.
 
-    Under a complete reference every ranked list is kept.  Under a partial
-    one, an unreferenced source's list is kept only when its top-ranked
-    target is a reference target, i.e. its prediction contradicts a gold
-    mapping.  Reference sources are always kept.
+    Known training pairs are first removed from every list: they are correct,
+    so they can be neither a distractor nor a false positive.  Pairs without
+    training references are unaffected.  Then, under a complete reference,
+    every ranked list is kept.  Under a partial one, an unreferenced source's
+    list is kept only when its top-ranked target is a reference target, i.e.
+    its prediction contradicts a gold mapping.  Reference sources are always
+    kept.
 
     Parameters
     ----------
@@ -171,8 +190,10 @@ def judgeable_ranked_lists(
     Returns
     -------
     List[RankedList]
-        The ranked lists whose predictions the reference can judge.
+        The ranked lists, without known pairs, whose predictions the
+        reference can judge.
     """
+    ranked_lists = _without_known_pairs(pair, ranked_lists)
     if pair.reference_complete:
         return ranked_lists
     refs = [*pair.train_refs, *pair.val_refs, *pair.test_refs]

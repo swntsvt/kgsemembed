@@ -4,9 +4,7 @@ For every file the loaders read, prints its SHA-256, size and, for references,
 the number of correspondences (EDOAL ``<map>`` cells, or lines of an OpenEA
 link file).  With ``--release_cache`` pointing at a local copy of the OAEI MELT
 track repository (``oaei.webdatacommons.org/``), each local file is also
-compared byte for byte with its published counterpart, and release files the
-experiments do not read (D1's Bio-ML validation mappings, ``input.rdf``) are
-listed with their correspondence count.  Nothing is downloaded.
+compared byte for byte with its published counterpart.  Nothing is downloaded.
 
 Usage
 -----
@@ -69,7 +67,9 @@ def tracked_files(data_dir: Path) -> List[TrackedFile]:
         Files with their release-relative paths (``None`` for D5, which the
         MELT repository does not carry).
     """
-    files = _pair_files("D1", "d1_snomed_fma", "bio-ml-equiv-unsupervised/2022/snomed.body-fma.body")
+    d1_release = "bio-ml-equiv-unsupervised/2022/snomed.body-fma.body"
+    files = _pair_files("D1", "d1_snomed_fma", d1_release)
+    files.append(TrackedFile("D1", "d1_snomed_fma/input.rdf", f"{d1_release}/input.rdf", True))
     files += _pair_files("D2", "d2_anatomy", "anatomy_track/anatomy_track-default/mouse-human-suite")
     for pair in sorted(p.name for p in (data_dir / "d3_conference").iterdir() if p.is_dir()):
         files += _pair_files("D3", f"d3_conference/{pair}", f"conference/conference-v1/{pair}")
@@ -122,14 +122,6 @@ def _table(header: List[str], rows: List[List[str]]) -> List[str]:
     return lines + ["| " + " | ".join(row) + " |" for row in rows]
 
 
-def _unused_release_rows(cache: Path) -> List[List[str]]:
-    path = cache / "bio-ml-equiv-unsupervised/2022/snomed.body-fma.body/input.rdf"
-    if not path.exists():
-        return []
-    return [["D1", "bio-ml-equiv-unsupervised/2022/snomed.body-fma.body/input.rdf",
-             sha256(path), str(correspondence_count(path))]]
-
-
 def build_report(data_dir: Path, cache: Optional[Path]) -> List[str]:
     """
     Build the provenance tables.
@@ -147,12 +139,8 @@ def build_report(data_dir: Path, cache: Optional[Path]) -> List[str]:
         Markdown lines.
     """
     header = ["Dataset", "File (under data/)", "SHA-256", "Bytes", "Correspondences", "Release"]
-    lines = ["# Dataset provenance", "", *_table(header, [_row(f, data_dir, cache) for f in tracked_files(data_dir)])]
-    unused = _unused_release_rows(cache) if cache is not None else []
-    if unused:
-        lines += ["", "## Release files not read by the experiments", "",
-                  *_table(["Dataset", "Release file", "SHA-256", "Correspondences"], unused)]
-    return lines + [""]
+    rows = [_row(item, data_dir, cache) for item in tracked_files(data_dir)]
+    return ["# Dataset provenance", "", *_table(header, rows), ""]
 
 
 def _build_arg_parser() -> argparse.ArgumentParser:

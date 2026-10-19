@@ -62,8 +62,8 @@ counterpart in a local copy of the OAEI MELT track repository
 files are recorded by SHA-256 only, and their identity with the OpenEA v2.0
 archive has not been rechecked here.
 
-**D1 provenance.** All three local D1 files (`source.rdf`, `target.rdf`,
-`reference.rdf`) are byte-identical to
+**D1 provenance.** All four local D1 files (`source.rdf`, `target.rdf`,
+`reference.rdf`, `input.rdf`) are byte-identical to
 `bio-ml-equiv-unsupervised/2022/snomed.body-fma.body/` in the MELT copy. In
 that release the pair has 7,256 equivalence mappings:
 
@@ -75,8 +75,11 @@ that release the pair has 7,256 equivalence mappings:
 D1 therefore uses the unsupervised setting's **test** mappings, with the
 SNOMED CT and FMA versions named in the ontology headers.
 
-The 726 validation mappings (`input.rdf`) are **not read** by any experiment.
-See section 6, Limitations.
+The 726 validation mappings (`input.rdf`) are loaded as **known pairs**
+(`AlignmentPair.train_refs`, the slot D5's training links use) and are never
+scored; see section 3. Before this was fixed in #137 they were not read at
+all, so their sources counted as unmatched and a correct prediction for one
+was a false positive.
 
 ## 3. Splits and evaluation populations
 
@@ -94,6 +97,18 @@ See section 6, Limitations.
   1. a source with a test reference is test;
   2. otherwise, a source with a validation reference is validation;
   3. otherwise, a source with a training reference is excluded.
+
+  Training references are D5's `train_links` and D1's Bio-ML validation
+  mappings (`input.rdf`). A known pair is also removed from every ranked list
+  before scoring (`population.judgeable_ranked_lists`), so for a scored
+  source it is neither a distractor ranked above the gold target nor a
+  prediction. Bio-ML's evaluation likewise ignores these mappings.
+  On D1, 713 of the 726 mappings have a source among the D1 source
+  entities: 556 of those sources have no other reference and are excluded
+  (137 from validation, 419 from test); the other 157 (27 validation, 130
+  test) keep their population, minus 122 known candidate pairs. D2–D4 have no
+  known pairs, and on D5 no scored source has one, so their results are
+  unchanged.
 
   Sources with no reference anywhere are *unmatched*. They are divided
   between validation and test in proportion to the reference sources, using a
@@ -168,6 +183,11 @@ and a false negative to F1.
 The full tables are in `baseline_comparison.md`. The main table (`--metric
 f1`) and its ranking companions (`--metric mrr`, `--metric recall_at_1`) carry
 B0 as their first row (`scripts/generate_results_table.py --baseline_dir`).
+
+> **D1 pending re-run.** The D1 numbers below, here and in
+> `baseline_comparison.md`, were produced before the D1 known-pair fix
+> (section 3). They are regenerated once every D1 condition and B0 have been
+> re-run; D2–D5 are unaffected.
 
 B0 per column:
 
@@ -256,17 +276,16 @@ only from Mean*, as before.
   published system scores (LogMap, AML, BERTMap, BERTMapLt, OpenEA models) as
   head-to-head results. If an external number is quoted, give its source and
   protocol and the differences above.
-- **D1 validation mappings unused.** Bio-ML's 726 unsupervised-setting
-  validation mappings are not loaded, and D1 is treated as a complete
-  reference. Their sources therefore enter the evaluation as unmatched. 713
-  of their sources are D1 source entities, and 556 of those have no other
-  reference, so a correct prediction for them counts as a false positive.
-  Stage 1 ranks 401 of the 726 validation targets first. This affects every
-  condition and B0 alike, so the comparisons stay matched, but it lowers
-  absolute D1 precision and F1. Bio-ML's own global-matching evaluation does
-  not count training or validation mappings as false positives. That is
-  stated from the track's design and not re-verified here; check it before
-  citing.
+- **D1 validation mappings (fixed).** Results produced before the fix
+  treated Bio-ML's 726 validation mappings as unmatched sources, counting a
+  correct prediction for one as a false positive. They are now known pairs
+  (section 3). On B0 the fix moves D1 FP from 7,576 to 7,261, F1 from 0.2986
+  to 0.3062 and MRR from 0.7035 to 0.7055; most D1 false positives come from
+  the 17,870 genuinely unmatched SNOMED sources (3,615 validation, 14,255 test), so absolute D1 precision
+  stays low. D1 results without `"n_train_refs": 726` in their population
+  record predate the fix and are not comparable. That Bio-ML ignores these
+  mappings is stated from the track's design and not re-verified here;
+  check it before citing.
 - **D5 release identity.** Checksums are recorded but not compared with the
   OpenEA v2.0 archive.
 - **One pair per column.** D1, D2, D4 and D5 are single pairs, and D3's 21
