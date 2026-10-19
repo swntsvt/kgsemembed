@@ -17,7 +17,7 @@ Phase 2 datasets: D1 (SNOMED-FMA Body), D2 (Anatomy MA-NCI), D3 (Conference,
 21 pairs), D4 (memoryalpha-stexpanded, schema and instance), D5
 (DBpedia-Wikidata 15K EN, OpenEA). Five datasets total.
 
-**Current focus**: Issue #134 — text-serialization-order experiment on D1 and D2 (effect of item order with the selected set held fixed; order frozen on D2 validation before any test evaluation); #128, #130 and #131 merged (Phase 2)
+**Current focus**: Issue #136 — V1/V2 read the synonym and definition predicates D1/D2 actually use (re-runs lower most D1/D2 V1/V2 scores and replace the stored cells). Previously #134 — text-serialization-order experiment on D1 and D2 (effect of item order with the selected set held fixed; order frozen on D2 validation before any test evaluation); #128, #130 and #131 merged (Phase 2)
 
 ## Git Workflow
 
@@ -444,7 +444,7 @@ selection policy (and random seed) is the only difference.
   `rdfs:label` + `subClassOf` and drops synonym lists that deterministic
   order keeps. PPAS beating full text says the full V6 key-value text is
   noisy, not that less text is better in general: this representation's full
-  MRR (0.4525) is far below C3 V2+V6/M2 (0.8036) on D1.
+  MRR (0.4525) is far below C3 V2+V6/M2 (0.8036 before #136, 0.7652 after) on D1.
 
 ### Controlled policies P1–P7 (#128)
 
@@ -731,6 +731,57 @@ Seven conditions vary one dimension at a time on D1 at 48 tokens
   mismatches; `scripts/predicate_role_diagnostics.py label-loss` on
   `feature/issue-131`).
 
+## V1/V2 annotation predicates (#136)
+
+- `DEFINITION_PREDICATES` and `SYNONYM_PREDICATES` (`verbalisation/base.py`)
+  are the definition and synonym roles of `roles_v1`, so V1 and V2 read what
+  D1 and D2 actually use: `fma:synonym`/`slot_synonym`/`definition`
+  (`http://purl.org/sig/ont/fma/`) and the oboInOwl synonym family and
+  `hasDefinition`. Before #136, V1/V2 read only `skos:altLabel` and
+  `rdfs:comment`/`skos:definition`/`IAO_0000115`, so FMA candidates and both
+  D2 sides had no synonyms or definitions in any V1/V2 text.
+- `get_annotation_values()` accepts `en`, `en-*` and untagged literals and
+  resolves a non-literal object (D2's reified `oboInOwl:Synonym` nodes) to
+  its own `rdfs:label`. `get_all_literals()` is unchanged; V8 still uses it
+  (its own annotation leak is #145). V7 inherits the fix through V2.
+- Every result records `annotation_predicates_sha256`
+  (`annotation_predicates_digest()`; predicate lists plus value rules,
+  pinned in `tests/test_v1_v2.py`). Results without it predate #136.
+- Texts change only on D1 and D2 (`artifacts/issue-136/annotation_inventory.md`):
+  D1 40.5% of candidates (FMA), 0.6% of sources; D2 99.6% of candidates,
+  11.1% of sources. D3, D4 and D5 texts are byte-identical, so their
+  results stand.
+- **Results (f0daf7f, 24 re-runs of the 13 V1/V2 conditions on D1/D2, in
+  `data/results_issue136/`; candidates, populations, protocol, model
+  revisions and library versions identical to the stored runs; one pair per
+  dataset, no intervals)**: `artifacts/issue-136/results_comparison.md`.
+  MRR falls in 19 of 24 cells. Every D2 cell falls (−0.025 to −0.144;
+  C20 V2/M2 0.8905 → 0.7723, C10 0.8115 → 0.7075). On D1, V1/V2 and V2+V6
+  fall (C20 −0.154, C2 −0.081, C3 −0.038) while V2+V8 under M1/M2/M4 rises
+  (C10/C19 +0.059, C18 +0.114, C11 +0.037). This matches #131: synonyms and
+  definitions added to core text hurt (C+syn, C+def).
+- **Stored results replaced**: the 24 re-runs are copied into `data/results/`
+  (byte-identical); the replaced files and the previous `report.md` are kept
+  in `data/results_pre136/`. In the regenerated report the best D2 F1 moves
+  from C20 (0.8261) to C4 V3/M2 (0.7830), best D1 stays C17 (0.4666 →
+  0.4391), and C20 vs C10 (group E) goes from W/T/L 4/0/22, p 0.2188,
+  delta-F1 −0.0671 to 5/0/21, p 0.6875, −0.0329: on D1 F1, V8 now helps
+  (C10 0.3452 vs C20 0.2707). No comparison is significant, before or after.
+
+```bash
+# Text inventory (no model): dump under the old code, dump under the new, compare.
+PYTHONPATH=<checkout of 706d4e1>/src python scripts/annotation_inventory.py dump \
+    --datasets D1 D2 D3 D4 D5 --output old.json
+python scripts/annotation_inventory.py dump --datasets D1 D2 D3 D4 D5 --output new.json
+python scripts/annotation_inventory.py compare --old old.json --new new.json
+# Re-runs and the before/after table (refuses another digest or a dirty tree).
+python -m kgsemembed.pipeline.run_experiment \
+    --conditions C1 C2 C3 C6 C10 C11 C13 C15 C16 C17 C18 C19 C20 \
+    --datasets D1 D2 --data_dir data/ --results_dir data/results_issue136/
+python scripts/annotation_fix_report.py --old_dir data/results/ \
+    --new_dir data/results_issue136/
+```
+
 ## Datasets
 
 ```
@@ -869,6 +920,7 @@ Every file written by `run_experiment.py` contains:
                  "n_val_unmatched_sources", "n_test_unmatched_sources",
                  "reference_complete"},
   "n_source_entities", "n_candidates_per_entity", "candidates_sha256",
+  "annotation_predicates_sha256",
   "hf_revision", "kgsemembed_version",
   "python_version", "run_timestamp",
   "versions": {"python", "torch", "transformers", "sentence_transformers",
