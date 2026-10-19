@@ -8,8 +8,8 @@ Recall@k, and a combined evaluation summary.
 Evaluation protocol
 -------------------
 Each source predicts at most one target: its best-ranked candidate, kept when
-its score reaches the decision threshold.  This matches the BERTMapLt baseline,
-which emits one mapping per source, and keeps precision from being swamped by
+its score reaches the decision threshold.  This follows BERTMapLt's prediction
+rule, which emits one mapping per source, and keeps precision from being swamped by
 the lower-ranked candidates of every source.  Ranking metrics are averaged over
 reference sources only: a source without a gold target has no rank to recover,
 while a reference source the candidate stage missed contributes zero.

@@ -104,6 +104,36 @@ python scripts/download_datasets.py --data_dir data/ --check
 
 The protocol, provenance and B0 comparison are in `artifacts/issue-137/`.
 
+## Datasets, provenance and evaluation protocol (Issue #138)
+
+| Column | Task | Release (input files byte-identical) | Reference used |
+|---|---|---|---|
+| D1 | SNOMED CT → FMA body, classes | Bio-ML 2022 `snomed.body-fma.body` | unsupervised test mappings (6,530 of 7,256); the 726 validation mappings are known pairs |
+| D2 | Mouse anatomy → NCI anatomy, classes | OAEI Anatomy | full reference (1,516) |
+| D3 | 21 Conference pairs, classes and properties | OAEI Conference | ra1-M3 (305), not the track's main rar2 |
+| D4 | memoryalpha → stexpanded, schema and instances | OAEI Knowledge Graph track v4 | partial gold standard (54 schema + 1,725 instance) |
+| D5 | DBpedia → Wikidata 15K (V2), instances | OpenEA v2.0 | fold 1: 3,000 train / 1,500 valid / 10,500 test |
+
+Every result is a **controlled re-ranking of 20 stage-1 candidates per
+source**. The reference is split 20/80 by source (D5: OpenEA fold 1). The
+threshold is tuned on validation, and test metrics are computed within the
+candidate lists. This is not any benchmark's official protocol, so the
+numbers must not be compared head-to-head with published system scores.
+
+Details are in `artifacts/issue-138/`:
+- `benchmark_protocols.md`: per-dataset protocol versus the official one,
+  metric definitions and ceilings;
+- `reference_statistics.md`, `release_checks.md`, `results_inventory.md`:
+  provenance and reference statistics;
+- `paper_methods_section.tex` and `references.bib`: the paper's text.
+
+```bash
+python scripts/reference_statistics.py --data_dir data/
+python scripts/results_inventory.py
+python scripts/release_checks.py --data_dir data/ \
+    --ra1_zip reference-alignment.zip --openea_zip OpenEA_dataset_v2.0.zip
+```
+
 ## Usage
 
 Base run:
