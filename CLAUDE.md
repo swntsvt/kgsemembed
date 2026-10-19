@@ -869,6 +869,19 @@ python scripts/annotation_fix_report.py --old_dir data/results/ \
   D5 into `data/results_issue145/` (D4_schema re-runs must reproduce);
   `scripts/v8_fix_report.py` → `artifacts/issue-145/results_comparison.md`
   (per-condition before/after, C10 − C20 per column, group E before/after).
+- **Results (4e234e1, 28/28 re-runs from a clean tree; one pair per column,
+  descriptive)**: D4_schema reproduces exactly in all five conditions; C19
+  equals C10 on D1. MRR: C9 (V8 alone) rises on D1 (+0.038), D2 (+0.023) and
+  D5 and falls on D4_instance (−0.025); V2+V8 moves little on D1/D2 (C10
+  +0.000 / −0.010, C18 M1 D1 +0.068, C13 and C16 D1 −0.023 / −0.018) and
+  rises on D4_instance (C10 +0.020, C13 +0.013). C10 − C20 MRR: D1 +0.028 →
+  +0.028, D2 −0.065 → −0.075, D4_instance −0.014 → +0.007, D5 +0.006 →
+  +0.001; so V8's ranking effect against V2 is unchanged in sign everywhere
+  but D4_instance. D1 F1 falls for most V2+V8 conditions (C10 0.354 → 0.284):
+  the tuned threshold moves (C10 0.89 → 0.92) but unmatched-source FPs still
+  double (1,983 → 4,372, TP 1,551 → 1,590), the threshold sensitivity #139
+  describes, not a ranking loss. Group E (F1): 5/0/21, p 0.6875, ΔF1 −0.0324
+  → 5/0/21, p 0.5625, −0.0423; not significant before or after.
 
 ```bash
 # Text inventory and predicate classification (no model, ~5 min each).
