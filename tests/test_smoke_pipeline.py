@@ -1371,6 +1371,14 @@ def test_training_source_predictions_are_not_counted():
     assert metrics["population"]["n_test_ranked_sources"] == 1
 
 
+def test_known_pair_of_a_test_source_is_neither_prediction_nor_distractor():
+    pair = _population_pair(["v", "t"], train_refs=[("t", "k")])
+    ranked = [_VAL_AND_TEST_LISTS[0], [("t", "k", 0.95), ("t", "y", 0.9), ("t", "n", 0.2)]]
+    metrics = runner._evaluate_pair(pair, ranked)
+    assert (metrics["tp"], metrics["fp"], metrics["fn"]) == (1, 0, 0)
+    assert metrics["mrr"] == 1.0
+
+
 def test_unmatched_test_source_prediction_is_a_false_positive():
     uri = _unmatched_uri(in_validation=False)
     ranked = _VAL_AND_TEST_LISTS + [[(uri, "w", 0.95)]]

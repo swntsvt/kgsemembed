@@ -55,6 +55,7 @@ from kgsemembed.datasets import AlignmentPair, load_dataset
 from kgsemembed.embeddings import EmbeddingEncoder, MODEL_REGISTRY, load_sentence_transformer
 from kgsemembed.embeddings.models import PAD_TO_MULTIPLE_OF
 from kgsemembed.evaluation import RankedList
+from kgsemembed.evaluation.population import without_known_pairs
 from kgsemembed.pipeline.ablation_conditions import (
     ABLATION_CONDITIONS,
     ABLATION_MODEL_KEY,
@@ -75,6 +76,7 @@ from kgsemembed.pipeline.run_experiment import (
     _seed_random_state,
     _unique_candidate_uris,
 )
+from kgsemembed.utils.errors import DataError
 from kgsemembed.verbalisation.predicate_config import get_predicate_config
 from kgsemembed.verbalisation.predicate_roles import RoleFilter, UnmappedPredicateError, get_role_map
 from kgsemembed.verbalisation.selection import (
@@ -474,12 +476,13 @@ def reference_source_records(
     Returns
     -------
     List[Dict[str, object]]
-        Per source: best gold rank (``None`` when unranked, scored as
-        reciprocal rank 0), its eligible-item count, and whether sampling was
+        Per source: best gold rank, counted without known pairs as the MRR
+        is (``None`` when unranked, scored as reciprocal rank 0), its
+        eligible-item count, and whether sampling was
         invoked for it or for any of its gold targets.
     """
     refs = context.pair.test_refs
-    best = _best_ranks(ranked_lists, refs)
+    best = _best_ranks(without_known_pairs(context.pair, ranked_lists), refs)
     source_sel = dict(zip(context.source.uris, selections[_SOURCE]))
     target_sel = dict(zip(context.candidate.uris, selections[_CANDIDATE]))
     targets: Dict[str, List[str]] = {}
@@ -1023,7 +1026,45 @@ def _pending(conditions: List[AblationCondition], pair: AlignmentPair, settings:
             _LOGGER.info("Skipping existing result: %s", result_path)
             continue
         pending.append(condition)
+    if pending:
+        check_known_pairs(pair, settings, pending)
     return pending
+
+
+def check_known_pairs(pair: AlignmentPair, settings: RunSettings, pending: List[AblationCondition]) -> None:
+    """
+    Refuse to add results beside stored ones scored with other known pairs.
+
+    A stored result of the same pair and smoke restriction that this run
+    keeps must record as many known (training) pairs as ``pair`` has, so
+    results from before and after a change to them (D1's Bio-ML validation
+    mappings, #137) are never compared within one directory.
+
+    Parameters
+    ----------
+    pair : AlignmentPair
+        Pair about to be run.
+    settings : RunSettings
+        Run settings supplying the results directory and smoke restriction.
+    pending : List[AblationCondition]
+        Conditions this run (re)writes; their stored results are replaced.
+
+    Raises
+    ------
+    DataError
+        If a kept result records a different number of known pairs.
+    """
+    rewritten = {condition.condition_id for condition in pending}
+    for path in sorted(settings.results_dir.glob(f"*/{pair.dataset_id}/{pair.pair_name}_results.json")):
+        stored = json.loads(path.read_text(encoding="utf-8"))
+        kept = stored["condition_id"] not in rewritten
+        same_run = stored.get("ablation", {}).get("smoke_max_sources") == settings.max_sources
+        if kept and same_run and stored["population"].get("n_train_refs", 0) != len(pair.train_refs):
+            raise DataError(
+                f"{path} was scored with {stored['population'].get('n_train_refs', 0)} known pairs, "
+                f"this run with {len(pair.train_refs)}; re-run every condition with "
+                "--force_recompute or use a new results directory."
+            )
 
 
 def run_dataset(

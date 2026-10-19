@@ -392,13 +392,15 @@ def run_signature(run: Run) -> Tuple:
     -------
     Tuple
         Model and tokenizer revision, candidate hash, protocol, budget,
-        smoke restriction, and a digest of the test-source set.
+        smoke restriction, a digest of the test-source set, and the number
+        of known (training) pairs, which changed for D1 in #137.
     """
     block = run["ablation"]
     sources = sorted(r["source"] for r in run["_entities"]["test_sources"])
     digest = hashlib.sha256(json.dumps(sources).encode("utf-8")).hexdigest()[:16]
     return (run["model_id"], run["hf_revision"], block["tokenizer_revision"], run["candidates_sha256"],
-            run["evaluation_protocol"], run["token_budget"], block["smoke_max_sources"], digest)
+            run["evaluation_protocol"], run["token_budget"], block["smoke_max_sources"], digest,
+            run["population"].get("n_train_refs", 0))
 
 
 def signature_groups(runs: List[Run]) -> List[Tuple[Tuple, Dict[str, Run]]]:
@@ -431,14 +433,15 @@ def signature_groups(runs: List[Run]) -> List[Tuple[Tuple, Dict[str, Run]]]:
 
 
 def _signature_lines(signature: Tuple, group: Dict[str, Run]) -> List[str]:
-    model, revision, tokenizer_rev, candidates, protocol, budget, smoke, sources = signature
+    model, revision, tokenizer_rev, candidates, protocol, budget, smoke, sources, known = signature
     first = next(iter(group.values()))
     missing = [label for label in expected_labels(first["dataset_id"], budget) if label not in group]
     return [
         f"- Model `{model}` revision `{revision}`; tokenizer revision `{tokenizer_rev}`",
         f"- Candidates sha256 `{candidates[:16]}…`; evaluation protocol {protocol}; budget {budget}",
         f"- Population: {'SMOKE, ' + str(smoke) + ' sources' if smoke else 'full'}; "
-        f"test-source set `{sources}`; test references {first['population']['n_test_refs']}",
+        f"test-source set `{sources}`; test references {first['population']['n_test_refs']}; "
+        f"known pairs {known}",
         f"- Git commits: {sorted({r['git_commit'][:10] for r in group.values()})}; "
         f"dirty: {sorted({str(r['git_dirty']) for r in group.values()})}",
         f"- Missing policies: {', '.join(missing) if missing else 'none'}",

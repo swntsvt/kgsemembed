@@ -34,6 +34,7 @@ from rdflib.namespace import RDFS, SKOS
 from scipy import sparse
 
 from kgsemembed.candidates.generator import CandidatePair, _build_tokens
+from kgsemembed.datasets import AlignmentPair, extract_entity_uris
 from kgsemembed.utils.errors import ConfigurationError, DataError
 
 CandidateMap = Dict[str, List[str]]
@@ -398,6 +399,38 @@ def query_ngram_index(
         Candidates ranked by descending score, ties on ascending target URI.
     """
     return generate_candidates_for_pair({"": label}, index, config)
+
+
+def _entity_labels(graph: Graph, uris: List[str]) -> Dict[str, str]:
+    """Return a label for every URI, falling back to its local name."""
+    return {uri: get_entity_label(graph, uri) for uri in uris}
+
+
+def score_pair_candidates(pair: AlignmentPair, config: NgramConfig) -> List[CandidatePair]:
+    """
+    Rank the pair's targets for every source entity through the n-gram index.
+
+    This is the stage-1 scoring behind the stored candidate files: sources are
+    the pair's ``source_entities``, targets every target-graph URI of the
+    pair's entity type.
+
+    Parameters
+    ----------
+    pair : AlignmentPair
+        Alignment pair supplying both graphs, the sources and the entity type.
+    config : NgramConfig
+        n-gram size, metric, and ``top_k`` settings.
+
+    Returns
+    -------
+    list[CandidatePair]
+        Scored candidates for every source URI, in ascending source URI order,
+        each source's candidates by descending score, ties on ascending URI.
+    """
+    source_labels = _entity_labels(pair.source_graph, pair.source_entities)
+    target_uris = extract_entity_uris(pair.target_graph, pair.entity_type)
+    index = build_ngram_index(_entity_labels(pair.target_graph, target_uris), config)
+    return generate_candidates_for_pair(source_labels, index, config)
 
 
 def _candidates_path(dataset_id: str, pair_name: str, data_dir: str | Path) -> Path:

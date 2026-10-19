@@ -17,7 +17,7 @@ Phase 2 datasets: D1 (SNOMED-FMA Body), D2 (Anatomy MA-NCI), D3 (Conference,
 21 pairs), D4 (memoryalpha-stexpanded, schema and instance), D5
 (DBpedia-Wikidata 15K EN, OpenEA). Five datasets total.
 
-**Current focus**: Issue #136 — V1/V2 read the synonym and definition predicates D1/D2 actually use (re-runs lower most D1/D2 V1/V2 scores and replace the stored cells). Previously #134 — text-serialization-order experiment on D1 and D2 (effect of item order with the selected set held fixed; order frozen on D2 validation before any test evaluation); #128, #130 and #131 merged (Phase 2)
+**Current focus**: Issue #137 — stage-1 n-gram ranking baseline (B0) on all five datasets under the Phase 2 protocol, and the written evaluation protocol and dataset provenance (`artifacts/issue-137/`). Previously #136 — V1/V2 read the synonym and definition predicates D1/D2 actually use; #134 — text-serialization-order experiment on D1 and D2 (effect of item order with the selected set held fixed; order frozen on D2 validation before any test evaluation); #128, #130 and #131 merged (Phase 2)
 
 ## Git Workflow
 
@@ -128,7 +128,18 @@ python scripts/compute_recall_at_20.py \
 # C17 (D1/D2 only) show a dash, so every reported mean is comparable.
 # Output is wrapped in threeparttable with the Mean note in tablenotes, so the
 # paper's preamble must load \usepackage{threeparttable}.
-python scripts/generate_results_table.py --results_dir data/results/
+# --baseline_dir adds the B0 n-gram row first (omit it and the F1 table is
+# unchanged); --metric mrr / recall_at_1 prints the ranking companion tables.
+python scripts/generate_results_table.py --results_dir data/results/ \
+    --baseline_dir data/results_ngram_baseline/ --metric f1
+
+# Stage-1 n-gram baseline B0 (#137): no model, ~5 min; refuses data/results/.
+# Then B0 vs C1-C20 and dataset provenance into artifacts/issue-137/.
+python -m kgsemembed.pipeline.ngram_baseline --datasets D1 D2 D3 D4 D5 \
+    --data_dir data/ --results_dir data/results_ngram_baseline/
+python scripts/generate_baseline_comparison.py
+python scripts/dataset_provenance.py --data_dir data/ \
+    --release_cache ~/oaei_track_cache/oaei.webdatacommons.org
 
 # Print D3 class vs predicate F1 rows (LaTeX) for the Section 4.3 table.
 # F1 is weighted by n_refs per pair; report.md uses the unweighted pair mean.
@@ -407,6 +418,13 @@ V1, V2, V3, V4, V5, V6, V7, V8, V2+V6, V2+V8, V2+V7, V2+V8+V7, V6+V3, V4+V6,
 V8+V6.
 
 ## Controlled PPAS ablation (#122)
+
+> **D1 population (#137)**: every D1 number in this section and its
+> subsections (#122, #128, #131, #134 and the validation follow-up) was
+> computed before D1's 726 Bio-ML validation mappings became known pairs
+> (`n_train_refs` 0). Those runs were not re-run, so compare them only with
+> each other, never with post-#137 D1 results (C1–C20, B0). D2 and D5
+> numbers are unaffected.
 
 A separate registry (`pipeline/ablation_conditions.py`, 64 conditions: 22 `PA-*` from #122, P1–P7 on D1 at 48 from #128, 11 validation conditions, and 24 `PR-*` predicate-role conditions from #131)
 and runner (`pipeline/ppas_ablation.py`) keep the ablation out of C1–C20, so
@@ -767,6 +785,9 @@ Seven conditions vary one dimension at a time on D1 at 48 tokens
   0.4391), and C20 vs C10 (group E) goes from W/T/L 4/0/22, p 0.2188,
   delta-F1 −0.0671 to 5/0/21, p 0.6875, −0.0329: on D1 F1, V8 now helps
   (C10 0.3452 vs C20 0.2707). No comparison is significant, before or after.
+  (Superseded on D1 by the #137 re-run: `data/results/*/D1` no longer equals
+  `data/results_issue136/`; C10 0.3541 vs C20 0.2760, group-E delta-F1
+  −0.0324, still 5/0/21, p 0.6875.)
 
 ```bash
 # Text inventory (no model): dump under the old code, dump under the new, compare.
@@ -782,12 +803,93 @@ python scripts/annotation_fix_report.py --old_dir data/results/ \
     --new_dir data/results_issue136/
 ```
 
+## Stage-1 n-gram baseline (#137)
+
+- **B0** (`pipeline/ngram_baseline.py`) scores the stored top-20 candidate
+  lists in their stage-1 order (character 3-gram cosine, `NGRAM_CONFIG`),
+  evaluated by `run_experiment._evaluate_pair` unchanged, so candidates,
+  populations, validation-only thresholds and metric denominators equal every
+  C-condition's. It is not a registered condition: results go to
+  `data/results_ngram_baseline/B0/{dataset}/{pair}_results.json` (C-schema,
+  `model_key: null`, plus `ngram_config` and `candidate_recall_at_20`) and a
+  `_entities.json` sidecar (best gold rank per test reference source).
+  The runner refuses `data/results/`, so `_EXPECTED_CONDITION_COUNT`, the
+  aggregator, `report.md` and the stats families are unchanged.
+- **Identity gate**: n-gram scores are not stored, so B0 recomputes them
+  through `candidates.ngram.score_pair_candidates()` (the function
+  `generate_candidates.py` now calls) and raises
+  `CandidateOrderMismatchError` unless the recomputed order equals the
+  stored list for every source. 0 mismatches on all 26 pairs.
+- **Population check** (`generate_baseline_comparison.py`): every C-result
+  must share B0's `candidates_sha256`, `population` and protocol on the same
+  pair. On D4 (partial reference) the ranked-source counts are left out of
+  the check: an unmatched source is judgeable only when its top target is a
+  reference target, so those counts depend on each method's ranking.
+- **Results (6d1878a; 26/26 pairs clean; 294/294 C-results matched; one pair
+  per column, descriptive; D1 re-run at 65b0d33 after the known-pair fix)**:
+  B0 MRR D1 0.7055, D2 0.8175, D3 0.7200,
+  D4_schema 0.8879, D4_instance 0.9049, D5 0.1808; F1 0.3062 / 0.6626 /
+  0.5140 / 0.8090 / 0.8802 / 0.1730. Best MRR gain over B0: D1 +0.074 and
+  D2 +0.085 (C4), D3 +0.043 (C1), D4 +0.033 / +0.039 (C3). Only about half
+  the conditions beat B0 on D1/D2 MRR. Better ranking need not mean better
+  F1: on D3, 6 of 11 beat B0 on MRR but 1 of 11 on F1; on D4_instance 7 of
+  12 on MRR but none on F1 (B0 0.8802 is the column's best F1, C20 0.8036
+  next). Every D5 condition is below B0 on every
+  metric (best C14 MRR −0.026); label/annotation-only conditions score MRR
+  0.035–0.055, near the 0.048 a random order of the same lists would get.
+- **Provenance** (`dataset_provenance.py`): every D1–D4 file is
+  byte-identical to the OAEI MELT release (D1 = Bio-ML 2022
+  `bio-ml-equiv-unsupervised/2022/snomed.body-fma.body`; SNOMED CT
+  20220317, FMA 4.14.0). D1's `reference.rdf` is that setting's 6,530 test
+  mappings out of 7,256. D5 is recorded by SHA-256 only.
+- **D1 known pairs (fix)**: the 726 Bio-ML validation mappings
+  (`input.rdf`, now required by the loader) are loaded into `train_refs`.
+  556 sources with no other reference are excluded from both populations;
+  for the other 157, the known pair is removed from the ranked list
+  (`judgeable_ranked_lists`), so it is neither a distractor nor a
+  prediction. Before the fix they were unmatched sources, and a correct
+  prediction was a false positive. B0 D1: FP 7,576 → 7,261, F1 0.2986 →
+  0.3062, MRR 0.7035 → 0.7055; D2–D5 unchanged (D5 checked identical). D1
+  results without `population.n_train_refs == 726` predate the fix. All 15
+  D1 conditions and B0 were re-run at 65b0d33 (clean): MRR +0.000 to
+  +0.002, F1 +0.004 to +0.012 (best D1 F1 C17 0.4391 → 0.4515); no
+  above/below count against B0 changed. Pre-fix D1 results and the previous
+  `report.md` are kept in `data/results_pre137/`. Historical ablation trees
+  (#122–#134) are not re-run.
+- **Guards for the known pairs**: the D1 loader refuses a known pair that is
+  also a validation/test reference (it would delete a gold target). The
+  ablation and serialization sidecars count best gold ranks on the same
+  filtered lists as MRR (`population.without_known_pairs`). `ppas_ablation`
+  refuses to add a result beside a kept one of the same pair and smoke
+  setting that records a different `n_train_refs` (re-run all with
+  `--force_recompute` or use a new directory), and the ablation report's run
+  signature includes `n_train_refs`, so pre- and post-fix D1 runs are never
+  grouped. A new D1 ablation run therefore cannot go into the #122–#131
+  directories without re-running every condition there. The serialization
+  runner's validation-stage results also record `n_train_refs`, so the same
+  check applies when it resumes. `load_all_results()` (report, results
+  table) and the results table's B0 row refuse results of one pair with
+  different `n_train_refs` (`aggregator.check_known_pair_counts`).
+- **Bio-ML alignment**: removing the known pairs matches Bio-ML's own rule
+  that reference mappings outside the evaluated set are excluded from the
+  system output (He et al., 2022, arXiv:2205.03447, section 3.3).
+- `artifacts/issue-137/` (tracked): `evaluation_protocol.md` (protocol,
+  metric definitions, scope, limitations, D5 analysis),
+  `baseline_comparison.md`, `dataset_provenance.md`.
+- **Scope**: controlled re-ranking of 20 stage-1 candidates per source, not
+  full matching or all-target retrieval and not any OAEI/Bio-ML/OpenEA
+  benchmark protocol; never compare these numbers head-to-head with
+  published system scores.
+
 ## Datasets
 
 ```
 D1  SNOMED-FMA Body (Bio-ML, OAEI)        Classes only
-    data/d1_snomed_fma/source.rdf, target.rdf, reference.rdf
+    data/d1_snomed_fma/source.rdf, target.rdf, reference.rdf, input.rdf
     Split: 0/20/80 by source entity, seeded shuffle, EDOAL reference
+    reference.rdf = Bio-ML unsupervised test mappings (6,530), split 20/80;
+    input.rdf = its validation mappings (726), loaded as train_refs (known
+    pairs, never scored)
 
 D2  Anatomy MA-NCI (OAEI Anatomy Track)    Classes only
     data/d2_anatomy/source.rdf, target.rdf, reference.rdf
@@ -819,14 +921,16 @@ D5  DBpedia-Wikidata 15K EN (OpenEA)      Instances only
     get_entity_label() in candidates/ngram.py now substitutes attribute
     text for opaque IDs, raising recall@20 from 0.0015 to 0.1339. Exempting
     YYYY-MM-DD values from the bare-quantity filter (DATE_PATTERN in
-    ngram.py) raised it again to 0.2667; best F1 is 0.0609 (C14, V4+V6/M3).
+    ngram.py) raised it again to 0.2667; best F1 is 0.1262 (C14, V4+V6/M3;
+    0.0609 before protocol 2).
     Dates are a strong cross-KG key here — an aligned pair carries the same
     birthDate or releaseDate on both sides — and account for 19.8% of
     DBpedia and 4.0% of Wikidata attribute values.
     D5 remains far weaker than D1-D4, but candidate generation is no longer
     the binding constraint: recall@20 is 0.2667 while C14 reaches R@10
-    0.2260 and F1 0.0609, so gold pairs now enter the candidate set without
-    being ranked to the top. The residual gap is a ranking and precision
+    0.2260 and F1 0.1262, so gold pairs now enter the candidate set without
+    being ranked to the top. The stage-1 n-gram order itself (B0, #137)
+    beats every D5 condition: MRR 0.1808, F1 0.1730. The residual gap is a ranking and precision
     problem at the embedding stage, not a candidate-recall one.
     Treat a D5 recall@20 gain as an upper bound on the achievable F1 gain:
     dates are shared by construction (thousands of films release on one
@@ -859,7 +963,8 @@ with version 2 and are rejected by `evaluation/stats.py`.
 - **Populations** (`evaluation/population.py`): each source is scored in
   exactly one of validation or test. A source with a test reference is test;
   else with a validation reference, validation; else with a training reference
-  (D5 only), excluded. Unmatched sources (no reference anywhere) are split
+  (D5 train links, D1 Bio-ML validation mappings), excluded. A training
+  (known) pair is also removed from every ranked list before scoring. Unmatched sources (no reference anywhere) are split
   between validation and test at the slice's reference-source ratio by a
   stable `zlib.crc32` draw; their predictions are false positives (the OAEI
   complete-reference convention), so tuning sees the same FP pressure as test.

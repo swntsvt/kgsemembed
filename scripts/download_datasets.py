@@ -88,13 +88,15 @@ _SPECS: tuple[DatasetSpec, ...] = (
         dataset_id="D1",
         title="SNOMED-FMA Body (Bio-ML, OAEI)",
         root="d1_snomed_fma",
-        required=_PAIR_FILES,
+        required=(*_PAIR_FILES, "input.rdf"),
         source_url="https://github.com/KRR-Oxford/DeepOnto",
-        files="source.rdf, target.rdf, reference.rdf",
+        files="source.rdf, target.rdf, reference.rdf, input.rdf",
         notes=(
             "Use the Bio-ML equivalence dataset, unsupervised split.",
-            "Copy source.rdf, target.rdf, reference.rdf from the "
+            "Copy source.rdf, target.rdf, reference.rdf, input.rdf from the "
             "snomed.body-fma.body/ subdirectory.",
+            "reference.rdf holds the test mappings; input.rdf the validation "
+            "mappings, which are loaded as known pairs and never scored.",
         ),
     ),
     DatasetSpec(
