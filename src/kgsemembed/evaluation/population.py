@@ -13,8 +13,9 @@ Assignment rules
   validation mappings (``input.rdf``).
 * A known (training) pair is also removed from every ranked list, so for a
   scored source it is neither a distractor ranked above the gold target nor a
-  prediction; Bio-ML's evaluation ignores these mappings in the same way.  See
-  :func:`judgeable_ranked_lists`.
+  prediction, as Bio-ML excludes reference mappings outside the evaluated set
+  from the system output (He et al., 2022, arXiv:2205.03447, section 3.3).
+  See :func:`judgeable_ranked_lists`.
 * A source with no reference in any slice is *unmatched*.  Under the OAEI
   convention that the reference alignment is complete, predicting a target for
   it is a false positive.  Unmatched sources are shared between validation and

@@ -31,6 +31,7 @@ from kgsemembed.evaluation.aggregator import (
     load_all_results,
 )
 from kgsemembed.pipeline.conditions import EXPERIMENT_CONDITIONS, get_condition
+from kgsemembed.utils.errors import DataError
 
 # The column contracts stated verbatim in the GitHub issue; asserting against
 # these literals (rather than the module constants) guards the public schema.
@@ -1456,3 +1457,25 @@ def test_cli_group_failure_is_resilient(
     text = output.read_text(encoding="utf-8")
     assert "# Statistical Significance" in text
     assert "| C1 | C2 |" in text
+
+
+# ---------------------------------------------------------------------------
+# Known-pair consistency (#137)
+# ---------------------------------------------------------------------------
+def _known(count: int) -> dict:
+    return {"population": {"n_train_refs": count}}
+
+
+def test_results_of_one_pair_with_different_known_pairs_are_refused(tmp_path: Path) -> None:
+    _write_result(tmp_path, "C1", "D1", "d1", 0.3, overrides=_known(726))
+    _write_result(tmp_path, "C2", "D1", "d1", 0.3, overrides=_known(0))
+    with pytest.raises(DataError, match="D1/d1 results mix known-pair counts"):
+        load_all_results(str(tmp_path))
+
+
+def test_matching_or_unrecorded_known_pairs_load(tmp_path: Path) -> None:
+    _write_result(tmp_path, "C1", "D1", "d1", 0.3, overrides=_known(726))
+    _write_result(tmp_path, "C2", "D1", "d1", 0.3, overrides=_known(726))
+    _write_result(tmp_path, "C3", "D1", "d1", 0.3)
+    _write_result(tmp_path, "C1", "D2", "d2", 0.3, overrides=_known(0))
+    assert len(load_all_results(str(tmp_path))) == 4

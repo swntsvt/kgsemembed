@@ -102,7 +102,11 @@ was a false positive.
   mappings (`input.rdf`). A known pair is also removed from every ranked list
   before scoring (`population.judgeable_ranked_lists`), so for a scored
   source it is neither a distractor ranked above the gold target nor a
-  prediction. Bio-ML's evaluation likewise ignores these mappings.
+  prediction. Bio-ML does the same: when Precision, Recall and F1 are
+  computed on one reference set, "reference mappings that are not in this
+  set" are excluded from the system output (He et al., 2022, *Machine
+  Learning-Friendly Biomedical Datasets for Equivalence and Subsumption
+  Ontology Matching*, arXiv:2205.03447, section 3.3).
   On D1, the 726 mappings cover 713 distinct sources, all of them D1 source
   entities: 556 of those sources have no other reference and are excluded
   (137 from validation, 419 from test); the other 157 (27 validation, 130
@@ -282,10 +286,12 @@ only from Mean*, as before.
   conditions, MRR rises by 0.000–0.002 and F1 by 0.004–0.012, and no
   above/below count against B0 changes. Most D1 false positives come from
   the 17,870 genuinely unmatched SNOMED sources (3,615 validation, 14,255
-  test), so absolute D1 precision stays low. D1 results without `"n_train_refs": 726` in their population
-  record predate the fix and are not comparable. That Bio-ML ignores these
-  mappings is stated from the track's design and not re-verified here;
-  check it before citing.
+  test), so absolute D1 precision stays low. D1 results without
+  `"n_train_refs": 726` in their population record predate the fix and are
+  not comparable; the report, the results table and the ablation runners
+  refuse to combine them with post-fix results. The ablation and
+  serialization results of #122–#134 were not re-run, so their D1 numbers
+  remain on the pre-fix population.
 - **D5 release identity.** Checksums are recorded but not compared with the
   OpenEA v2.0 archive.
 - **One pair per column.** D1, D2, D4 and D5 are single pairs, and D3's 21

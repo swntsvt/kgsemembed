@@ -180,7 +180,8 @@ def validation_metrics(pair: AlignmentPair, ranked: List[RankedList]) -> Dict[st
     refs = [ref for ref in pair.val_refs if ref[0] in populations.val_sources]
     metrics = compute_all_metrics(lists, refs, threshold=threshold)
     metrics[_POPULATION_KEY] = {
-        "population": VALIDATION, "n_val_refs": len(pair.val_refs), "n_val_population_refs": len(refs),
+        "population": VALIDATION, "n_train_refs": len(pair.train_refs),
+        "n_val_refs": len(pair.val_refs), "n_val_population_refs": len(refs),
         "n_val_reference_sources": len({s for s, _ in refs}), "n_val_ranked_sources": len(lists),
         "n_val_unmatched_sources": populations.n_unmatched_val, "reference_complete": pair.reference_complete,
     }

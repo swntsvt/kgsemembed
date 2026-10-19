@@ -82,6 +82,28 @@ Main candidate config keys:
 - `candidates.persist`
 - `candidates.output_file`
 
+## Stage-1 n-gram baseline and evaluation protocol (Issue #137)
+
+The stage-1 character n-gram order of the stored top-20 candidate lists (B0)
+is scored under the same populations, validation-tuned threshold and metrics
+as every Phase 2 condition:
+
+```bash
+python -m kgsemembed.pipeline.ngram_baseline --datasets D1 D2 D3 D4 D5 \
+    --data_dir data/ --results_dir data/results_ngram_baseline/
+```
+
+D1 (Bio-ML 2022 `snomed.body-fma.body`, unsupervised setting) needs four
+files in `data/d1_snomed_fma/`: `source.rdf`, `target.rdf`, `reference.rdf`
+(the 6,530 test mappings) and `input.rdf` (the 726 validation mappings,
+loaded as known pairs and never scored). A missing file is reported by:
+
+```bash
+python scripts/download_datasets.py --data_dir data/ --check
+```
+
+The protocol, provenance and B0 comparison are in `artifacts/issue-137/`.
+
 ## Usage
 
 Base run:

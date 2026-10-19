@@ -699,8 +699,10 @@ def _load_d1(data_dir: Path) -> list[AlignmentPair]:
     ``reference.rdf`` holds only the 6,530 test mappings of Bio-ML's
     unsupervised setting; its 726 validation mappings ship separately as
     ``input.rdf``.  They are loaded into ``train_refs`` so that predicting one
-    is neither a true nor a false positive, as Bio-ML's own evaluation ignores
-    them.  ``reference.rdf`` alone is split 20/80, exactly as before.
+    is neither a true nor a false positive: Bio-ML excludes reference mappings
+    outside the evaluated set from the system output (He et al., 2022,
+    arXiv:2205.03447, section 3.3).  ``reference.rdf`` alone is split 20/80,
+    exactly as before.
 
     Parameters
     ----------

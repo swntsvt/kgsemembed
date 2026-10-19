@@ -49,6 +49,7 @@ import numpy as np
 import pandas as pd
 
 from kgsemembed.evaluation import load_all_results
+from kgsemembed.evaluation.aggregator import check_known_pair_counts
 from kgsemembed.pipeline.conditions import get_condition
 
 CellMeans = Dict[Tuple[str, str], float]
@@ -332,6 +333,8 @@ def build_table(
     """
     means = load_cell_means(results_dir, metric)
     if baseline_dir is not None:
+        check_known_pair_counts([*Path(results_dir).rglob("*_results.json"),
+                                 *Path(baseline_dir).glob("B0/*/*_results.json")])
         means.update(load_baseline_means(baseline_dir, metric))
     has_baseline = any(condition_id == _BASELINE_ID for condition_id, _ in means)
     return _header_rows(metric, has_baseline) + _body_rows(means) + _footer_rows()

@@ -419,6 +419,13 @@ V8+V6.
 
 ## Controlled PPAS ablation (#122)
 
+> **D1 population (#137)**: every D1 number in this section and its
+> subsections (#122, #128, #131, #134 and the validation follow-up) was
+> computed before D1's 726 Bio-ML validation mappings became known pairs
+> (`n_train_refs` 0). Those runs were not re-run, so compare them only with
+> each other, never with post-#137 D1 results (C1–C20, B0). D2 and D5
+> numbers are unaffected.
+
 A separate registry (`pipeline/ablation_conditions.py`, 64 conditions: 22 `PA-*` from #122, P1–P7 on D1 at 48 from #128, 11 validation conditions, and 24 `PR-*` predicate-role conditions from #131)
 and runner (`pipeline/ppas_ablation.py`) keep the ablation out of C1–C20, so
 `_EXPECTED_CONDITION_COUNT`, the main tables and the group statistics are
@@ -778,6 +785,9 @@ Seven conditions vary one dimension at a time on D1 at 48 tokens
   0.4391), and C20 vs C10 (group E) goes from W/T/L 4/0/22, p 0.2188,
   delta-F1 −0.0671 to 5/0/21, p 0.6875, −0.0329: on D1 F1, V8 now helps
   (C10 0.3452 vs C20 0.2707). No comparison is significant, before or after.
+  (Superseded on D1 by the #137 re-run: `data/results/*/D1` no longer equals
+  `data/results_issue136/`; C10 0.3541 vs C20 0.2760, group-E delta-F1
+  −0.0324, still 5/0/21, p 0.6875.)
 
 ```bash
 # Text inventory (no model): dump under the old code, dump under the new, compare.
@@ -855,7 +865,14 @@ python scripts/annotation_fix_report.py --old_dir data/results/ \
   `--force_recompute` or use a new directory), and the ablation report's run
   signature includes `n_train_refs`, so pre- and post-fix D1 runs are never
   grouped. A new D1 ablation run therefore cannot go into the #122–#131
-  directories without re-running every condition there.
+  directories without re-running every condition there. The serialization
+  runner's validation-stage results also record `n_train_refs`, so the same
+  check applies when it resumes. `load_all_results()` (report, results
+  table) and the results table's B0 row refuse results of one pair with
+  different `n_train_refs` (`aggregator.check_known_pair_counts`).
+- **Bio-ML alignment**: removing the known pairs matches Bio-ML's own rule
+  that reference mappings outside the evaluated set are excluded from the
+  system output (He et al., 2022, arXiv:2205.03447, section 3.3).
 - `artifacts/issue-137/` (tracked): `evaluation_protocol.md` (protocol,
   metric definitions, scope, limitations, D5 analysis),
   `baseline_comparison.md`, `dataset_provenance.md`.

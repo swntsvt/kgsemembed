@@ -20,7 +20,7 @@ import logging
 import math
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, Iterable, List, Optional, Tuple
 
 import pandas as pd
 
@@ -30,6 +30,7 @@ from kgsemembed.evaluation.stats import (
     pair_outcome_cell,
 )
 from kgsemembed.pipeline.conditions import get_condition, get_conditions_for_group
+from kgsemembed.utils.errors import DataError
 
 _LOGGER = logging.getLogger("kgsemembed.evaluation.aggregator")
 
@@ -319,6 +320,49 @@ def _collect_records(root: Path, include_entity_type_breakdown: bool) -> List[di
     return records
 
 
+def _known_pair_count(path: Path) -> Optional[Tuple[Tuple[str, str], int]]:
+    """Return ``((dataset_id, pair_name), n_train_refs)``, or ``None`` if unrecorded."""
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return None
+    population = payload.get("population")
+    known = population.get("n_train_refs") if isinstance(population, dict) else None
+    if known is None:
+        return None
+    return (str(payload.get("dataset_id")), str(payload.get("pair_name"))), int(known)
+
+
+def check_known_pair_counts(paths: Iterable[Path]) -> None:
+    """
+    Refuse results of one pair that were scored with different known pairs.
+
+    The D1 population changed in #137 (Bio-ML validation mappings became
+    known pairs) without a protocol version change, so ``n_train_refs`` is
+    what tells results from before and after it apart.  Files without a
+    population record are not checked.
+
+    Parameters
+    ----------
+    paths : Iterable[Path]
+        Result files to be aggregated together.
+
+    Raises
+    ------
+    DataError
+        If two files of the same pair record different ``n_train_refs``.
+    """
+    seen: Dict[Tuple[str, str], Dict[int, Path]] = {}
+    for path in paths:
+        entry = _known_pair_count(path)
+        if entry is not None:
+            seen.setdefault(entry[0], {}).setdefault(entry[1], path)
+    for (dataset_id, pair_name), counts in sorted(seen.items()):
+        if len(counts) > 1:
+            examples = ", ".join(f"{count} in {path}" for count, path in sorted(counts.items()))
+            raise DataError(f"{dataset_id}/{pair_name} results mix known-pair counts: {examples}.")
+
+
 def load_all_results(
     results_dir: str = _DEFAULT_RESULTS_DIR,
     include_entity_type_breakdown: bool = False,
@@ -331,6 +375,8 @@ def load_all_results(
     unregistered conditions are skipped with a warning; a repeated
     ``(condition_id, dataset_id, pair_name)`` combination keeps its first
     occurrence.  ``ablation_group`` is derived from ``EXPERIMENT_CONDITIONS``.
+    Results of one pair must agree on their known-pair count
+    (:func:`check_known_pair_counts`).
 
     Parameters
     ----------
@@ -349,11 +395,17 @@ def load_all_results(
         an empty DataFrame with that schema when no valid results are found.
         With ``include_entity_type_breakdown`` the schema widens to
         :data:`_BREAKDOWN_COLUMNS` and entity-type rows are interleaved.
+
+    Raises
+    ------
+    DataError
+        If results of one pair record different known-pair counts.
     """
     root = Path(results_dir)
     if not root.is_dir():
         _LOGGER.warning("Results directory not found: %s", root)
         return _empty_results_frame(include_entity_type_breakdown)
+    check_known_pair_counts(sorted(root.rglob(_RESULT_GLOB)))
     records = _collect_records(root, include_entity_type_breakdown)
     if not records:
         return _empty_results_frame(include_entity_type_breakdown)

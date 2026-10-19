@@ -13,6 +13,7 @@ from rdflib.namespace import OWL, RDF, RDFS
 from kgsemembed.candidates.ngram import dump_candidates
 from kgsemembed.datasets import AlignmentPair
 from kgsemembed.pipeline import ngram_baseline as baseline
+from kgsemembed.utils.errors import DataError
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -177,6 +178,18 @@ def test_table_b0_d3_cell_is_pair_mean(tmp_path: Path) -> None:
     _write_b0(tmp_path / "b", "D3", {"f1": 0.2}, "p1")
     _write_b0(tmp_path / "b", "D3", {"f1": 0.4}, "p2")
     assert "0.3000" in _b0_line(build_table(str(tmp_path / "r"), "f1", str(tmp_path / "b")))
+
+
+def test_table_refuses_b0_scored_with_other_known_pairs(tmp_path: Path) -> None:
+    _write_b0(tmp_path / "b", "D1", {"f1": 0.2}, "d1")
+    stale = tmp_path / "b" / "B0" / "D1" / "d1_results.json"
+    stale.write_text(json.dumps({**json.loads(stale.read_text()), "pair_name": "d1",
+                                 "population": {"n_train_refs": 0}}))
+    fresh = tmp_path / "r" / "C1" / "D1" / "d1_results.json"
+    fresh.parent.mkdir(parents=True)
+    fresh.write_text(json.dumps({"dataset_id": "D1", "pair_name": "d1", "population": {"n_train_refs": 726}}))
+    with pytest.raises(DataError, match="mix known-pair counts"):
+        build_table(str(tmp_path / "r"), "f1", str(tmp_path / "b"))
 
 
 def test_table_without_baseline_has_no_b0_row(tmp_path: Path) -> None:
