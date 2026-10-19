@@ -27,8 +27,10 @@ _METRIC_NAMES = (
 
 
 def _write_result(
-    results_dir: Path, condition_id: str, dataset_id: str, f1: float, pair_name: str = "p"
+    results_dir: Path, condition_id: str, dataset_id: str, value: float, pair_name: str = "p",
+    **extra: object,
 ) -> None:
+    """Write a result whose F1 and MRR are ``value``; ``extra`` overrides top-level fields."""
     condition = get_condition(condition_id)
     payload = {
         "condition_id": condition_id,
@@ -37,9 +39,12 @@ def _write_result(
         "strategy": condition.strategy_name,
         "model_key": condition.model_key,
         "model_id": f"registry/{condition.model_key}",
-        "metrics": {"f1": f1, **{name: 0.5 for name in _METRIC_NAMES}},
+        "metrics": {**{name: 0.5 for name in _METRIC_NAMES}, "f1": value, "mrr": value},
+        "counts": {"tp": 1, "fp": 1, "fn": 1},
+        "population": {"n_test_refs": 4},
         "n_source_entities": 100,
         "n_candidates_per_entity": 20,
+        **extra,
     }
     directory = results_dir / condition_id / dataset_id
     directory.mkdir(parents=True, exist_ok=True)
@@ -214,3 +219,106 @@ def test_cli_prints_table(tmp_path: Path, capsys: pytest.CaptureFixture) -> None
     out = capsys.readouterr().out
     assert out.startswith(r"\begin{table*}[t]")
     assert r"C1 & V1 & M1 & A & \textbf{0.2500} & --- &" in out
+
+
+# ---------------------------------------------------------------------------
+# Primary metric, Hits@1, ceilings and F1 sensitivity (#139)
+# ---------------------------------------------------------------------------
+def _write_counts(path: Path, rows: List[dict]) -> str:
+    defaults = {
+        "n_val_refs": 2, "n_val_reference_sources": 2, "n_test_refs": 4,
+        "n_test_reference_sources": 4, "n_test_multi_target_sources": 0,
+        "n_test_sources_gold_listed": 3, "n_test_refs_listed": 3,
+        "ranking_ceiling": 0.75, "candidate_recall_at_20": 0.75, "f1_recall_ceiling": 0.75,
+    }
+    path.write_text(json.dumps({"pairs": [{**defaults, **row} for row in rows]}))
+    return str(path)
+
+
+def _caption_and_label(lines: List[str]) -> List[str]:
+    start = lines.index(r"\begin{threeparttable}")
+    return lines[start + 1:start + 3]
+
+
+def _annotation(lines: List[str], label: str) -> List[str]:
+    line = next(line for line in lines if line.startswith(rf"\multicolumn{{4}}{{l}}{{{label}}}"))
+    return [cell.strip() for cell in line.removesuffix("\\\\").split("&")][1:]
+
+
+def test_primary_metric_is_the_default_main_table(tmp_path: Path) -> None:
+    """MRR is the main table; F1 keeps a table of its own under another label."""
+    caption, label = _caption_and_label(build_table(str(tmp_path)))
+    assert label == r"\label{tab:main_results}"
+    assert "re-ranking MRR" in caption and "primary metric" in caption
+    assert _caption_and_label(build_table(str(tmp_path), "f1"))[1] == r"\label{tab:matching_f1}"
+    assert script._build_arg_parser().parse_args([]).metric == "mrr"
+
+
+def test_hits_at_1_is_derived_from_recall_at_1_for_one_to_many_pairs(tmp_path: Path) -> None:
+    """Three references over two sources: Recall@1 1/3 is Hits@1 1/2."""
+    results = tmp_path / "results"
+    _write_result(results, "C1", "D1", 0.5, "d1", population={"n_test_refs": 3},
+                  metrics={**{n: 0.5 for n in _METRIC_NAMES}, "f1": 0.5, "recall_at_1": 1 / 3})
+    counts = _write_counts(tmp_path / "counts.json", [
+        {"dataset_id": "D1", "pair_name": "d1", "n_test_refs": 3, "n_test_reference_sources": 2},
+    ])
+    lines = build_table(str(results), "hits_at_1", counts_path=counts)
+    row = next(line for line in lines if line.startswith("C1 &"))
+    assert r"\textbf{0.5000}" in row
+    assert "Hits@1" in _caption_and_label(lines)[0]
+
+
+def test_recorded_hits_at_1_is_used_as_is(tmp_path: Path) -> None:
+    """A result that records hits_at_1 needs no counts file."""
+    _write_result(tmp_path, "C1", "D1", 0.5,
+                  metrics={**{n: 0.5 for n in _METRIC_NAMES}, "f1": 0.5, "hits_at_1": 0.625})
+    row = next(line for line in build_table(str(tmp_path), "hits_at_1") if line.startswith("C1 &"))
+    assert r"\textbf{0.6250}" in row
+
+
+def test_hits_at_1_without_record_or_counts_raises(tmp_path: Path) -> None:
+    _write_result(tmp_path, "C1", "D1", 0.5)
+    with pytest.raises(ValueError, match="metric_ceilings"):
+        build_table(str(tmp_path), "hits_at_1")
+
+
+def test_ranking_table_has_a_ceiling_row(tmp_path: Path) -> None:
+    """The ceiling row averages D3 pairs like the metric and fills the Mean column."""
+    counts = _write_counts(tmp_path / "counts.json", [
+        {"dataset_id": "D1", "pair_name": "a", "ranking_ceiling": 0.9},
+        {"dataset_id": "D2", "pair_name": "a", "ranking_ceiling": 0.8},
+        {"dataset_id": "D3", "pair_name": "a", "ranking_ceiling": 0.6},
+        {"dataset_id": "D3", "pair_name": "b", "ranking_ceiling": 1.0},
+        {"dataset_id": "D4_schema", "pair_name": "a", "ranking_ceiling": 0.7},
+        {"dataset_id": "D4_instance", "pair_name": "a", "ranking_ceiling": 0.6},
+        {"dataset_id": "D5", "pair_name": "a", "ranking_ceiling": 0.2},
+    ])
+    cells = _annotation(build_table(str(tmp_path / "r"), "mrr", counts_path=counts), "Top-20 ceiling")
+    assert cells == ["0.9000", "0.8000", "0.8000", "0.7000", "0.6000", "0.2000", "0.7600"]
+
+
+def test_f1_table_reports_d3_micro_beside_macro(tmp_path: Path) -> None:
+    """Pooling TP/FP/FN differs from averaging per-pair F1 when pairs differ in size."""
+    _write_result(tmp_path, "C1", "D3", 1.0, "a", counts={"tp": 1, "fp": 0, "fn": 0})
+    _write_result(tmp_path, "C1", "D3", 0.0, "b", counts={"tp": 0, "fp": 9, "fn": 9})
+    lines = build_table(str(tmp_path), "f1")
+    assert r"\begin{tabular}{llllrrrrrrrr}" in lines
+    assert any(r"\textbf{D3$_{\mu}$}" in line for line in lines)
+    row = next(line for line in lines if line.startswith("C1 &"))
+    cells = [cell.strip() for cell in row.removesuffix("\\\\").split("&")]
+    assert cells[6:8] == [r"\textbf{0.5000}", r"\textbf{0.1000}"]
+
+
+def test_f1_table_shows_reference_counts_and_recall_ceiling(tmp_path: Path) -> None:
+    """D3 validation counts appear as their range over pairs and in total for D3 micro."""
+    counts = _write_counts(tmp_path / "counts.json", [
+        {"dataset_id": "D1", "pair_name": "a", "n_val_refs": 1304, "f1_recall_ceiling": 0.78},
+        {"dataset_id": "D3", "pair_name": "a", "n_val_refs": 1, "n_test_refs": 4,
+         "n_test_sources_gold_listed": 2, "f1_recall_ceiling": 0.5},
+        {"dataset_id": "D3", "pair_name": "b", "n_val_refs": 5, "n_test_refs": 16,
+         "n_test_sources_gold_listed": 16, "f1_recall_ceiling": 1.0},
+    ])
+    lines = build_table(str(tmp_path / "r"), "f1", counts_path=counts)
+    assert _annotation(lines, "Validation refs")[:4] == ["1,304", "---", "1--5", "6"]
+    assert _annotation(lines, "Test refs")[2:4] == ["4--16", "20"]
+    assert _annotation(lines, "Recall ceiling")[:4] == ["0.7800", "---", "0.7500", "0.9000"]

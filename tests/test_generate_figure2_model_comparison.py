@@ -32,7 +32,7 @@ def _write_result(results_dir: Path, condition_id: str, dataset_id: str,
     strategy, model_key = strategy_model or (bar.strategy, bar.model_key)
     directory = results_dir / condition_id / dataset_id
     directory.mkdir(parents=True, exist_ok=True)
-    payload = {"strategy": strategy, "model_key": model_key, "metrics": {"f1": f1}}
+    payload = {"strategy": strategy, "model_key": model_key, "metrics": {"f1": f1, "mrr": f1 + 0.5}}
     (directory / f"{_PAIRS[dataset_id]}_results.json").write_text(json.dumps(payload))
 
 
@@ -52,7 +52,7 @@ def test_bars_hold_v2v8_constant_except_reference() -> None:
 
 
 def test_collect_scores_aligns_values_with_bars(results_dir: Path) -> None:
-    scores = collect_scores(results_dir)
+    scores = collect_scores(results_dir, "f1")
     assert scores["D1"] == pytest.approx([0.1, 0.2, 0.3, 0.4, 0.5, 0.6])
     assert scores["D2"][1] == pytest.approx(0.1)
 
@@ -72,8 +72,20 @@ def test_no_results_raises(tmp_path: Path) -> None:
         collect_scores(tmp_path)
 
 
+def test_scores_default_to_the_primary_metric(results_dir: Path) -> None:
+    assert collect_scores(results_dir)["D1"][0] == pytest.approx(0.6)
+    assert collect_scores(results_dir, "f1")["D1"][0] == pytest.approx(0.1)
+    assert summary_lines(collect_scores(results_dir))[0].split()[3:5] == ["D1", "MRR"]
+
+
+def test_metric_suffixes_the_file_of_a_secondary_metric(results_dir: Path, tmp_path: Path) -> None:
+    scores = collect_scores(results_dir, "f1")
+    pdf_path = save_figure(build_figure(scores, "f1"), tmp_path / "figures", "f1")
+    assert pdf_path.name == "fig2_model_comparison_f1.pdf"
+
+
 def test_summary_marks_missing_values(results_dir: Path) -> None:
-    lines = summary_lines(collect_scores(results_dir))
+    lines = summary_lines(collect_scores(results_dir, "f1"), "f1")
     c15_row = next(line for line in lines if line.startswith("C15"))
     assert c15_row.split() == ["C15", "V2+V8", "M3", "0.3000", "n/a"]
     assert len(lines) == len(BARS) + 2

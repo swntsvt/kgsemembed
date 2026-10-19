@@ -12,8 +12,11 @@ import kgsemembed.pipeline.run_experiment as runner
 from kgsemembed.evaluation import (
     compute_all_metrics,
     compute_f1_at_threshold,
+    compute_hits_at_k,
     compute_mrr,
     compute_recall_at_k,
+    count_reference_sources,
+    hits_at_1_from_recall_at_1,
     top_ranked_pairs,
     tune_threshold,
 )
@@ -34,6 +37,9 @@ def test_package_exports() -> None:
         "tune_threshold",
         "compute_mrr",
         "compute_recall_at_k",
+        "compute_hits_at_k",
+        "count_reference_sources",
+        "hits_at_1_from_recall_at_1",
         "compute_all_metrics",
         "top_ranked_pairs",
         "EVALUATION_PROTOCOL_VERSION",
@@ -508,6 +514,85 @@ def test_recall_at_k_within_unit_interval() -> None:
 
 
 # ---------------------------------------------------------------------------
+# Source-level Hits@k versus reference-level Recall@k (1:N)
+# ---------------------------------------------------------------------------
+def _one_to_many_fixture() -> tuple:
+    """Source a has two gold targets (x, z), b one (y); a ranks x first."""
+    ranked = [
+        [("a", "x", 0.9), ("a", "z", 0.8), ("a", "n1", 0.1)],
+        [("b", "n2", 0.9), ("b", "y", 0.5)],
+    ]
+    references = [("a", "x"), ("a", "z"), ("b", "y")]
+    return ranked, references
+
+
+def test_hits_at_1_counts_sources_recall_at_1_counts_references() -> None:
+    ranked, references = _one_to_many_fixture()
+    assert compute_hits_at_k(ranked, references, 1) == pytest.approx(1 / 2)
+    assert compute_recall_at_k(ranked, references, 1) == pytest.approx(1 / 3)
+
+
+def test_hits_at_k_credits_a_one_to_many_source_once() -> None:
+    ranked, references = _one_to_many_fixture()
+    assert compute_hits_at_k(ranked, references, 2) == pytest.approx(1.0)
+    assert compute_recall_at_k(ranked, references, 2) == pytest.approx(1.0)
+    assert compute_hits_at_k(ranked, references, 3) == pytest.approx(1.0)
+
+
+def test_hits_at_1_never_exceeds_mrr() -> None:
+    ranked, references = _one_to_many_fixture()
+    assert compute_hits_at_k(ranked, references, 1) <= compute_mrr(ranked, references)
+    assert compute_mrr(ranked, references) == pytest.approx((1 + 1 / 2) / 2)
+
+
+def test_hits_and_recall_agree_on_one_to_one_references() -> None:
+    ranked = _ranked_fixture()
+    references = [(lst[0][0], lst[0][1]) for lst in ranked]
+    for k in (1, 2, 5):
+        assert compute_hits_at_k(ranked, references, k) == compute_recall_at_k(ranked, references, k)
+
+
+def test_hits_at_k_unranked_reference_source_is_a_miss() -> None:
+    ranked = [[("a", "x", 0.9)]]
+    references = [("a", "x"), ("c", "w")]
+    assert compute_hits_at_k(ranked, references, 1) == pytest.approx(1 / 2)
+
+
+def test_hits_at_k_empty_references() -> None:
+    assert compute_hits_at_k(_ranked_fixture(), [], 1) == 0.0
+
+
+def test_count_reference_sources_collapses_one_to_many() -> None:
+    _, references = _one_to_many_fixture()
+    assert count_reference_sources(references) == 2
+
+
+def test_hits_at_1_from_recall_at_1_matches_direct_computation() -> None:
+    ranked, references = _one_to_many_fixture()
+    recall_at_1 = compute_recall_at_k(ranked, references, 1)
+    derived = hits_at_1_from_recall_at_1(recall_at_1, len(references), count_reference_sources(references))
+    assert derived == compute_hits_at_k(ranked, references, 1)
+
+
+@pytest.mark.parametrize(
+    "recall_at_1, n_refs, n_sources",
+    [(0.5, 3, 2), (1.0, 3, 2), (0.5, 2, 3), (0.5, 2, 0)],
+)
+def test_hits_at_1_from_recall_at_1_rejects_inconsistent_counts(
+    recall_at_1: float, n_refs: int, n_sources: int
+) -> None:
+    with pytest.raises(ValueError):
+        hits_at_1_from_recall_at_1(recall_at_1, n_refs, n_sources)
+
+
+def test_compute_all_metrics_reports_both_units_under_one_to_many() -> None:
+    ranked, references = _one_to_many_fixture()
+    result = compute_all_metrics(ranked, references, threshold=0.5)
+    assert result["hits_at_1"] == pytest.approx(1 / 2)
+    assert result["recall_at_1"] == pytest.approx(1 / 3)
+
+
+# ---------------------------------------------------------------------------
 # Combined metrics
 # ---------------------------------------------------------------------------
 def _combined_fixture() -> tuple:
@@ -528,6 +613,9 @@ def test_compute_all_metrics_contains_every_key() -> None:
         "recall",
         "threshold",
         "mrr",
+        "hits_at_1",
+        "hits_at_5",
+        "hits_at_10",
         "recall_at_1",
         "recall_at_5",
         "recall_at_10",

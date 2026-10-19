@@ -1,17 +1,19 @@
 """Command-line entry point for Figure 1, the D3 per-pair scatter plot.
 
-Plots per-pair F1 of C3 (V2+V6 / M2) against C10 (V2+V8 / M2) over the 21
-Conference pairs.  Pairs involving CMT or EDAS, the annotation-sparse
+Plots a per-pair metric of C3 (V2+V6 / M2) against C10 (V2+V8 / M2) over
+the 21 Conference pairs: re-ranking MRR by default, the paper's primary
+metric, or ``--metric hits_at_1`` / ``--metric f1``.  Pairs involving CMT or EDAS, the annotation-sparse
 ontologies, are highlighted to show that V8's advantage over V6 concentrates
 on them.  Points above the diagonal are pairs where C10 wins.
 
 Writes ``fig1_d3_scatter.pdf`` (and a ``.png`` preview) to the output
-directory and prints a per-pair table with win counts.
+directory for MRR, ``fig1_d3_scatter_{metric}.pdf`` otherwise, and prints a
+per-pair table with win counts.
 
 Usage
 -----
 python scripts/generate_figure1_d3_scatter.py \\
-    --results_dir data/results/ --output_dir figures/
+    --results_dir data/results/ --output_dir figures/ --metric mrr
 """
 
 from __future__ import annotations
@@ -20,7 +22,7 @@ import argparse
 import json
 import random
 from pathlib import Path
-from typing import Dict, List, Tuple
+from typing import Dict, List, Optional, Tuple
 
 import matplotlib
 
@@ -32,12 +34,20 @@ import numpy as np  # noqa: E402
 from matplotlib.axes import Axes  # noqa: E402
 from matplotlib.figure import Figure  # noqa: E402
 
+from kgsemembed.evaluation.reference_counts import (  # noqa: E402
+    DEFAULT_COUNTS_PATH,
+    load_reference_counts,
+    result_metric,
+)
+
 PairScores = Dict[str, Tuple[float, float]]
 
 _DATASET_ID = "D3"
 _BASELINE_CONDITION = "C3"
 _VARIANT_CONDITION = "C10"
 _OUTPUT_STEM = "fig1_d3_scatter"
+_PRIMARY_METRIC = "mrr"
+_METRIC_LABELS = {"mrr": "MRR", "hits_at_1": "Hits@1", "f1": "F1"}
 _SPARSE_COLOUR = "#e05c36"
 _RICH_COLOUR = "#5b7fa6"
 SPARSE_PAIRS = frozenset({
@@ -64,9 +74,16 @@ _ANNOTATION_STYLE = {
 }
 
 
-def load_d3_f1(results_dir: Path, condition_id: str) -> Dict[str, float]:
+def _counts_for(metric: str) -> Optional[dict]:
+    """Load the reference counts when the metric may need them, else ``None``."""
+    if metric != "hits_at_1" or not DEFAULT_COUNTS_PATH.exists():
+        return None
+    return load_reference_counts(DEFAULT_COUNTS_PATH)
+
+
+def load_d3_scores(results_dir: Path, condition_id: str, metric: str) -> Dict[str, float]:
     """
-    Load the overall F1 of every D3 pair for one condition.
+    Load one overall metric of every D3 pair for one condition.
 
     Parameters
     ----------
@@ -74,40 +91,45 @@ def load_d3_f1(results_dir: Path, condition_id: str) -> Dict[str, float]:
         Root directory of the experiment result files.
     condition_id : str
         Registered condition identifier, e.g. ``"C3"``.
+    metric : str
+        ``mrr``, ``hits_at_1`` or ``f1``.
 
     Returns
     -------
     Dict[str, float]
-        Pair name mapped to that pair's F1.
+        Pair name mapped to that pair's metric value.
     """
+    counts = _counts_for(metric)
     scores = {}
     for path in (results_dir / condition_id / _DATASET_ID).glob("*_results.json"):
         result = json.loads(path.read_text())
-        scores[result["pair_name"]] = result["metrics"]["f1"]
+        scores[result["pair_name"]] = result_metric(result, metric, counts)
     return scores
 
 
-def pair_scores(results_dir: Path) -> PairScores:
+def pair_scores(results_dir: Path, metric: str = _PRIMARY_METRIC) -> PairScores:
     """
-    Pair the C3 and C10 F1 of every D3 pair present under both conditions.
+    Pair the C3 and C10 metric of every D3 pair present under both conditions.
 
     Parameters
     ----------
     results_dir : Path
         Root directory of the experiment result files.
+    metric : str
+        ``mrr`` (default), ``hits_at_1`` or ``f1``.
 
     Returns
     -------
     PairScores
-        Pair name mapped to ``(C3 F1, C10 F1)``, sorted by pair name.
+        Pair name mapped to ``(C3 value, C10 value)``, sorted by pair name.
 
     Raises
     ------
     ValueError
         If no pair has results under both conditions.
     """
-    baseline = load_d3_f1(results_dir, _BASELINE_CONDITION)
-    variant = load_d3_f1(results_dir, _VARIANT_CONDITION)
+    baseline = load_d3_scores(results_dir, _BASELINE_CONDITION, metric)
+    variant = load_d3_scores(results_dir, _VARIANT_CONDITION, metric)
     shared = sorted(set(baseline) & set(variant))
     if not shared:
         raise ValueError(f"No D3 pairs shared by C3 and C10 under {results_dir}")
@@ -139,10 +161,11 @@ def _annotate_pairs(ax: Axes, scores: PairScores) -> None:
         ax.annotate(pair, xy=(x, y), xytext=(x + dx, y + dy), **_ANNOTATION_STYLE)
 
 
-def _style_axes(ax: Axes, lim: float) -> None:
+def _style_axes(ax: Axes, lim: float, metric: str) -> None:
     """Set axis labels, square limits and the background grid."""
-    ax.set_xlabel("C3 F1  (V2+V6 / M2)", fontsize=9)
-    ax.set_ylabel("C10 F1  (V2+V8 / M2)", fontsize=9)
+    name = _METRIC_LABELS[metric]
+    ax.set_xlabel(f"C3 {name}  (V2+V6 / M2)", fontsize=9)
+    ax.set_ylabel(f"C10 {name}  (V2+V8 / M2)", fontsize=9)
     ax.set_xlim(-0.01, lim)
     ax.set_ylim(-0.01, lim)
     ax.tick_params(labelsize=8)
@@ -162,14 +185,16 @@ def _add_legend_and_regions(ax: Axes, lim: float) -> None:
     ax.text(lim * 0.78, lim * 0.22, "C3 wins", **region_style)
 
 
-def build_figure(scores: PairScores) -> Figure:
+def build_figure(scores: PairScores, metric: str = _PRIMARY_METRIC) -> Figure:
     """
     Draw the C3-versus-C10 per-pair scatter plot.
 
     Parameters
     ----------
     scores : PairScores
-        Pair name mapped to ``(C3 F1, C10 F1)``.
+        Pair name mapped to ``(C3 value, C10 value)``.
+    metric : str
+        Metric plotted, for the axis labels.
 
     Returns
     -------
@@ -180,13 +205,18 @@ def build_figure(scores: PairScores) -> Figure:
     lim = _axis_limit(scores)
     _plot_points(ax, scores)
     _annotate_pairs(ax, scores)
-    _style_axes(ax, lim)
+    _style_axes(ax, lim, metric)
     _add_legend_and_regions(ax, lim)
     fig.tight_layout()
     return fig
 
 
-def save_figure(fig: Figure, output_dir: Path) -> Path:
+def _output_stem(metric: str) -> str:
+    """Name the primary-metric figure plainly and suffix any other metric."""
+    return _OUTPUT_STEM if metric == _PRIMARY_METRIC else f"{_OUTPUT_STEM}_{metric}"
+
+
+def save_figure(fig: Figure, output_dir: Path, metric: str = _PRIMARY_METRIC) -> Path:
     """
     Save the figure as a print PDF and a PNG preview.
 
@@ -196,6 +226,8 @@ def save_figure(fig: Figure, output_dir: Path) -> Path:
         Figure returned by :func:`build_figure`.
     output_dir : Path
         Directory to write into; created if missing.
+    metric : str
+        Metric plotted; any but the primary one suffixes the file name.
 
     Returns
     -------
@@ -203,27 +235,30 @@ def save_figure(fig: Figure, output_dir: Path) -> Path:
         Path of the written PDF.
     """
     output_dir.mkdir(parents=True, exist_ok=True)
-    pdf_path = output_dir / f"{_OUTPUT_STEM}.pdf"
+    stem = _output_stem(metric)
+    pdf_path = output_dir / f"{stem}.pdf"
     fig.savefig(pdf_path, dpi=600, bbox_inches="tight")
-    fig.savefig(output_dir / f"{_OUTPUT_STEM}.png", dpi=200, bbox_inches="tight")
+    fig.savefig(output_dir / f"{stem}.png", dpi=200, bbox_inches="tight")
     return pdf_path
 
 
 def _winner(c3_f1: float, c10_f1: float) -> str:
-    """Name the condition with the higher F1, or ``"tie"``."""
+    """Name the condition with the higher value, or ``"tie"``."""
     if c10_f1 > c3_f1:
         return "C10"
     return "C3" if c3_f1 > c10_f1 else "tie"
 
 
-def summary_lines(scores: PairScores) -> List[str]:
+def summary_lines(scores: PairScores, metric: str = _PRIMARY_METRIC) -> List[str]:
     """
-    Render the per-pair F1 table and win counts printed after plotting.
+    Render the per-pair metric table and win counts printed after plotting.
 
     Parameters
     ----------
     scores : PairScores
-        Pair name mapped to ``(C3 F1, C10 F1)``.
+        Pair name mapped to ``(C3 value, C10 value)``.
+    metric : str
+        Metric of the values, for the column headings.
 
     Returns
     -------
@@ -231,7 +266,8 @@ def summary_lines(scores: PairScores) -> List[str]:
         Table lines, sparse pairs starred, followed by overall and sparse-pair
         win counts out of the number of pairs plotted.
     """
-    lines = [f"{'Pair':<35} {'C3 F1':>7} {'C10 F1':>7} {'Winner'}", "-" * 58]
+    name = _METRIC_LABELS[metric]
+    lines = [f"{'Pair':<35} {'C3 ' + name:>7} {'C10 ' + name:>7} {'Winner'}", "-" * 58]
     winners = {pair: _winner(*f1s) for pair, f1s in scores.items()}
     for pair, (c3_f1, c10_f1) in scores.items():
         label = pair + (" *" if pair in SPARSE_PAIRS else "")
@@ -248,7 +284,7 @@ def summary_lines(scores: PairScores) -> List[str]:
 def _build_arg_parser() -> argparse.ArgumentParser:
     """Build the command-line argument parser for Figure 1."""
     parser = argparse.ArgumentParser(
-        description="Plot D3 per-pair F1 of C3 against C10 (Figure 1)."
+        description="Plot a D3 per-pair metric of C3 against C10 (Figure 1)."
     )
     parser.add_argument(
         "--results_dir", type=Path, default=Path("data/results/"),
@@ -258,6 +294,10 @@ def _build_arg_parser() -> argparse.ArgumentParser:
         "--output_dir", type=Path, default=Path("figures/"),
         help="Directory for the PDF and PNG output.",
     )
+    parser.add_argument(
+        "--metric", default=_PRIMARY_METRIC, choices=tuple(_METRIC_LABELS),
+        help="Metric to plot (default: the primary metric, re-ranking MRR).",
+    )
     return parser
 
 
@@ -266,10 +306,10 @@ def main() -> None:
     random.seed(42)
     np.random.seed(42)
     args = _build_arg_parser().parse_args()
-    scores = pair_scores(args.results_dir)
-    pdf_path = save_figure(build_figure(scores), args.output_dir)
+    scores = pair_scores(args.results_dir, args.metric)
+    pdf_path = save_figure(build_figure(scores, args.metric), args.output_dir, args.metric)
     print(f"Saved: {pdf_path}\n\nPair-level results:")
-    print("\n".join(summary_lines(scores)))
+    print("\n".join(summary_lines(scores, args.metric)))
 
 
 if __name__ == "__main__":
