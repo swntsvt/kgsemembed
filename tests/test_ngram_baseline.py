@@ -149,7 +149,8 @@ def test_run_refuses_a_mismatching_candidate_file(
 def _write_b0(root: Path, dataset_id: str, metrics: Dict[str, float], pair_name: str = "p") -> None:
     directory = root / "B0" / dataset_id
     directory.mkdir(parents=True, exist_ok=True)
-    payload = {"condition_id": "B0", "dataset_id": dataset_id, "metrics": metrics}
+    payload = {"condition_id": "B0", "dataset_id": dataset_id, "metrics": metrics,
+               "counts": {"tp": 1, "fp": 1, "fn": 1}}
     (directory / f"{pair_name}_results.json").write_text(json.dumps(payload))
 
 
@@ -171,7 +172,7 @@ def test_table_metric_selects_the_column(tmp_path: Path) -> None:
     _write_b0(tmp_path / "b", "D2", {"f1": 0.2, "mrr": 0.3, "recall_at_1": 0.1})
     lines = build_table(str(tmp_path / "r"), "mrr", str(tmp_path / "b"))
     assert "0.3000" in _b0_line(lines)
-    assert r"\label{tab:ranking_mrr}" in lines
+    assert r"\label{tab:main_results}" in lines
 
 
 def test_table_b0_d3_cell_is_pair_mean(tmp_path: Path) -> None:

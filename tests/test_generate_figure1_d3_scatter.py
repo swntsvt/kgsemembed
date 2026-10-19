@@ -26,7 +26,7 @@ from scripts.generate_figure1_d3_scatter import (  # noqa: E402
 def _write_result(results_dir: Path, condition_id: str, pair_name: str, f1: float) -> None:
     directory = results_dir / condition_id / "D3"
     directory.mkdir(parents=True, exist_ok=True)
-    payload = {"pair_name": pair_name, "metrics": {"f1": f1}}
+    payload = {"pair_name": pair_name, "metrics": {"f1": f1, "mrr": f1 / 2}}
     (directory / f"{pair_name}_results.json").write_text(json.dumps(payload))
 
 
@@ -43,8 +43,19 @@ def results_dir(tmp_path: Path) -> Path:
     return tmp_path
 
 
+def test_pair_scores_default_to_the_primary_metric(results_dir: Path) -> None:
+    assert pair_scores(results_dir)["cmt-edas"] == (0.1, 0.2)
+    assert summary_lines(pair_scores(results_dir))[0].split()[1:5] == ["C3", "MRR", "C10", "MRR"]
+
+
+def test_metric_suffixes_the_file_of_a_secondary_metric(results_dir: Path, tmp_path: Path) -> None:
+    scores = pair_scores(results_dir, "f1")
+    pdf_path = save_figure(build_figure(scores, "f1"), tmp_path / "figures", "f1")
+    assert pdf_path.name == "fig1_d3_scatter_f1.pdf"
+
+
 def test_pair_scores_keeps_only_pairs_under_both_conditions(results_dir: Path) -> None:
-    assert pair_scores(results_dir) == {
+    assert pair_scores(results_dir, "f1") == {
         "cmt-edas": (0.2, 0.4),
         "confof-ekaw": (0.3, 0.1),
         "ekaw-iasted": (0.15, 0.15),
@@ -58,13 +69,13 @@ def test_pair_scores_raises_without_shared_pairs(tmp_path: Path) -> None:
 
 
 def test_summary_counts_wins_out_of_pairs_plotted(results_dir: Path) -> None:
-    lines = summary_lines(pair_scores(results_dir))
+    lines = summary_lines(pair_scores(results_dir, "f1"), "f1")
     assert lines[-2] == "\nC10 wins: 1/3, C3 wins: 1/3"
     assert lines[-1] == "C10 wins on sparse pairs: 1/1"
 
 
 def test_summary_stars_sparse_pairs_and_reports_ties(results_dir: Path) -> None:
-    rows = summary_lines(pair_scores(results_dir))[2:5]
+    rows = summary_lines(pair_scores(results_dir, "f1"), "f1")[2:5]
     assert rows[0].startswith("cmt-edas *")
     assert rows[1].split()[-1] == "C3"
     assert rows[2].split()[-1] == "tie"

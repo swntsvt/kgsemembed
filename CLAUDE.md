@@ -19,7 +19,7 @@ Phase 2 datasets: D1 (SNOMED-FMA Body), D2 (Anatomy MA-NCI), D3 (Conference,
 21 pairs), D4 (memoryalpha-stexpanded, schema and instance), D5
 (DBpedia-Wikidata 15K EN, OpenEA). Five datasets total.
 
-**Current focus**: Issue #138 — dataset and reference-alignment provenance, each dataset's protocol against its benchmark's official one, and the paper's datasets/protocol text (`artifacts/issue-138/`). Previously #137 — stage-1 n-gram ranking baseline (B0) and the written evaluation protocol (`artifacts/issue-137/`); #136 — V1/V2 read the synonym and definition predicates D1/D2 actually use; #134 — text-serialization-order experiment on D1 and D2 (effect of item order with the selected set held fixed; order frozen on D2 validation before any test evaluation); #128, #130 and #131 merged (Phase 2)
+**Current focus**: Issue #139 — re-ranking MRR and source-level Hits@1 as the paper's primary metrics (F1 secondary), one definition of each metric's unit, ceiling and 1:N handling, and tables that show the top-20 ceiling, D3 micro F1 and F1's reference counts (`artifacts/issue-139/`). Previously #138 — dataset and reference-alignment provenance, each dataset's protocol against its benchmark's official one, and the paper's datasets/protocol text (`artifacts/issue-138/`); #137 — stage-1 n-gram ranking baseline (B0) and the written evaluation protocol (`artifacts/issue-137/`); #136 — V1/V2 read the synonym and definition predicates D1/D2 actually use; #134 — text-serialization-order experiment on D1 and D2 (effect of item order with the selected set held fixed; order frozen on D2 validation before any test evaluation); #128, #130 and #131 merged (Phase 2)
 
 ## Git Workflow
 
@@ -123,17 +123,27 @@ python scripts/generate_report.py \
 python scripts/compute_recall_at_20.py \
     --datasets D1 D2 D3 D4 D5 --data_dir data/
 
-# Print the main results table (LaTeX, Table 6, Section 4.1): mean F1 per
-# condition per dataset, bold best per column, rules between ablation groups.
-# Mean$^*$ averages D1-D4 (both D4 columns, never D5) and is printed only for
-# conditions run on all five of those columns; partial-coverage rows such as
-# C17 (D1/D2 only) show a dash, so every reported mean is comparable.
-# Output is wrapped in threeparttable with the Mean note in tablenotes, so the
-# paper's preamble must load \usepackage{threeparttable}.
-# --baseline_dir adds the B0 n-gram row first (omit it and the F1 table is
-# unchanged); --metric mrr / recall_at_1 prints the ranking companion tables.
+# Per-pair reference counts and top-20 ceilings (#139; loads every dataset,
+# ~2 min, no model) into artifacts/issue-139/metric_ceilings.{json,md}. The
+# tables and figures read the JSON to derive Hits@1 of results stored before
+# it was recorded and to print the ceiling and reference-count rows.
+python scripts/metric_ceilings.py --data_dir data/ --output_dir artifacts/issue-139/
+
+# Print a results table (LaTeX, Section 4.1): mean metric per condition per
+# dataset, bold best per column, rules between ablation groups. Default
+# --metric mrr is the main table (tab:main_results); hits_at_1 is the other
+# primary table; f1 (tab:matching_f1) and recall_at_1 are secondary.
+# Ranking tables end with a top-20 ceiling row; the F1 table adds a D3$_\mu$
+# (micro, pooled TP/FP/FN) column, the F1 recall ceiling and the validation
+# and test reference counts. Mean$^*$ averages D1-D4 (both D4 columns, never
+# D5) and is printed only for conditions run on all five of those columns;
+# partial-coverage rows such as C17 (D1/D2 only) show a dash. Output is
+# wrapped in threeparttable, so the paper's preamble must load
+# \usepackage{threeparttable}. --baseline_dir adds the B0 n-gram row first;
+# --ceilings (default artifacts/issue-139/metric_ceilings.json) feeds the
+# extra rows. Generated copies: artifacts/issue-139/tables/.
 python scripts/generate_results_table.py --results_dir data/results/ \
-    --baseline_dir data/results_ngram_baseline/ --metric f1
+    --baseline_dir data/results_ngram_baseline/ --metric mrr
 
 # Stage-1 n-gram baseline B0 (#137): no model, ~5 min; refuses data/results/.
 # Then B0 vs C1-C20 and dataset provenance into artifacts/issue-137/.
@@ -156,16 +166,18 @@ python scripts/release_checks.py --data_dir data/ \
 # F1 is weighted by n_refs per pair; report.md uses the unweighted pair mean.
 python scripts/generate_entity_type_table.py --results_dir data/results/
 
-# Plot Figure 1: D3 per-pair F1, C3 vs C10, CMT/EDAS pairs highlighted.
-# Writes figures/fig1_d3_scatter.pdf (+ .png) and prints win counts.
+# Plot Figure 1: D3 per-pair MRR (default; --metric hits_at_1 / f1), C3 vs
+# C10, CMT/EDAS pairs highlighted. Writes figures/fig1_d3_scatter.pdf (+ .png;
+# other metrics get a _{metric} suffix) and prints win counts.
 python scripts/generate_figure1_d3_scatter.py \
-    --results_dir data/results/ --output_dir figures/
+    --results_dir data/results/ --output_dir figures/ --metric mrr
 
-# Plot Figure 2: D1/D2 F1 per model with V2+V8 held constant, plus the C17
-# (V1/M4) reference bar. C15 has no D2 run, so that bar is drawn as n/a.
-# Writes figures/fig2_model_comparison.pdf (+ .png) and prints the values.
+# Plot Figure 2: D1/D2 MRR (default; --metric hits_at_1 / f1) per model with
+# V2+V8 held constant, plus the C17 (V1/M4) reference bar. C15 has no D2 run,
+# so that bar is drawn as n/a. Writes figures/fig2_model_comparison.pdf
+# (+ .png; other metrics suffixed) and prints the values.
 python scripts/generate_figure2_model_comparison.py \
-    --results_dir data/results/ --output_dir figures/
+    --results_dir data/results/ --output_dir figures/ --metric mrr
 
 # Check dataset presence
 python scripts/download_datasets.py --data_dir data/ --check
@@ -1048,9 +1060,44 @@ with version 2 and are rejected by `evaluation/stats.py`.
   its score reaches the threshold (BERTMapLt's one-mapping-per-source rule).
 - **Threshold**: tuned on the validation population over 0.10–0.99 in steps
   of 0.01; ties resolve to the lower median of the tied thresholds.
-- **MRR** averages over test reference sources; a reference source without a
-  ranked list contributes 0, a ranked source without a reference is ignored.
-  Recall@k divides by the number of test references.
+
+## Metrics (#139)
+
+**Primary metrics: re-ranking MRR and source-level Hits@1. F1 is secondary.**
+F1 rests on a threshold tuned on very few validation references on several
+columns (1–5 per D3 pair, 10 on D4_schema, where one TP moves F1 by ~0.02)
+and on D1 is dominated by false positives from unmatched test sources, so it
+is reported, with its reference counts, but never as the headline. The
+definitions live in the `metrics.py` module docstring; in short:
+
+| Metric | Key | Unit | Denominator | 1:N |
+|---|---|---|---|---|
+| Re-ranking MRR | `mrr` | test reference source | test reference sources | credited once, best gold |
+| Hits@k (1, 5, 10) | `hits_at_k` | test reference source | test reference sources | hit if any gold in top k |
+| Recall@k (1, 5, 10) | `recall_at_k` | test reference pair | test references | one count per gold target |
+| P / R / F1 | `precision`, `recall`, `f1` | test reference pair | predictions / test references | one prediction per source |
+
+- Every ranking metric is computed within the stored top-20 stage-1 lists
+  (hence "re-ranking"). A reference source with no gold target in its list,
+  or with no list, scores 0. Ranked sources without a reference are ignored.
+- **Ceilings** (`scripts/metric_ceilings.py`, per pair): ranking ceiling =
+  test reference sources with a listed gold / test reference sources (caps
+  MRR and Hits@k; D1 0.886, D5 0.267); candidate recall@20 (caps Recall@k;
+  D1 0.858); F1 recall ceiling = listed sources / test references (D1 0.781).
+  Every results table prints its metric's ceiling.
+- **Hits@1 vs Recall@1**: equal on 1:1 references; under 1:N
+  `recall_at_1 <= hits_at_1`, since a source has one rank-1 slot. Only D1
+  (563 multi-target test sources), D2 (16) and D3 cmt-conference (1) differ.
+  The two share their numerator, so Hits@1 =
+  Recall@1 × `n_test_refs` / test reference sources exactly
+  (`hits_at_1_from_recall_at_1`); results written before #139 have no
+  `hits_at_k` and get Hits@1 that way (`evaluation/reference_counts.py`),
+  verified against all 26 B0 sidecars. Hits@5/10 cannot be derived and need
+  a re-run. #134's "source-level Hit@1" is this Hits@1.
+- **D3**: the table's D3 column is the macro mean over 21 pairs (as is every
+  statistic); the F1 table adds D3$_\mu$, pooled TP/FP/FN.
+- `evaluation/stats.py` and `report.md` still test and rank F1 (#140 covers
+  the per-dataset significance tests).
 
 ## Statistical analysis
 
@@ -1080,7 +1127,8 @@ Every file written by `run_experiment.py` contains:
   "apply_ppas", "ppas_effective", "token_budget",
   "metrics": {
     "f1", "precision", "recall", "threshold",
-    "mrr", "recall_at_1", "recall_at_5", "recall_at_10"
+    "mrr", "hits_at_1", "hits_at_5", "hits_at_10",
+    "recall_at_1", "recall_at_5", "recall_at_10"
   },
   "counts": {"tp", "fp", "fn"},
   "per_entity_type": {
@@ -1104,6 +1152,8 @@ Every file written by `run_experiment.py` contains:
 }
 ```
 
+`hits_at_k` (source-level, #139) is absent from results written before #139;
+see "Metrics (#139)" for how Hits@1 is recovered from them.
 `per_entity_type` is non-empty only for mixed-type pairs (D3, D4_schema).
 Old result files without `per_entity_type` are valid — the aggregator handles
 both. A bucket with fewer than three test references is dropped with a warning

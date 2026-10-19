@@ -44,6 +44,7 @@ what this permits.
 | Metric | Unit | Numerator | Denominator | Notes |
 |---|---|---|---|---|
 | MRR | test reference source | Σ 1 / rank of the source's best-ranked gold target | test reference sources | 1:N sources count once, credited with their best gold. A source whose gold is not in its list, or that has no list, scores 0. Ranked sources without a reference are ignored. |
+| Hits@k (1, 5, 10) (#139) | test reference source | sources with any gold target in their top k | test reference sources | Same unit and 1:N rule as MRR. Hits@1 and Recall@1 share their numerator (one rank-1 slot per source), so Hits@1 = Recall@1 × refs / sources exactly; results stored before #139 get it that way. |
 | Recall@k (1, 5, 10) | test reference pair | pairs whose target is in the source's top k | test reference pairs | Pairs, not sources: a 1:N source contributes one pair per gold target. |
 | Candidate recall@20 | test reference pair | pairs whose target is in the stage-1 list | test reference pairs | Ceiling for every re-ranking; equal for all conditions of a pair. |
 | Precision | prediction | correct predictions | test predictions | One prediction per test source: its top candidate if its score ≥ threshold. Includes unmatched sources (complete references) or only judgeable ones (D4). |
