@@ -43,7 +43,12 @@ from kgsemembed.evaluation import order_selection
 from kgsemembed.embeddings import EmbeddingEncoder, load_sentence_transformer
 from kgsemembed.evaluation import RankedList
 from kgsemembed.evaluation.metrics import compute_all_metrics
-from kgsemembed.evaluation.population import build_populations, judgeable_ranked_lists, restrict_ranked_lists
+from kgsemembed.evaluation.population import (
+    build_populations,
+    judgeable_ranked_lists,
+    restrict_ranked_lists,
+    without_known_pairs,
+)
 from kgsemembed.pipeline import ppas_ablation as base
 from kgsemembed.pipeline.ablation_conditions import ABLATION_MODEL_KEY, AblationCondition
 from kgsemembed.pipeline.run_experiment import (
@@ -320,8 +325,9 @@ def run_condition(condition: AblationCondition, context: base.PairContext, full:
                                    base.ablation_block(condition, stage.run, summaries), stage.run)
     payload["serialization"] = serialization_block(condition, full.dataset_id, stage, fingerprints)
     refs = population_refs(full, stage.population)
+    scored = without_known_pairs(full, ranked)
     sidecar = {"condition_id": condition.condition_id, "population": stage.population,
-               "reference_sources": {p: reference_records(r, ranked, fingerprints) for p, r in refs.items()},
+               "reference_sources": {p: reference_records(r, scored, fingerprints) for p, r in refs.items()},
                "selection_fingerprints": fingerprints["text"], "item_set_fingerprints": fingerprints["set"]}
     _write(condition, full, payload, sidecar, stage.run.results_dir)
     return payload

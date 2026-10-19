@@ -1,6 +1,7 @@
 """Tests for the text-serialization-order experiment (#134)."""
 
 import csv
+import dataclasses
 import hashlib
 import io
 import json
@@ -509,6 +510,17 @@ def test_test_stage_records_both_populations(tmp_path):
     assert set(sidecar["reference_sources"]) == {"validation", "test"}
     record = sidecar["reference_sources"]["test"][0]
     assert record["source_fp"][0] == sidecar["selection_fingerprints"]["source"][record["source"]]
+
+
+def test_sidecar_ranks_skip_known_pairs(tmp_path):
+    known = [(f"{EX}s3", f"{FMA}fma{i}") for i in range(1, 9) if i != 3]
+    full = dataclasses.replace(_synthetic_pair(), train_refs=known)
+    condition = next(c for c in SERIALIZATION_CONDITIONS if c.condition_id == "SO-core-plus-syn-uri-full")
+    runner.run_condition(condition, _context(full), full, _stage(tmp_path, runner.TEST))
+    sidecar = json.loads((tmp_path / "test" / condition.condition_id / "DX" / "dx_entities.json").read_text())
+    record = next(r for r in sidecar["reference_sources"]["test"] if r["source"] == f"{EX}s3")
+    assert record["best_rank"] == 1
+    assert [target for target, _score in record["top"]] == [f"{FMA}fma3"]
 
 
 # ---------------------------------------------------------------------------

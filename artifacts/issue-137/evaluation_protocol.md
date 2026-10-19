@@ -103,7 +103,7 @@ was a false positive.
   before scoring (`population.judgeable_ranked_lists`), so for a scored
   source it is neither a distractor ranked above the gold target nor a
   prediction. Bio-ML's evaluation likewise ignores these mappings.
-  On D1, 713 of the 726 mappings have a source among the D1 source
+  On D1, the 726 mappings cover 713 distinct sources, all of them D1 source
   entities: 556 of those sources have no other reference and are excluded
   (137 from validation, 419 from test); the other 157 (27 validation, 130
   test) keep their population, minus 122 known candidate pairs. D2–D4 have no

@@ -14,6 +14,7 @@ from rdflib.namespace import OWL, RDF, RDFS
 import kgsemembed.pipeline.ppas_ablation as ablation
 from kgsemembed.datasets import AlignmentPair
 from kgsemembed.embeddings.models import get_model_config
+from kgsemembed.utils.errors import DataError
 from kgsemembed.pipeline.ablation_conditions import (
     ABLATION_CONDITIONS,
     ABLATION_MODEL_KEY,
@@ -327,6 +328,48 @@ def test_sidecar_ranks_reproduce_the_reported_mrr(toy_run):
         sources = _read(results_dir, condition_id, "entities")["test_sources"]
         rr = [1.0 / s["best_rank"] if s["best_rank"] else 0.0 for s in sources]
         assert np.mean(rr) == pytest.approx(_read(results_dir, condition_id)["metrics"]["mrr"])
+
+
+def _pair_with_known_pair_above_gold() -> AlignmentPair:
+    """Give test source s3 a known target that ties t3's text and sorts before it."""
+    pair = _pair()
+    known = URIRef(f"{EX}t2dup")
+    for _s, predicate, obj in list(pair.target_graph.triples((URIRef(f"{EX}t3"), None, None))):
+        pair.target_graph.add((known, predicate, obj))
+    return replace(pair, train_refs=[(f"{EX}s3", str(known))])
+
+
+def test_sidecar_ranks_skip_known_pairs_like_the_mrr(toy_run, monkeypatch):
+    run, _model, results_dir = toy_run
+    pair = _pair_with_known_pair_above_gold()
+    candidates = {f"{EX}s{i}": [f"{EX}t{j}" for j in range(8)] + [f"{EX}t2dup"] for i in range(8)}
+    monkeypatch.setattr(ablation, "load_dataset", lambda _d, _dir: [pair])
+    monkeypatch.setattr(ablation, "load_candidates", lambda _d, _p, _dir: dict(candidates))
+    run(["PA-full"])
+    sources = _read(results_dir, "PA-full", "entities")["test_sources"]
+    assert {s["source"]: s["best_rank"] for s in sources}[f"{EX}s3"] == 1
+    rr = [1.0 / s["best_rank"] if s["best_rank"] else 0.0 for s in sources]
+    assert np.mean(rr) == pytest.approx(_read(results_dir, "PA-full")["metrics"]["mrr"])
+
+
+def test_results_scored_with_other_known_pairs_are_refused(toy_run, monkeypatch):
+    run, _model, results_dir = toy_run
+    run(["PA-full"])
+    pair = replace(_pair(), train_refs=[(f"{EX}s0", f"{EX}t1")])
+    monkeypatch.setattr(ablation, "load_dataset", lambda _d, _dir: [pair])
+    with pytest.raises(DataError, match="known pairs"):
+        run(["PA-ppas-80"])
+    assert not (results_dir / "PA-ppas-80").exists()
+    run(["PA-full", "PA-ppas-80"], force=True)
+    assert _read(results_dir, "PA-full")["population"]["n_train_refs"] == 1
+
+
+def test_signature_separates_runs_with_different_known_pairs():
+    run = {"model_id": "m", "hf_revision": "r", "candidates_sha256": "c", "evaluation_protocol": 2,
+           "token_budget": 48, "ablation": {"tokenizer_revision": "t", "smoke_max_sources": None},
+           "_entities": {"test_sources": [{"source": "a"}]}, "population": {"n_train_refs": 0}}
+    fixed = {**run, "population": {"n_train_refs": 726}}
+    assert report.run_signature(run) != report.run_signature(fixed)
 
 
 def test_sidecar_fingerprints_only_sampled_entities(toy_run):

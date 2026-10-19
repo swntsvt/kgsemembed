@@ -156,10 +156,25 @@ def restrict_ranked_lists(
 
 
 
-def _without_known_pairs(
+def without_known_pairs(
     pair: AlignmentPair, ranked_lists: List[RankedList]
 ) -> List[RankedList]:
-    """Remove every ``(source, target)`` training pair from the ranked lists."""
+    """
+    Remove every known ``(source, target)`` training pair from the ranked lists.
+
+    Parameters
+    ----------
+    pair : AlignmentPair
+        Alignment pair supplying ``train_refs``.
+    ranked_lists : List[RankedList]
+        One ranked candidate list per source entity.
+
+    Returns
+    -------
+    List[RankedList]
+        The lists without known pairs; ``ranked_lists`` itself when the pair
+        has none.
+    """
     known = set(pair.train_refs)
     if not known:
         return ranked_lists
@@ -193,7 +208,7 @@ def judgeable_ranked_lists(
         The ranked lists, without known pairs, whose predictions the
         reference can judge.
     """
-    ranked_lists = _without_known_pairs(pair, ranked_lists)
+    ranked_lists = without_known_pairs(pair, ranked_lists)
     if pair.reference_complete:
         return ranked_lists
     refs = [*pair.train_refs, *pair.val_refs, *pair.test_refs]

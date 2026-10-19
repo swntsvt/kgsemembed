@@ -330,12 +330,18 @@ def test_d1_and_d2_dispatch_to_20_80_val_test_split(
 def test_d1_loads_bio_ml_validation_mappings_as_known_pairs(tmp_path: Path) -> None:
     _write_pair_dataset(tmp_path, "d1_snomed_fma", 100)
     pair_dir = tmp_path / "d1_snomed_fma"
-    (pair_dir / "input.rdf").write_text(_edoal_xml(3), encoding="utf-8")
-    (pair_dir / "reference.rdf").write_text(_edoal_xml(100), encoding="utf-8")
+    (pair_dir / "input.rdf").write_text(_edoal_xml(3).replace("/tgt", "/other"), encoding="utf-8")
     pair = load_dataset("D1", tmp_path)[0]
 
     assert pair.train_refs == _parse_alignment_refs(pair_dir / "input.rdf")
     assert len(pair.val_refs) == 20 and len(pair.test_refs) == 80
+
+
+def test_d1_known_pairs_that_are_also_references_raise(tmp_path: Path) -> None:
+    _write_pair_dataset(tmp_path, "d1_snomed_fma", 10)
+    (tmp_path / "d1_snomed_fma" / "input.rdf").write_text(_edoal_xml(1), encoding="utf-8")
+    with pytest.raises(DataError, match="also references"):
+        load_dataset("D1", tmp_path)
 
 
 def test_d1_without_bio_ml_validation_mappings_raises(tmp_path: Path) -> None:

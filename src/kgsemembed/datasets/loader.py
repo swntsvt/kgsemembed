@@ -716,7 +716,38 @@ def _load_d1(data_dir: Path) -> list[AlignmentPair]:
     pair = _load_rdf_pair(
         pair_dir, "d1_snomed_fma", ("snomed", "fma"), "D1", "class", _split_val_test_20_80
     )
-    return [replace(pair, train_refs=_parse_alignment_refs(pair_dir / _D1_KNOWN_MAPPINGS))]
+    return [replace(pair, train_refs=_known_pairs(pair, pair_dir / _D1_KNOWN_MAPPINGS))]
+
+
+def _known_pairs(pair: AlignmentPair, path: Path) -> list[EntityPair]:
+    """
+    Read known pairs, refusing any that is also a validation or test reference.
+
+    Known pairs are removed from every ranked list before scoring, so one that
+    is also a reference would silently delete a gold target.
+
+    Parameters
+    ----------
+    pair : AlignmentPair
+        Pair whose validation and test references must stay scorable.
+    path : Path
+        EDOAL file of known pairs.
+
+    Returns
+    -------
+    list[EntityPair]
+        The known pairs.
+
+    Raises
+    ------
+    DataError
+        If a known pair is also a validation or test reference.
+    """
+    known = _parse_alignment_refs(path)
+    shared = set(known) & set(pair.val_refs + pair.test_refs)
+    if shared:
+        raise DataError(f"{len(shared)} known pairs in {path} are also references, e.g. {min(shared)}.")
+    return known
 
 
 def _load_d2(data_dir: Path) -> list[AlignmentPair]:

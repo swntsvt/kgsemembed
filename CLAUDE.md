@@ -846,6 +846,16 @@ python scripts/annotation_fix_report.py --old_dir data/results/ \
   above/below count against B0 changed. Pre-fix D1 results and the previous
   `report.md` are kept in `data/results_pre137/`. Historical ablation trees
   (#122–#134) are not re-run.
+- **Guards for the known pairs**: the D1 loader refuses a known pair that is
+  also a validation/test reference (it would delete a gold target). The
+  ablation and serialization sidecars count best gold ranks on the same
+  filtered lists as MRR (`population.without_known_pairs`). `ppas_ablation`
+  refuses to add a result beside a kept one of the same pair and smoke
+  setting that records a different `n_train_refs` (re-run all with
+  `--force_recompute` or use a new directory), and the ablation report's run
+  signature includes `n_train_refs`, so pre- and post-fix D1 runs are never
+  grouped. A new D1 ablation run therefore cannot go into the #122–#131
+  directories without re-running every condition there.
 - `artifacts/issue-137/` (tracked): `evaluation_protocol.md` (protocol,
   metric definitions, scope, limitations, D5 analysis),
   `baseline_comparison.md`, `dataset_provenance.md`.

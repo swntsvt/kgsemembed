@@ -1,5 +1,6 @@
 """Tests for the stage-1 n-gram ranking baseline (B0, #137)."""
 
+import dataclasses
 import json
 import sys
 from pathlib import Path
@@ -96,6 +97,16 @@ def test_gold_rank_records() -> None:
     assert [r["gold_ranks"] for r in records] == [[2], [None], [None]]
     assert [r["ranked"] for r in records] == [True, True, False]
     assert [r["source"] for r in records] == ["a", "b", "c"]
+
+
+def test_sidecar_ranks_skip_known_pairs(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A known pair ranked above the gold target does not count against it."""
+    pair = _pair()
+    _write_stored(tmp_path, _stored(pair))
+    assert _stored(pair)[_NS + "s3"][:2] == [_NS + "t3", _NS + "t5"]
+    pair = dataclasses.replace(pair, train_refs=[(_NS + "s3", _NS + "t3")])
+    _payload, records = baseline.evaluate_pair(pair, tmp_path)
+    assert {r["source"]: r["best_gold_rank"] for r in records}[_NS + "s3"] == 1
 
 
 def test_refuses_historical_results_dir() -> None:
