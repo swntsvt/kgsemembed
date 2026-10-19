@@ -134,6 +134,33 @@ python scripts/release_checks.py --data_dir data/ \
     --ra1_zip reference-alignment.zip --openea_zip OpenEA_dataset_v2.0.zip
 ```
 
+## Primary metrics: re-ranking MRR and Hits@1 (Issue #139)
+
+The paper's primary metrics are **re-ranking MRR** and **source-level
+Hits@1**. F1 is secondary: on D3 its threshold is tuned on 1–5 validation
+references per pair, and on D4 schema on 10.
+
+- MRR and Hits@k count each test reference source once. A source with several
+  gold targets is credited with its best one. Recall@k counts each reference
+  pair, so under 1:N Recall@1 ≤ Hits@1. The two differ only on D1, D2 and
+  one D3 pair.
+- All ranking metrics are computed within the stored top-20 candidates. Every
+  table therefore prints its metric's ceiling: the share of test reference
+  sources with a gold target among their candidates (D1 0.886, D5 0.267).
+- The F1 table also reports micro-averaged D3 F1 and the validation and test
+  reference counts behind every value.
+
+```bash
+python scripts/metric_ceilings.py --data_dir data/ --output_dir artifacts/issue-139/
+python scripts/generate_results_table.py --results_dir data/results/ \
+    --baseline_dir data/results_ngram_baseline/ --metric mrr   # or hits_at_1, f1, recall_at_1
+python scripts/generate_figure1_d3_scatter.py --metric mrr
+python scripts/generate_figure2_model_comparison.py --metric mrr
+```
+
+Definitions are in `src/kgsemembed/evaluation/metrics.py`; counts, ceilings
+and generated tables are in `artifacts/issue-139/`.
+
 ## Usage
 
 Base run:

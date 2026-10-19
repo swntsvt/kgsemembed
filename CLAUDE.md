@@ -119,7 +119,8 @@ python scripts/generate_candidates.py --datasets D1 D2 D3 D4 D5 \
 python scripts/generate_report.py \
     --results_dir data/results/ --output data/results/report.md
 
-# Compute stage-1 candidate recall@20 (the ceiling re-ranking cannot exceed)
+# Compute stage-1 candidate recall@20 (per reference: the ceiling of Recall@k;
+# MRR/Hits@k have the per-source ceiling of scripts/metric_ceilings.py)
 python scripts/compute_recall_at_20.py \
     --datasets D1 D2 D3 D4 D5 --data_dir data/
 
@@ -1065,9 +1066,11 @@ with version 2 and are rejected by `evaluation/stats.py`.
 
 **Primary metrics: re-ranking MRR and source-level Hits@1. F1 is secondary.**
 F1 rests on a threshold tuned on very few validation references on several
-columns (1–5 per D3 pair, 10 on D4_schema, where one TP moves F1 by ~0.02)
-and on D1 is dominated by false positives from unmatched test sources, so it
-is reported, with its reference counts, but never as the headline. The
+columns (1–5 per D3 pair, 10 on D4_schema, where one TP moves F1 by ~0.02),
+and on D1 it hinges on how many of the 14,255 unmatched test sources pass the
+threshold (FP 1,809–10,273 across conditions; C4 has the best D1 MRR, 0.779,
+but F1 0.322). So it is reported, with its reference counts, but never as
+the headline. The
 definitions live in the `metrics.py` module docstring; in short:
 
 | Metric | Key | Unit | Denominator | 1:N |

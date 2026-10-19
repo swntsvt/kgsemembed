@@ -444,7 +444,8 @@ def hits_at_1_from_recall_at_1(
     Each source has one rank-1 candidate, so at most one of its references is
     recovered at ``k = 1``: the Recall@1 numerator is the number of reference
     sources whose top candidate is gold, which is the Hits@1 numerator.  Only
-    the denominators differ.  The identity does not hold for ``k > 1``.
+    the denominators differ.  The identity assumes no duplicate reference
+    pairs (none in D1-D5) and does not hold for ``k > 1``.
 
     Parameters
     ----------

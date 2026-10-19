@@ -108,8 +108,8 @@ the test population.
 We report ranking and matching metrics separately. The primary metrics are
 re-ranking MRR and Hits@1; F1 is secondary, because on several columns it
 rests on a threshold tuned on very few validation references (1--5 per D3
-pair, 10 on D4 schema) or is dominated by false positives from unmatched
-sources (D1). \emph{Ranking} metrics need no threshold and are computed within
+pair, 10 on D4 schema) or, on D1, on how many of 14,255 unmatched test sources
+pass the threshold. \emph{Ranking} metrics need no threshold and are computed within
 the 20 candidates, so they are re-ranking scores, capped by the share of test
 reference sources with a gold target among their candidates (the ceiling row
 of each table). Re-ranking MRR is the mean, over test reference sources, of the

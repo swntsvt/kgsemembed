@@ -110,5 +110,5 @@ def result_metric(payload: dict, metric: str, counts: Dict[PairKey, PairCounts] 
     except KeyError as exc:
         raise ValueError(
             f"{payload['dataset_id']}/{payload['pair_name']} has no recorded hits_at_1 and no "
-            "reference counts; run scripts/metric_ceilings.py or pass --ceilings."
+            f"reference counts; run scripts/metric_ceilings.py to write {DEFAULT_COUNTS_PATH}."
         ) from exc
