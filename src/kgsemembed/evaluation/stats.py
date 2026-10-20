@@ -90,7 +90,6 @@ _GROUP_COMPARISONS: Dict[str, Tuple[_Comparison, ...]] = {
     "B": (
         _Comparison("C3", "C10", ("D1", "D2", "D3", "D4", "D5")),
         _Comparison("C9", "C10", ("D1", "D2", "D3", "D4", "D5")),
-        _Comparison("C12", "C1", ("D3", "D4")),
         _Comparison("C18", "C10", ("D1", "D2", "D3", "D4", "D5")),
     ),
     "C": (

@@ -58,13 +58,14 @@ _EXPECTED_SUMMARY_COLUMNS = [
     "condition_id",
     "strategy",
     "model_key",
+    "ablation_group",
     "mean_f1",
     "std_f1",
     "mean_mrr",
     "mean_recall_at_1",
     "mean_recall_at_5",
     "mean_recall_at_10",
-    "n_pairs",
+    "n_columns",
 ]
 
 _METRIC_KEYS = (
@@ -467,7 +468,7 @@ def test_breakdown_rows_do_not_reach_the_default_report_path(tmp_path: Path) -> 
     """The report loads without the flag, so summaries stay one row per pair."""
     _write_mixed_result(tmp_path)
     summary = build_condition_summary_table(load_all_results(str(tmp_path)))
-    assert list(summary["n_pairs"]) == [1]
+    assert list(summary["n_columns"]) == [1]
 
 
 # ---------------------------------------------------------------------------
@@ -477,29 +478,48 @@ def test_condition_summary_row_count(full_results_dir: Path) -> None:
     df = load_all_results(str(full_results_dir))
     summary = build_condition_summary_table(df)
     assert list(summary.columns) == _EXPECTED_SUMMARY_COLUMNS
-    assert len(summary) == len(EXPERIMENT_CONDITIONS) == 20
+    assert len(summary) == len(EXPERIMENT_CONDITIONS) == 19
 
 
-def test_condition_summary_sorted_descending(full_results_dir: Path) -> None:
+def test_condition_summary_lists_conditions_in_registry_order(full_results_dir: Path) -> None:
     df = load_all_results(str(full_results_dir))
     summary = build_condition_summary_table(df)
-    assert list(summary["mean_f1"]) == sorted(summary["mean_f1"], reverse=True)
+    assert list(summary["condition_id"]) == [c.condition_id for c in EXPERIMENT_CONDITIONS]
 
 
-def test_condition_summary_tie_breaks_on_condition_id(tmp_path: Path) -> None:
-    for condition_id in ("C3", "C1", "C2"):
-        for pair_index in range(3):
-            _write_result(tmp_path, condition_id, "D1", f"D1_p{pair_index}", 0.6)
+def test_condition_summary_is_not_ranked_by_score(tmp_path: Path) -> None:
+    for condition_id, f1 in (("C3", 0.9), ("C1", 0.1), ("C2", 0.5)):
+        _write_result(tmp_path, condition_id, "D1", "D1_p0", f1)
     summary = build_condition_summary_table(load_all_results(str(tmp_path)))
     assert list(summary["condition_id"]) == ["C1", "C2", "C3"]
 
 
-def test_condition_summary_rounding_and_n_pairs(tmp_path: Path) -> None:
+def test_condition_summary_weights_each_dataset_column_once(tmp_path: Path) -> None:
+    """D3's pairs are averaged into one column, so they cannot outweigh D1."""
+    for pair_index in range(21):
+        _write_result(tmp_path, "C1", "D3", f"D3_p{pair_index}", 0.2)
+    _write_result(tmp_path, "C1", "D1", "D1_p0", 0.8)
+    summary = build_condition_summary_table(load_all_results(str(tmp_path)))
+    assert summary.loc[0, "n_columns"] == 2
+    assert summary.loc[0, "mean_f1"] == pytest.approx(0.5)
+    assert summary.loc[0, "mean_mrr"] == pytest.approx(0.5)
+    assert summary.loc[0, "std_f1"] == pytest.approx(0.3)
+
+
+def test_condition_summary_keeps_d4_columns_separate(tmp_path: Path) -> None:
+    _write_result(tmp_path, "C1", "D4_schema", "schema_pair", 0.9)
+    _write_result(tmp_path, "C1", "D4_instance", "instance_pair", 0.5)
+    summary = build_condition_summary_table(load_all_results(str(tmp_path)))
+    assert summary.loc[0, "n_columns"] == 2
+    assert summary.loc[0, "mean_f1"] == pytest.approx(0.7)
+
+
+def test_condition_summary_rounding_and_n_columns(tmp_path: Path) -> None:
     _write_result(tmp_path, "C1", "D1", "D1_p0", 0.123456)
     _write_result(tmp_path, "C1", "D1", "D1_p1", 0.234567)
     _write_result(tmp_path, "C1", "D2", "D2_p0", 0.345678)
     summary = build_condition_summary_table(load_all_results(str(tmp_path)))
-    assert summary.loc[0, "n_pairs"] == 3
+    assert summary.loc[0, "n_columns"] == 2
     for column in ("mean_f1", "std_f1", "mean_mrr"):
         value = summary.loc[0, column]
         assert round(value, 4) == value
@@ -583,6 +603,7 @@ def test_report_seven_sections_with_stats(full_results_dir: Path, tmp_path: Path
         "# Ablation Group Analysis",
         "# Statistical Significance",
         "# PPAS Ablation",
+        "# Sanity Checks",
     ]
 
 
@@ -625,7 +646,7 @@ def test_report_six_sections_without_stats(full_results_dir: Path, tmp_path: Pat
     output = tmp_path / "report.md"
     generate_markdown_report(df, None, str(output))
     headings = _headings(output.read_text(encoding="utf-8"))
-    assert len(headings) == 6
+    assert len(headings) == 7
     assert "# Statistical Significance" not in headings
 
 
@@ -884,6 +905,7 @@ def test_entity_type_section_between_breakdown_and_ablation(tmp_path: Path) -> N
         "# Entity-Type Analysis",
         "# Ablation Group Analysis",
         "# PPAS Ablation",
+        "# Sanity Checks",
     ]
 
 
@@ -1261,47 +1283,72 @@ def test_report_ppas_values_from_results(tmp_path: Path) -> None:
     output = tmp_path / "report.md"
     generate_markdown_report(df, None, str(output))
     text = output.read_text(encoding="utf-8")
-    confounded = "Confounded (different models)"
-    controlled = "Controlled ablation (same model)"
-    varied = "Yes — V4+V6 invokes PPAS via should_apply_ppas()"
-    unvaried = "No — V2+V8 does not invoke PPAS"
-    unvaried_confounded = f"{unvaried} (confounded by model change)"
     assert (
-        f"| C5 vs C14 | D5 | {confounded} | {varied} | 0.4000 | 0.5500 | 0.1500 |"
+        "| C5 vs C14 | D5 | Confounded (strategy V4 vs V4+V6, model M2 vs M3) | "
+        "Not isolated — C5 can sample (V4, M2 budget); C14 cannot "
+        "(ppas_effective false: M3 has no budget) | 0.4000 | 0.5500 | 0.1500 |"
     ) in text
     assert (
-        f"| C10 vs C15 | D1 | {confounded} | {unvaried_confounded} | N/A | N/A | N/A |"
-    ) in text
-    assert (
-        f"| C10 vs C19 | D1 | {controlled} | {unvaried} | N/A | N/A | N/A |"
+        "| C10 vs C15 | D1 | Confounded (model M2 vs M3) | "
+        "No — V2+V8 does not invoke PPAS under either model | N/A | N/A | N/A |"
     ) in text
 
 
-def test_report_ppas_controlled_ablation_row(tmp_path: Path) -> None:
-    results_dir = tmp_path / "results"
-    for pair_index in range(6):
-        _write_result(results_dir, "C10", "D1", f"D1_p{pair_index}", 0.09)
-        _write_result(results_dir, "C19", "D1", f"D1_p{pair_index}", 0.15)
-    df = load_all_results(str(results_dir))
-    output = tmp_path / "report.md"
-    generate_markdown_report(df, None, str(output))
-    text = output.read_text(encoding="utf-8")
-    assert (
-        "| C10 vs C19 | D1 | Controlled ablation (same model) | "
-        "No — V2+V8 does not invoke PPAS | 0.0900 | 0.1500 | 0.0600 |" in text
-    )
-
-
-def test_report_ppas_marks_only_the_v4_comparison_as_varying_ppas(
-    tmp_path: Path,
-) -> None:
-    """Only the V4+V6 pair consults a token budget, so only it varies PPAS."""
+def test_report_ppas_section_no_longer_lists_c19(tmp_path: Path) -> None:
     output = tmp_path / "report.md"
     generate_markdown_report(load_all_results(str(tmp_path)), None, str(output))
     section = output.read_text(encoding="utf-8").split("# PPAS Ablation", 1)[1]
+    section = section.split("\n# ", 1)[0]
     rows = [line for line in section.splitlines() if " vs " in line]
-    assert [row.count("| Yes —") for row in rows] == [1, 0, 0]
-    assert [row.count("| No —") for row in rows] == [0, 1, 1]
+    assert [row.split(" | ")[0] for row in rows] == ["| C5 vs C14", "| C10 vs C15"]
+    assert "Controlled" not in section and "| Yes —" not in section
+
+
+def _sanity_report(tmp_path: Path, c19_f1: float) -> str:
+    results_dir = tmp_path / "results"
+    for pair_index in range(2):
+        _write_result(results_dir, "C10", "D1", f"D1_p{pair_index}", 0.09)
+        _write_result(results_dir, "C19", "D1", f"D1_p{pair_index}", c19_f1)
+    output = tmp_path / "report.md"
+    generate_markdown_report(load_all_results(str(results_dir)), None, str(output))
+    return output.read_text(encoding="utf-8")
+
+
+def test_sanity_section_confirms_c19_reproduces_c10(tmp_path: Path) -> None:
+    text = _sanity_report(tmp_path, 0.09)
+    assert (
+        "| C19 vs C10 | D1 | Identical metrics: V2+V8 never consults a token budget | "
+        "0.0900 | 0.0900 | 0.0900 | 0.0900 | Yes |"
+    ) in text
+
+
+def test_sanity_section_flags_a_c19_divergence(tmp_path: Path) -> None:
+    text = _sanity_report(tmp_path, 0.15)
+    assert text.rstrip().endswith("| 0.1500 | 0.0900 | 0.1500 | 0.0900 | No |")
+
+
+def test_sanity_section_without_results(tmp_path: Path) -> None:
+    output = tmp_path / "report.md"
+    generate_markdown_report(load_all_results(str(tmp_path)), None, str(output))
+    assert output.read_text(encoding="utf-8").rstrip().endswith("| N/A |")
+
+
+def test_c19_stays_out_of_the_result_tables(full_results_dir: Path, tmp_path: Path) -> None:
+    output = tmp_path / "report.md"
+    generate_markdown_report(load_all_results(str(full_results_dir)), None, str(output))
+    text = output.read_text(encoding="utf-8")
+    before_sanity = text.split("# Sanity Checks", 1)[0]
+    assert "| C19 |" not in before_sanity
+    assert "| C19 vs C10 |" in text
+
+
+def test_condition_summary_section_explains_it_is_not_a_ranking(
+    full_results_dir: Path, tmp_path: Path
+) -> None:
+    output = tmp_path / "report.md"
+    generate_markdown_report(load_all_results(str(full_results_dir)), None, str(output))
+    section = output.read_text(encoding="utf-8").split("# Condition Summary Table", 1)[1]
+    assert "not ranked" in section.split("\n# ", 1)[0]
 
 
 # ---------------------------------------------------------------------------

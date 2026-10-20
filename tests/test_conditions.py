@@ -12,7 +12,11 @@ from kgsemembed.pipeline import (
     get_conditions_for_dataset,
     get_conditions_for_group,
 )
-from kgsemembed.pipeline.conditions import _validate_registry
+from kgsemembed.pipeline.conditions import (
+    RETIRED_CONDITION_IDS,
+    SANITY_CHECK_GROUP,
+    _validate_registry,
+)
 from kgsemembed.verbalisation import (
     AnnotationVerbaliser,
     CombinedVerbaliser,
@@ -32,7 +36,6 @@ _CANONICAL_MATRIX = [
     ("C3", "V2+V6", "M2", _ALL, True, "B"),
     ("C9", "V8", "M2", _ALL, True, "B"),
     ("C10", "V2+V8", "M2", _ALL, True, "B"),
-    ("C12", "V8", "M2", ["D3", "D4"], True, "B"),
     ("C18", "V2+V8", "M1", _ALL, True, "B"),
     ("C4", "V3", "M2", ["D1", "D2", "D3"], True, "C"),
     ("C5", "V4", "M2", ["D4", "D5"], True, "C"),
@@ -44,7 +47,7 @@ _CANONICAL_MATRIX = [
     ("C16", "V2+V8+V7", "M4", ["D1", "D2"], True, "C"),
     ("C14", "V4+V6", "M3", ["D5"], False, "D"),
     ("C15", "V2+V8", "M3", ["D1"], False, "D"),
-    ("C19", "V2+V8", "M2_uncapped", ["D1"], False, "D"),
+    ("C19", "V2+V8", "M2_uncapped", ["D1"], False, "S"),
     ("C20", "V2", "M2", _ALL, True, "E"),
 ]
 
@@ -63,8 +66,8 @@ def _make_condition(**overrides) -> ExperimentCondition:
     return ExperimentCondition(**defaults)
 
 
-def test_registry_holds_twenty_conditions():
-    assert len(EXPERIMENT_CONDITIONS) == 20
+def test_registry_holds_nineteen_conditions():
+    assert len(EXPERIMENT_CONDITIONS) == 19
 
 
 def test_registry_matches_canonical_matrix_in_order():
@@ -251,16 +254,40 @@ def test_get_conditions_for_dataset_unknown_returns_empty():
     assert get_conditions_for_dataset("D99") == []
 
 
-def test_get_conditions_for_group_d_holds_every_non_ppas_condition():
+def test_get_conditions_for_group_d_holds_the_unbudgeted_model_conditions():
     ids = [c.condition_id for c in get_conditions_for_group("D")]
-    assert ids == ["C14", "C15", "C19"]
+    assert ids == ["C14", "C15"]
+
+
+def test_c19_is_the_only_sanity_check_condition():
+    ids = [c.condition_id for c in get_conditions_for_group(SANITY_CHECK_GROUP)]
+    assert ids == ["C19"]
+
+
+def test_c12_is_retired_and_unregistered():
+    assert "C12" in RETIRED_CONDITION_IDS
+    with pytest.raises(KeyError):
+        get_condition("C12")
+
+
+def test_validate_registry_rejects_a_reused_retired_identifier():
+    conditions = [c for c in EXPERIMENT_CONDITIONS if c.condition_id != "C1"]
+    conditions.append(_make_condition(condition_id="C12"))
+    with pytest.raises(ValueError, match="Retired"):
+        _validate_registry(conditions)
+
+
+def test_descriptions_name_the_registered_model():
+    for condition in EXPERIMENT_CONDITIONS:
+        assert "GTE" not in condition.description
+        assert "Label-only" not in condition.description
 
 
 @pytest.mark.parametrize(
     "group, expected_ids",
     [
         ("A", ["C1", "C2", "C17"]),
-        ("B", ["C3", "C9", "C10", "C12", "C18"]),
+        ("B", ["C3", "C9", "C10", "C18"]),
         ("C", ["C4", "C5", "C6", "C7", "C8", "C11", "C13", "C16"]),
     ],
 )

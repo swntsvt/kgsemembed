@@ -564,7 +564,7 @@ def _seed_group(results_dir: Path, group: str) -> None:
 
 @pytest.mark.parametrize(
     "group,expected",
-    [("A", 3), ("B", 4), ("C", 3), ("D", 2), ("E", 1)],
+    [("A", 3), ("B", 3), ("C", 3), ("D", 2), ("E", 1)],
 )
 def test_group_comparison_counts(tmp_path: Path, group: str, expected: int) -> None:
     _seed_group(tmp_path, group)
@@ -602,13 +602,13 @@ def test_group_results_contain_correction_fields(tmp_path: Path) -> None:
     }
     for result in results:
         assert required.issubset(set(result))
-        assert result["alpha_corrected"] == pytest.approx(0.05 / 4)
+        assert result["alpha_corrected"] == pytest.approx(0.05 / 3)
 
 
 def test_group_comparisons_match_canonical_matrix(tmp_path: Path) -> None:
     expected = {
         "A": [("C1", "C2"), ("C1", "C17"), ("C2", "C17")],
-        "B": [("C3", "C10"), ("C9", "C10"), ("C12", "C1"), ("C18", "C10")],
+        "B": [("C3", "C10"), ("C9", "C10"), ("C18", "C10")],
         "C": [("C10", "C13"), ("C11", "C13"), ("C6", "C16")],
         "D": [("C5", "C14"), ("C10", "C15")],
         "E": [("C20", "C10")],
@@ -620,7 +620,7 @@ def test_group_comparisons_match_canonical_matrix(tmp_path: Path) -> None:
         assert actual == pairs
 
 
-def test_six_unit_comparison_is_underpowered_under_a_four_way_correction(
+def test_six_unit_comparison_is_underpowered_under_a_three_way_correction(
     tmp_path: Path,
 ) -> None:
     _seed_group(tmp_path, "B")
@@ -650,18 +650,24 @@ def _run_group_with_fixed_pvalue(
 
 
 def test_bonferroni_uses_group_comparison_count(tmp_path: Path) -> None:
-    # Group B has 4 comparisons; the corrected threshold is 0.05 / 4 = 0.0125.
-    # Its C12 vs C1 comparison spans three columns and is not tested, yet it
-    # still counts towards the divisor.
-    below = _run_group_with_fixed_pvalue(tmp_path / "below", "B", 0.012)
-    above = _run_group_with_fixed_pvalue(tmp_path / "above", "B", 0.013)
+    # Group B has 3 comparisons; the corrected threshold is 0.05 / 3 = 0.0167.
+    below = _run_group_with_fixed_pvalue(tmp_path / "below", "B", 0.016)
+    above = _run_group_with_fixed_pvalue(tmp_path / "above", "B", 0.017)
     assert len(below) == 3 and len(above) == 3
     assert all(result["corrected_significant"] is True for result in below)
     assert all(result["corrected_significant"] is False for result in above)
 
 
+def test_untested_comparisons_still_count_towards_the_divisor(tmp_path: Path) -> None:
+    # Group A's C1 vs C17 and C2 vs C17 span two columns and are not tested,
+    # yet C1 vs C2 is still corrected by alpha / 3.
+    (tested,) = _run_group_with_fixed_pvalue(tmp_path, "A", 0.02)
+    assert tested["alpha_corrected"] == pytest.approx(0.05 / 3)
+    assert tested["corrected_significant"] is False
+
+
 def test_bonferroni_correction_is_group_local(tmp_path: Path) -> None:
-    # p=0.04 passes group E's alpha / 1 but fails group B's alpha / 4.
+    # p=0.04 passes group E's alpha / 1 but fails group B's alpha / 3.
     in_e = _run_group_with_fixed_pvalue(tmp_path / "e", "E", 0.04)
     in_b = _run_group_with_fixed_pvalue(tmp_path / "b", "B", 0.04)
     assert all(result["corrected_significant"] is True for result in in_e)

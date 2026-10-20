@@ -145,7 +145,7 @@ def test_only_full_is_uncapped_and_only_random_is_seeded():
 
 
 def test_historical_registry_is_unchanged():
-    assert len(EXPERIMENT_CONDITIONS) == 20
+    assert len(EXPERIMENT_CONDITIONS) == 19
     assert not any(c.condition_id.startswith("PA-") for c in EXPERIMENT_CONDITIONS)
 
 

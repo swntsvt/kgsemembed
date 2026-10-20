@@ -36,7 +36,7 @@ _DATASET_ID = "D3"
 _ENTITY_TYPES = ("class", "predicate")
 _MIN_REFS = 3
 _CONDITION_ORDER = (
-    "C1", "C2", "C3", "C4", "C7", "C9", "C20", "C10", "C12", "C13", "C18",
+    "C1", "C2", "C3", "C4", "C7", "C9", "C20", "C10", "C13", "C18",
 )
 _TABLE_HEADER = "% Paste into Table~\\ref{tab:entity_type}"
 

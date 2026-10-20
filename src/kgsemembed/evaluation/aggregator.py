@@ -11,6 +11,12 @@ emits LaTeX; statistical comparison results computed elsewhere are rendered as
 Markdown tables only when supplied.  Ablation-group membership is always derived
 from :data:`kgsemembed.pipeline.conditions.EXPERIMENT_CONDITIONS` rather than
 duplicated here.
+
+Aggregates across datasets use the dataset column as their unit, as
+:mod:`kgsemembed.evaluation.stats` does: D1, D2, D3, D4_schema, D4_instance and
+D5, where D3 is the mean of its 21 pairs.  A mean over pairs would let D3
+outweigh every other dataset 21 to 1.  Sanity-check conditions (C19) are kept
+out of the summary, breakdown and group tables and reported on their own.
 """
 
 from __future__ import annotations
@@ -29,7 +35,12 @@ from kgsemembed.evaluation.stats import (
     _sanitise_warning,
     pair_outcome_cell,
 )
-from kgsemembed.pipeline.conditions import get_condition, get_conditions_for_group
+from kgsemembed.pipeline.conditions import (
+    EXPERIMENT_CONDITIONS,
+    SANITY_CHECK_GROUP,
+    get_condition,
+    get_conditions_for_group,
+)
 from kgsemembed.utils.errors import DataError
 
 _LOGGER = logging.getLogger("kgsemembed.evaluation.aggregator")
@@ -105,19 +116,36 @@ _SUMMARY_FLOAT_FIELDS = (
     "mean_recall_at_5",
     "mean_recall_at_10",
 )
-_SUMMARY_COLUMNS = ("condition_id", "strategy", "model_key", *_SUMMARY_FLOAT_FIELDS, "n_pairs")
+_SUMMARY_COLUMNS = (
+    "condition_id",
+    "strategy",
+    "model_key",
+    "ablation_group",
+    *_SUMMARY_FLOAT_FIELDS,
+    "n_columns",
+)
+_SUMMARY_KEYS = ["condition_id", "strategy", "model_key", "ablation_group"]
+_COLUMN_METRICS = ["f1", "mrr", "recall_at_1", "recall_at_5", "recall_at_10"]
+_REGISTRY_ORDER = {c.condition_id: index for index, c in enumerate(EXPERIMENT_CONDITIONS)}
+_SUMMARY_NOTE = (
+    "_Means over the dataset columns each condition was run on: D1, D2, D3 (the "
+    "mean of its 21 pairs), D4_schema, D4_instance and D5. Conditions cover "
+    "different columns (`n_columns`), so rows are listed in registry order and "
+    "not ranked; compare conditions within a column in the Per-Dataset "
+    "Breakdown._"
+)
 
 _ABLATION_GROUPS = ("A", "B", "C", "D", "E")
 _GROUP_REFERENCE_CONDITIONS: Dict[str, Tuple[str, ...]] = {"E": ("C10",)}
 
-_CONTROLLED_ABLATION = "Controlled ablation (same model)"
-_CONFOUNDED_ABLATION = "Confounded (different models)"
+_CONFOUNDED_STRATEGY_AND_MODEL = "Confounded (strategy V4 vs V4+V6, model M2 vs M3)"
+_CONFOUNDED_MODEL = "Confounded (model M2 vs M3)"
 
-_PPAS_VARIED = "Yes — V4+V6 invokes PPAS via should_apply_ppas()"
-_PPAS_UNVARIED = "No — V2+V8 does not invoke PPAS"
-_PPAS_UNVARIED_CONFOUNDED = (
-    "No — V2+V8 does not invoke PPAS (confounded by model change)"
+_PPAS_NOT_ISOLATED = (
+    "Not isolated — C5 can sample (V4, M2 budget); C14 cannot "
+    "(ppas_effective false: M3 has no budget)"
 )
+_PPAS_UNVARIED = "No — V2+V8 does not invoke PPAS under either model"
 
 
 @dataclass(frozen=True)
@@ -148,11 +176,41 @@ class _PpasComparison:
 
 
 _PPAS_COMPARISONS = (
-    _PpasComparison("C5", "C14", "D5", _CONFOUNDED_ABLATION, _PPAS_VARIED),
-    _PpasComparison("C10", "C15", "D1", _CONFOUNDED_ABLATION, _PPAS_UNVARIED_CONFOUNDED),
-    _PpasComparison("C10", "C19", "D1", _CONTROLLED_ABLATION, _PPAS_UNVARIED),
+    _PpasComparison("C5", "C14", "D5", _CONFOUNDED_STRATEGY_AND_MODEL, _PPAS_NOT_ISOLATED),
+    _PpasComparison("C10", "C15", "D1", _CONFOUNDED_MODEL, _PPAS_UNVARIED),
 )
 _NO_WARNING_CELL = ""
+
+
+@dataclass(frozen=True)
+class _SanityCheck:
+    """
+    A condition that must reproduce a reference condition exactly.
+
+    Attributes
+    ----------
+    condition_id : str
+        The sanity-check condition, e.g. ``"C19"``.
+    reference_id : str
+        The condition it must reproduce, e.g. ``"C10"``.
+    dataset_id : str
+        Dataset the two are compared on.
+    expectation : str
+        Why the two must agree.
+    """
+
+    condition_id: str
+    reference_id: str
+    dataset_id: str
+    expectation: str
+
+
+_SANITY_CHECKS = (
+    _SanityCheck(
+        "C19", "C10", "D1",
+        "Identical metrics: V2+V8 never consults a token budget",
+    ),
+)
 
 
 def _result_columns(include_entity_type_breakdown: bool = False) -> List[str]:
@@ -414,9 +472,25 @@ def load_all_results(
     )
 
 
+def _dataset_column_means(df: pd.DataFrame) -> pd.DataFrame:
+    """Return one row per condition and dataset column, averaging that column's pairs."""
+    keys = [*_SUMMARY_KEYS, "dataset_id"]
+    return df.groupby(keys, sort=False)[_COLUMN_METRICS].mean().reset_index()
+
+
+def _in_registry_order(summary: pd.DataFrame) -> pd.DataFrame:
+    """Sort summary rows by the conditions' position in the registry."""
+    order = summary["condition_id"].map(_REGISTRY_ORDER)
+    return summary.assign(_order=order).sort_values("_order").drop(columns="_order")
+
+
 def build_condition_summary_table(df: pd.DataFrame) -> pd.DataFrame:
     """
-    Aggregate metrics per condition across every AlignmentPair.
+    Aggregate metrics per condition across its dataset columns.
+
+    Each dataset column (D3 included) contributes one value, the mean over its
+    pairs, so D3's 21 pairs weigh as much as one D1 pair.  Conditions cover
+    different columns, so the rows are listed in registry order, not ranked.
 
     Parameters
     ----------
@@ -426,13 +500,14 @@ def build_condition_summary_table(df: pd.DataFrame) -> pd.DataFrame:
     Returns
     -------
     pd.DataFrame
-        One row per condition over :data:`_SUMMARY_COLUMNS`, sorted by
-        ``mean_f1`` descending with ``condition_id`` breaking ties, and every
-        floating-point value rounded to four decimal places.
+        One row per condition over :data:`_SUMMARY_COLUMNS`, in registry
+        order: means and the population standard deviation of F1 over the
+        condition's dataset columns, rounded to four decimal places, and the
+        number of columns.
     """
     if df.empty:
         return pd.DataFrame(columns=list(_SUMMARY_COLUMNS))
-    grouped = df.groupby(["condition_id", "strategy", "model_key"], sort=False)
+    grouped = _dataset_column_means(df).groupby(_SUMMARY_KEYS, sort=False)
     summary = grouped.agg(
         mean_f1=("f1", "mean"),
         std_f1=("f1", lambda scores: float(scores.std(ddof=0))),
@@ -440,11 +515,9 @@ def build_condition_summary_table(df: pd.DataFrame) -> pd.DataFrame:
         mean_recall_at_1=("recall_at_1", "mean"),
         mean_recall_at_5=("recall_at_5", "mean"),
         mean_recall_at_10=("recall_at_10", "mean"),
-        n_pairs=("pair_name", "count"),
+        n_columns=("dataset_id", "count"),
     ).reset_index()
-    summary = summary.sort_values(
-        ["mean_f1", "condition_id"], ascending=[False, True]
-    ).reset_index(drop=True)
+    summary = _in_registry_order(summary).reset_index(drop=True)
     summary[list(_SUMMARY_FLOAT_FIELDS)] = summary[list(_SUMMARY_FLOAT_FIELDS)].round(4)
     return summary[list(_SUMMARY_COLUMNS)]
 
@@ -546,10 +619,10 @@ def _executive_summary_section(df: pd.DataFrame, summary: pd.DataFrame) -> str:
 
 
 def _condition_summary_section(summary: pd.DataFrame) -> str:
-    """Build the section listing every condition sorted by mean F1."""
+    """Build the section listing every condition's dataset-column means."""
     if summary.empty:
         return _section("Condition Summary Table", "_No results available._")
-    return _section("Condition Summary Table", _render_dataframe(summary))
+    return _section("Condition Summary Table", f"{_SUMMARY_NOTE}\n\n{_render_dataframe(summary)}")
 
 
 def _per_dataset_block(breakdown: pd.DataFrame, dataset_id: str) -> str:
@@ -983,12 +1056,14 @@ def _statistical_section(stats_results: List[dict]) -> str:
     return _section("Statistical Significance", _render_dataframe(frame))
 
 
-def _mean_metric(df: pd.DataFrame, condition_id: str, dataset_id: str) -> Optional[float]:
-    """Return a condition's mean F1 on a dataset, or ``None`` when absent."""
+def _mean_metric(
+    df: pd.DataFrame, condition_id: str, dataset_id: str, metric: str = "f1"
+) -> Optional[float]:
+    """Return a condition's mean ``metric`` on a dataset, or ``None`` when absent."""
     subset = df[(df["condition_id"] == condition_id) & (df["dataset_id"] == dataset_id)]
     if subset.empty:
         return None
-    return round(float(subset["f1"].mean()), 4)
+    return round(float(subset[metric].mean()), 4)
 
 
 def _ppas_row(df: pd.DataFrame, comparison: _PpasComparison) -> dict:
@@ -1027,6 +1102,65 @@ def _ppas_section(df: pd.DataFrame) -> str:
     return _section("PPAS Ablation", _render_dataframe(pd.DataFrame.from_records(rows)))
 
 
+def _pair_metrics(df: pd.DataFrame, condition_id: str, dataset_id: str) -> pd.DataFrame:
+    """Return a condition's metrics on a dataset, indexed and sorted by pair name."""
+    subset = df[(df["condition_id"] == condition_id) & (df["dataset_id"] == dataset_id)]
+    return subset.set_index("pair_name")[list(_METRIC_FIELDS)].sort_index()
+
+
+def _reproduction_cell(df: pd.DataFrame, check: _SanityCheck) -> str:
+    """
+    State whether a sanity-check condition reproduces its reference exactly.
+
+    Parameters
+    ----------
+    df : pd.DataFrame
+        Pair-level results as returned by :func:`load_all_results`.
+    check : _SanityCheck
+        The check to evaluate.
+
+    Returns
+    -------
+    str
+        ``"Yes"`` when both cover the same pairs with equal metrics, ``"No"``
+        otherwise, and ``"N/A"`` when either has no result.
+    """
+    ours = _pair_metrics(df, check.condition_id, check.dataset_id)
+    reference = _pair_metrics(df, check.reference_id, check.dataset_id)
+    if ours.empty or reference.empty:
+        return "N/A"
+    same = ours.index.equals(reference.index) and ours.astype(float).equals(reference.astype(float))
+    return "Yes" if same else "No"
+
+
+def _sanity_row(df: pd.DataFrame, check: _SanityCheck) -> dict:
+    """Build one sanity-check row from the loaded results."""
+    a, b, ds = check.condition_id, check.reference_id, check.dataset_id
+    return {
+        "Check": f"{a} vs {b}",
+        "Dataset": ds,
+        "Expected": check.expectation,
+        "Mean MRR (A)": _mean_metric(df, a, ds, "mrr"),
+        "Mean MRR (B)": _mean_metric(df, b, ds, "mrr"),
+        "Mean F1 (A)": _mean_metric(df, a, ds),
+        "Mean F1 (B)": _mean_metric(df, b, ds),
+        "Reproduces?": _reproduction_cell(df, check),
+    }
+
+
+def _sanity_section(df: pd.DataFrame) -> str:
+    """Build the sanity-check section, kept apart from the result tables."""
+    rows = [_sanity_row(df, check) for check in _SANITY_CHECKS]
+    return _section("Sanity Checks", _render_dataframe(pd.DataFrame.from_records(rows)))
+
+
+def _without_sanity_checks(df: pd.DataFrame) -> pd.DataFrame:
+    """Drop sanity-check conditions, which are reported only in their own section."""
+    if df.empty:
+        return df
+    return df[df["ablation_group"] != SANITY_CHECK_GROUP]
+
+
 def _pair_level_frame(df: pd.DataFrame) -> pd.DataFrame:
     """
     Return one row per AlignmentPair, dropping any interleaved entity-type rows.
@@ -1061,8 +1195,9 @@ def generate_markdown_report(
 
     Sections are emitted in a fixed order: executive summary, condition summary,
     per-dataset breakdown, entity-type analysis, ablation-group analysis, an
-    optional statistical-significance section, and PPAS ablation.  The
-    statistical section is included only when ``stats_results`` is not ``None``.
+    optional statistical-significance section, PPAS ablation and sanity
+    checks.  The statistical section is included only when ``stats_results``
+    is not ``None``.  Sanity-check conditions appear only in the last section.
     Parent directories are created as needed and identical inputs always produce
     byte-for-byte identical output.
 
@@ -1081,17 +1216,19 @@ def generate_markdown_report(
         Destination Markdown file.
     """
     pairs = _pair_level_frame(df)
-    summary = build_condition_summary_table(pairs)
+    main = _without_sanity_checks(pairs)
+    summary = build_condition_summary_table(main)
     sections = [
-        _executive_summary_section(pairs, summary),
+        _executive_summary_section(main, summary),
         _condition_summary_section(summary),
-        _per_dataset_section(pairs),
-        _entity_type_section(df),
+        _per_dataset_section(main),
+        _entity_type_section(_without_sanity_checks(df)),
         _ablation_group_section(summary),
     ]
     if stats_results is not None:
         sections.append(_statistical_section(stats_results))
     sections.append(_ppas_section(pairs))
+    sections.append(_sanity_section(pairs))
     path = Path(output_path)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text("\n\n".join(sections) + "\n", encoding="utf-8")

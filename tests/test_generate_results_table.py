@@ -18,7 +18,7 @@ if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
 import scripts.generate_results_table as script  # noqa: E402
-from kgsemembed.pipeline.conditions import get_condition  # noqa: E402
+from kgsemembed.pipeline.conditions import EXPERIMENT_CONDITIONS, get_condition  # noqa: E402
 from scripts.generate_results_table import build_table  # noqa: E402
 
 _METRIC_NAMES = (
@@ -84,16 +84,22 @@ def test_metadata_comes_from_condition_registry(tmp_path: Path) -> None:
 
 
 def test_model_markers_match_caption(tmp_path: Path) -> None:
-    """M2_uncapped carries the dagger and M4 the double dagger."""
+    """M4 carries the double dagger; no row carries the retired dagger."""
     rows = _rows(tmp_path)
-    assert rows["C19"][2] == r"M2$^\dagger$"
+    assert all(r"$^\dagger$" not in row[2] for row in rows.values())
     assert rows["C17"][2] == r"M4$^\ddagger$"
     assert rows["C10"][2] == "M2"
 
 
 def test_every_condition_appears_in_paper_order(tmp_path: Path) -> None:
-    """All twenty conditions are listed, in the fixed table order."""
+    """Every result condition is listed, in the fixed table order."""
     assert list(_rows(tmp_path)) == list(script._CONDITION_ORDER)
+
+
+def test_table_covers_the_registry_except_sanity_checks() -> None:
+    """The table lists every registered condition but the C19 sanity check."""
+    registered = {c.condition_id for c in EXPERIMENT_CONDITIONS}
+    assert set(script._CONDITION_ORDER) == registered - {"C19"}
 
 
 def test_missing_cells_render_as_dashes(tmp_path: Path) -> None:
