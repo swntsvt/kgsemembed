@@ -14,7 +14,7 @@ from rdflib.namespace import OWL, RDF, RDFS
 import kgsemembed.pipeline.ppas_ablation as ablation
 from kgsemembed.datasets import AlignmentPair
 from kgsemembed.embeddings.models import get_model_config
-from kgsemembed.utils.errors import DataError
+from kgsemembed.utils.errors import ConfigurationError, DataError
 from kgsemembed.pipeline.ablation_conditions import (
     ABLATION_CONDITIONS,
     ABLATION_MODEL_KEY,
@@ -221,7 +221,7 @@ def _pair() -> AlignmentPair:
 def toy_run(monkeypatch, tmp_path):
     """Run the given conditions on the toy pair and return payloads and the model."""
     model = _FakeModel()
-    info = {"model_key": "M2", "model_id": "fake/M2", "device": "cpu", "hf_revision": "rev-1"}
+    info = {"model_key": "M2", "model_id": "fake/M2", "device": "mps", "hf_revision": "rev-1"}
     candidates = {f"{EX}s{i}": [f"{EX}t{j}" for j in range(8)] for i in range(8)}
     monkeypatch.setattr(ablation, "load_sentence_transformer", lambda _key: (model, info))
     monkeypatch.setattr(ablation, "load_dataset", lambda _d, _dir: [_pair()])
@@ -243,6 +243,22 @@ def _read(results_dir: Path, condition_id: str, suffix: str = "results") -> dict
 # ---------------------------------------------------------------------------
 # Runner behaviour
 # ---------------------------------------------------------------------------
+
+
+def test_ablation_result_records_the_device(toy_run):
+    run, _model, results_dir = toy_run
+    run([_CONDITIONS[0]])
+    payload = _read(results_dir, _CONDITIONS[0])
+    assert (payload["device"], payload["device_override"]) == ("mps", False)
+
+
+def test_ablation_refuses_a_non_mps_device(monkeypatch, tmp_path):
+    info = {"model_key": "M2", "model_id": "fake/M2", "device": "cpu", "hf_revision": "r"}
+    monkeypatch.setattr(ablation, "load_sentence_transformer", lambda _key: (_FakeModel(), info))
+    kwargs = {"data_dir": tmp_path, "results_dir": tmp_path / "ablation",
+              "force_recompute": False, "max_sources": None}
+    with pytest.raises(ConfigurationError, match="allow_device"):
+        ablation.run_ablation(["D5"], [_CONDITIONS[0]], kwargs)
 
 
 def test_run_writes_result_and_sidecar_for_every_condition(toy_run):
@@ -483,7 +499,7 @@ def _class_pair() -> AlignmentPair:
 def controlled_run(monkeypatch, tmp_path):
     """Run every controlled condition on the toy class pair."""
     model = _FakeModel()
-    info = {"model_key": "M2", "model_id": "fake/M2", "device": "cpu", "hf_revision": "rev-1"}
+    info = {"model_key": "M2", "model_id": "fake/M2", "device": "mps", "hf_revision": "rev-1"}
     candidates = {f"{EX}s{i}": [f"{EX}t{j}" for j in range(8)] for i in range(8)}
     monkeypatch.setattr(ablation, "load_sentence_transformer", lambda _key: (model, info))
     monkeypatch.setattr(ablation, "load_dataset", lambda _d, _dir: [_class_pair()])
@@ -737,7 +753,7 @@ _VALIDATION_IDS = {
 
 def _run_into(monkeypatch, tmp_path, dataset_id, condition_ids, results_dir):
     model = _FakeModel()
-    info = {"model_key": "M2", "model_id": "fake/M2", "device": "cpu", "hf_revision": "rev-1"}
+    info = {"model_key": "M2", "model_id": "fake/M2", "device": "mps", "hf_revision": "rev-1"}
     candidates = {f"{EX}s{i}": [f"{EX}t{j}" for j in range(8)] for i in range(8)}
     pair = replace(_class_pair(), dataset_id=dataset_id)
     monkeypatch.setattr(ablation, "load_sentence_transformer", lambda _key: (model, info))
@@ -858,7 +874,7 @@ def _role_pair(dataset_id: str) -> AlignmentPair:
 
 def _run_pair_into(monkeypatch, tmp_path, pair, condition_ids, results_dir):
     model = _FakeModel()
-    info = {"model_key": "M2", "model_id": "fake/M2", "device": "cpu", "hf_revision": "rev-1"}
+    info = {"model_key": "M2", "model_id": "fake/M2", "device": "mps", "hf_revision": "rev-1"}
     candidates = {f"{EX}s{i}": [f"{EX}t{j}" for j in range(8)] for i in range(8)}
     monkeypatch.setattr(ablation, "load_sentence_transformer", lambda _key: (model, info))
     monkeypatch.setattr(ablation, "load_dataset", lambda _d, _dir: [pair])
