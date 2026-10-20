@@ -148,7 +148,7 @@ def _extract_pair_name(payload: dict, path: Path) -> str:
 
 
 def _extract_f1(payload: dict, pair_name: str, metric: str = "f1") -> float:
-    """Return one metric (F1 by default) recorded for an alignment pair."""
+    """Return one metric (F1 by default; the name predates ``metric``) of an alignment pair."""
     label = _METRIC_LABELS.get(metric, metric)
     metrics = payload.get("metrics")
     if not isinstance(metrics, dict) or metric not in metrics:
@@ -260,27 +260,31 @@ def _f1_by_unit(
     metric: str = "f1",
 ) -> Dict[str, Dict[str, float]]:
     """
-    Map each result directory to the F1 of every alignment pair it holds.
+    Map each result directory to one metric of every alignment pair it holds.
+
+    The name predates the ``metric`` argument; the default is still F1.
 
     Parameters
     ----------
     condition_id : str
         Registered condition identifier.
     dataset_ids : List[str]
-        Datasets whose results contribute F1 values; ``"D4"`` is expanded.
+        Datasets whose results contribute values; ``"D4"`` is expanded.
     results_dir : str
         Root directory of previously generated result files.
+    metric : str
+        Result metric to read, ``"f1"`` (default) or ``"mrr"``.
 
     Returns
     -------
     Dict[str, Dict[str, float]]
-        Mapping from result directory to ``{pair_name: f1}``; directories
+        Mapping from result directory to ``{pair_name: value}``; directories
         without results are omitted.
 
     Raises
     ------
     DataError
-        If an F1 metric is missing, a result uses an older evaluation
+        If the metric is missing, a result uses an older evaluation
         protocol, or a ``pair_name`` recurs across datasets.
     """
     units: Dict[str, Dict[str, float]] = {}
@@ -351,7 +355,7 @@ def _matched_pair_names(
     Parameters
     ----------
     f1_a, f1_b : Dict[str, float]
-        F1 mappings keyed by ``pair_name`` for the two conditions.
+        Metric mappings keyed by ``pair_name`` for the two conditions.
 
     Returns
     -------
@@ -378,17 +382,17 @@ def _paired_units(
     units_b: Dict[str, Dict[str, float]],
 ) -> Dict[str, Tuple[List[float], List[float]]]:
     """
-    Pair the two conditions' F1 values within every shared dataset column.
+    Pair the two conditions' metric values within every shared dataset column.
 
     Parameters
     ----------
     units_a, units_b : Dict[str, Dict[str, float]]
-        Per-directory ``{pair_name: f1}`` mappings of the two conditions.
+        Per-directory ``{pair_name: value}`` mappings of the two conditions.
 
     Returns
     -------
     Dict[str, Tuple[List[float], List[float]]]
-        Mapping from dataset column to aligned F1 lists of A and B.
+        Mapping from dataset column to aligned value lists of A and B.
 
     Raises
     ------
@@ -553,7 +557,7 @@ def _pair_outcomes(paired: Dict[str, Tuple[List[float], List[float]]]) -> Dict[s
     Parameters
     ----------
     paired : Dict[str, Tuple[List[float], List[float]]]
-        Aligned per-column F1 lists of A and B.
+        Aligned per-column metric lists of A and B.
 
     Returns
     -------
@@ -573,7 +577,7 @@ def _pair_outcomes(paired: Dict[str, Tuple[List[float], List[float]]]) -> Dict[s
 def _unit_means(
     paired: Dict[str, Tuple[List[float], List[float]]],
 ) -> Tuple[List[float], List[float]]:
-    """Return each column's mean F1 for A and for B, in column order."""
+    """Return each column's mean metric for A and for B, in column order."""
     means_a = [float(np.mean(a)) for a, _ in paired.values()]
     means_b = [float(np.mean(b)) for _, b in paired.values()]
     return means_a, means_b
@@ -586,7 +590,7 @@ def _test_fields(means_a: List[float], means_b: List[float]) -> dict:
     Parameters
     ----------
     means_a, means_b : List[float]
-        Per-unit mean F1 of A and B.
+        Per-unit mean metric value of A and B.
 
     Returns
     -------

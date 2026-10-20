@@ -73,6 +73,15 @@ def _load_counts(path: str) -> Optional[dict]:
     return load_reference_counts(path)
 
 
+def _paired_results(results_dir: str, counts: Optional[dict]) -> Optional[List[dict]]:
+    """Run the per-dataset paired tests, logging and omitting them if the run fails."""
+    try:
+        return run_paired_tests(results_dir, counts)
+    except Exception as exc:
+        _LOGGER.warning("Skipping the per-dataset paired tests: %s", exc)
+        return None
+
+
 def main() -> None:
     """Load results, gather statistical comparisons, and write the report."""
     random.seed(42)
@@ -82,7 +91,7 @@ def main() -> None:
     counts = _load_counts(args.ceilings)
     df = load_all_results(args.results_dir, include_entity_type_breakdown=True, counts=counts)
     comparisons = _collect_comparisons(args.results_dir)
-    paired = run_paired_tests(args.results_dir, counts)
+    paired = _paired_results(args.results_dir, counts)
     generate_markdown_report(df, comparisons or None, args.output, paired_results=paired)
     print(f"Report written to {args.output}")
 

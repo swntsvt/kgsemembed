@@ -573,13 +573,39 @@ def _evaluate_pair(
         Test metrics with TP/FP/FN counts, the per-entity-type breakdown, and
         the population summary under ``"population"``.
     """
-    populations = build_populations(pair)
-    split_lists = _split_ranked_lists(judgeable_ranked_lists(pair, ranked_lists), populations)
+    populations, split_lists = _population_lists(pair, ranked_lists)
     threshold = _resolve_threshold(split_lists[_VAL], pair.val_refs)
     metrics = compute_all_metrics(split_lists[_TEST], pair.test_refs, threshold=threshold)
     metrics[_PER_ENTITY_TYPE_KEY] = _per_entity_type_metrics(pair, split_lists, threshold)
     metrics[_POPULATION_KEY] = _population_record(pair, split_lists, populations)
     return metrics
+
+
+def _population_lists(
+    pair: AlignmentPair, ranked_lists: List[RankedList]
+) -> Tuple[EvaluationPopulations, Dict[str, List[RankedList]]]:
+    """
+    Assign sources to populations and split their judgeable ranked lists.
+
+    The one definition of the lists metrics are computed from, shared by
+    :func:`_evaluate_pair` and :func:`with_per_source` so the sidecar always
+    describes exactly what was scored.
+
+    Parameters
+    ----------
+    pair : AlignmentPair
+        Alignment pair being evaluated.
+    ranked_lists : List[RankedList]
+        Ranked candidate lists of every source of the pair.
+
+    Returns
+    -------
+    Tuple[EvaluationPopulations, Dict[str, List[RankedList]]]
+        The population assignment and the ``"val"`` and ``"test"`` lists,
+        known pairs removed and partial-reference filtering applied.
+    """
+    populations = build_populations(pair)
+    return populations, _split_ranked_lists(judgeable_ranked_lists(pair, ranked_lists), populations)
 
 
 def with_per_source(
@@ -605,8 +631,7 @@ def with_per_source(
     Dict[str, object]
         ``metrics`` with the record under :data:`PER_SOURCE_KEY`.
     """
-    judgeable = judgeable_ranked_lists(pair, ranked_lists)
-    test_lists = restrict_ranked_lists(judgeable, build_populations(pair).test_sources)
+    test_lists = _population_lists(pair, ranked_lists)[1][_TEST]
     return {**metrics, PER_SOURCE_KEY: per_source_record(test_lists, pair.test_refs, metrics)}
 
 

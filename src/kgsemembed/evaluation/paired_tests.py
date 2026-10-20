@@ -27,9 +27,16 @@ Method
 - **p-value**: paired randomisation test, swapping the two conditions'
   outcomes of each unit with probability 1/2 (within each pair), two-sided,
   ``(1 + #{|Δ*| >= |Δ|}) / (R + 1)`` with the same replicate count and seed.
-- **Multiplicity**: Holm within each family of one ablation group, one dataset
-  column and one metric (:func:`holm_adjust`).  MRR and Hits@1 are primary;
-  F1 is secondary.  Intervals are not adjusted.
+- **Decision**: only MRR (:data:`DECISION_METRIC`) carries a significance
+  decision, Holm-adjusted within each family of one ablation group and one
+  dataset column (:func:`holm_adjust`), so one test per comparison and column
+  spends the family's alpha.  Hits@1 (primary, highly correlated with MRR)
+  and F1 (secondary) are reported with their interval and unadjusted p-value
+  but no decision.  Intervals are not adjusted.
+- **Same setup**: two conditions are compared only when their results share
+  pairs, test reference sources and gold targets, candidate lists
+  (``candidates_sha256``), evaluation protocol and known-pair count
+  (:func:`check_same_references`).
 
 Every result also carries the column's top-20 ceiling, the most the metric
 can reach on the stored candidate lists.
@@ -53,12 +60,13 @@ CONFIDENCE = 0.95
 PRIMARY_METRICS = ("mrr", "hits_at_1")
 SECONDARY_METRICS = ("f1",)
 METRICS = (*PRIMARY_METRICS, *SECONDARY_METRICS)
+DECISION_METRIC = "mrr"
 CEILING_KEYS = {"mrr": "ranking_ceiling", "hits_at_1": "ranking_ceiling", "f1": "f1_recall_ceiling"}
 
 _RESULT_SUFFIX = "_results.json"
 _RANKING_WIDTH = 2
 _F1_WIDTH = 3
-_UNTESTABLE = (DataError, ValueError, KeyError, OSError)
+_UNTESTABLE = (DataError, ValueError, KeyError, OSError, TypeError, AttributeError)
 _CHUNK = 100
 _TOLERANCE = 1e-12
 
@@ -129,6 +137,15 @@ def check_sidecar(sidecar: dict, payload: dict, label: str) -> None:
         raise StaleSidecarError(f"{label}: sidecar differs from its result in {differing}.")
 
 
+def _setup(payload: dict) -> dict:
+    """Return the result fields two compared results must share."""
+    return {
+        "candidates_sha256": payload.get("candidates_sha256"),
+        "evaluation_protocol": payload.get("evaluation_protocol"),
+        "n_train_refs": payload["population"].get("n_train_refs"),
+    }
+
+
 def _read_json(path: Path) -> dict:
     """Parse a JSON file, or return an empty mapping when it does not exist."""
     return json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
@@ -150,7 +167,7 @@ def load_sidecars(results_dir: str | Path, condition_id: str, dataset_id: str) -
     Returns
     -------
     Dict[str, dict]
-        Sidecar by pair name.
+        Sidecar by pair name, with the result's ``setup`` (:func:`_setup`).
 
     Raises
     ------
@@ -169,8 +186,9 @@ def load_sidecars(results_dir: str | Path, condition_id: str, dataset_id: str) -
         sidecar = _read_json(path.with_name(f"{pair_name}{SIDECAR_SUFFIX}"))
         if "predictions" not in sidecar:
             raise MissingSidecarError(f"{label} has no per-source sidecar.")
-        check_sidecar(sidecar, _read_json(path), label)
-        sidecars[pair_name] = sidecar
+        payload = _read_json(path)
+        check_sidecar(sidecar, payload, label)
+        sidecars[pair_name] = {**sidecar, "setup": _setup(payload)}
     return sidecars
 
 
@@ -245,23 +263,28 @@ def _gold_map(sidecar: dict) -> Dict[str, List[str]]:
 
 def check_same_references(side_a: Dict[str, dict], side_b: Dict[str, dict]) -> None:
     """
-    Require two conditions to share pairs, test reference sources and gold targets.
+    Require two conditions to share pairs, references and evaluation setup.
 
     Parameters
     ----------
     side_a, side_b : Dict[str, dict]
-        Sidecars of the two conditions by pair name.
+        Sidecars of the two conditions by pair name, as
+        :func:`load_sidecars` returns them.
 
     Raises
     ------
     DataError
-        If the pair names or any pair's test references differ.
+        If the pair names, any pair's test references, or its candidate
+        lists, evaluation protocol or known-pair count differ.
     """
     if set(side_a) != set(side_b):
         raise DataError(f"Pairs differ: {sorted(set(side_a) ^ set(side_b))}.")
     for pair_name in sorted(side_a):
         if _gold_map(side_a[pair_name]) != _gold_map(side_b[pair_name]):
             raise DataError(f"Test references differ on {pair_name}.")
+        setup_a, setup_b = side_a[pair_name].get("setup"), side_b[pair_name].get("setup")
+        if setup_a != setup_b:
+            raise DataError(f"Evaluation setup differs on {pair_name}: {setup_a} vs {setup_b}.")
 
 
 def aligned_arrays(values_a: Values, values_b: Values, metric: str) -> PairArrays:
@@ -520,10 +543,10 @@ def _comparison_rows(context: dict, settings: TestSettings) -> List[dict]:
 
 def apply_holm(rows: List[dict], alpha: float = ALPHA) -> List[dict]:
     """
-    Add Holm-adjusted p-values and decisions within each family.
+    Add Holm-adjusted p-values and decisions for the decision metric.
 
-    A family is one ablation group, one dataset column and one metric; only
-    tested rows take part.
+    Only :data:`DECISION_METRIC` rows get a decision.  A family is one
+    ablation group and one dataset column; only tested rows take part.
 
     Parameters
     ----------
@@ -535,13 +558,13 @@ def apply_holm(rows: List[dict], alpha: float = ALPHA) -> List[dict]:
     Returns
     -------
     List[dict]
-        The same rows, tested ones extended with ``family_size``,
-        ``p_holm`` and ``significant``.
+        The same rows, tested decision-metric ones extended with
+        ``family_size``, ``p_holm`` and ``significant``.
     """
-    families: Dict[Tuple[str, str, str], List[dict]] = {}
+    families: Dict[Tuple[str, str], List[dict]] = {}
     for row in rows:
-        if row["tested"]:
-            families.setdefault((row["group"], row["dataset_id"], row["metric"]), []).append(row)
+        if row["tested"] and row["metric"] == DECISION_METRIC:
+            families.setdefault((row["group"], row["dataset_id"]), []).append(row)
     for family in families.values():
         for row, adjusted in zip(family, holm_adjust([row["p_value"] for row in family])):
             row.update(family_size=len(family), p_holm=adjusted, significant=adjusted < alpha)

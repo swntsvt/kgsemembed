@@ -147,6 +147,11 @@ _ABLATION_GROUPS = ("A", "B", "C", "D", "E")
 _GROUP_REFERENCE_CONDITIONS: Dict[str, Tuple[str, ...]] = {"E": ("C10",)}
 
 _PAIRED_TITLE = "Per-Dataset Paired Tests"
+_NO_DECISION = "—"
+_UNTESTED_INTRO = (
+    "Not tested (results written before #140 have no per-source sidecar; "
+    "re-run them with `--force_recompute` to test them):"
+)
 _PAIRED_HEADINGS = {"mrr": "MRR (primary)", _HITS_AT_1: "Hits@1 (primary)", "f1": "F1 (secondary)"}
 _CONSISTENCY_TITLE = "Cross-Dataset Consistency (Wilcoxon)"
 _CONSISTENCY_HEADINGS = {"mrr": "MRR", "f1": "F1 (secondary)"}
@@ -396,7 +401,6 @@ def _collect_records(
     """
     records: List[dict] = []
     seen: set = set()
-    missing_hits = 0
     for path in sorted(root.rglob(_RESULT_GLOB)):
         payload = _load_json(path)
         if payload is None:
@@ -409,17 +413,25 @@ def _collect_records(
             _LOGGER.warning("Duplicate result for %s; skipping %s.", key, path)
             continue
         seen.add(key)
-        missing_hits += record[_HITS_AT_1] is None
         record[_ENTITY_TYPE_COLUMN] = _OVERALL_ENTITY_TYPE
         records.append(record)
         if include_entity_type_breakdown:
             records.extend(_entity_type_records(payload, record))
-    if missing_hits:
-        _LOGGER.warning(
-            "Hits@1 is neither recorded nor derivable for %d result(s); Hits@1 "
-            "means leave them out, unlike MRR and F1.", missing_hits,
-        )
+    _warn_missing_hits(records)
     return records
+
+
+def _warn_missing_hits(records: List[dict]) -> None:
+    """Warn once about pair-level rows whose Hits@1 is neither recorded nor derivable."""
+    missing = sum(
+        1 for record in records
+        if record[_ENTITY_TYPE_COLUMN] == _OVERALL_ENTITY_TYPE and record[_HITS_AT_1] is None
+    )
+    if missing:
+        _LOGGER.warning(
+            "Hits@1 is neither recorded nor derivable for %d result(s); every Hits@1 "
+            "mean that includes them is shown as missing.", missing,
+        )
 
 
 def _known_pair_count(path: Path) -> Optional[Tuple[Tuple[str, str], int]]:
@@ -523,10 +535,15 @@ def load_all_results(
     )
 
 
+def _strict_mean(values: pd.Series) -> float:
+    """Mean that is missing when any value is, so a mean never covers fewer pairs."""
+    return float(values.mean(skipna=False))
+
+
 def _dataset_column_means(df: pd.DataFrame) -> pd.DataFrame:
     """Return one row per condition and dataset column, averaging that column's pairs."""
     keys = [*_SUMMARY_KEYS, "dataset_id"]
-    return df.groupby(keys, sort=False)[_COLUMN_METRICS].mean().reset_index()
+    return df.groupby(keys, sort=False)[_COLUMN_METRICS].agg(_strict_mean).reset_index()
 
 
 def _in_registry_order(summary: pd.DataFrame) -> pd.DataFrame:
@@ -564,7 +581,7 @@ def build_condition_summary_table(df: pd.DataFrame) -> pd.DataFrame:
     summary = grouped.agg(
         mean_mrr=("mrr", "mean"),
         std_mrr=("mrr", lambda scores: float(scores.std(ddof=0))),
-        mean_hits_at_1=(_HITS_AT_1, "mean"),
+        mean_hits_at_1=(_HITS_AT_1, _strict_mean),
         mean_f1=("f1", "mean"),
         std_f1=("f1", lambda scores: float(scores.std(ddof=0))),
         mean_recall_at_1=("recall_at_1", "mean"),
@@ -641,10 +658,23 @@ def _section(title: str, body: str) -> str:
     return f"# {title}\n\n{body}"
 
 
+def _strict_pivot(df: pd.DataFrame, metric: str) -> pd.DataFrame:
+    """Pivot condition × dataset means of ``metric``, missing when any pair's value is."""
+    pivot = df.groupby(["condition_id", "dataset_id"])[metric].agg(_strict_mean).unstack("dataset_id")
+    pivot.columns.name = None
+    return pivot.sort_index().reindex(sorted(pivot.columns), axis=1).round(4)
+
+
 def _lead_pivots(df: pd.DataFrame) -> Dict[str, pd.DataFrame]:
-    """Return the condition × dataset pivot of each lead metric (MRR, Hits@1, F1)."""
-    frame = df.astype({_HITS_AT_1: float})
-    return {metric: build_dataset_breakdown_table(frame, metric) for metric in _LEAD_METRICS}
+    """
+    Return the condition × dataset pivot of each lead metric (MRR, Hits@1, F1).
+
+    Hits@1 can be missing for results written before it was recorded; its
+    pivot is missing wherever any pair lacks it, instead of averaging the rest.
+    """
+    pivots = {metric: build_dataset_breakdown_table(df, metric) for metric in ("mrr", "f1")}
+    pivots[_HITS_AT_1] = _strict_pivot(df.astype({_HITS_AT_1: float}), _HITS_AT_1)
+    return pivots
 
 
 def _cell(pivot: pd.DataFrame, condition_id: str, dataset_id: str) -> Optional[float]:
@@ -1149,16 +1179,27 @@ def _paired_method_note() -> str:
         f"swapping each source's two outcomes; {defaults.n_replicates:,} "
         f"replicates each, seed {defaults.seed}. MRR and Hits@1 count test "
         f"reference sources; F1 adds unmatched sources' predictions and is "
-        f"recomputed from TP, FP and FN. Holm adjustment within each ablation "
-        f"group × column × metric at alpha {paired_tests.ALPHA}; intervals are "
-        f"not adjusted. Ceiling: the most the metric can reach on the stored "
-        f"top-20 lists (F1: its recall ceiling)._"
+        f"recomputed from TP, FP and FN. Only MRR carries a significance "
+        f"decision: Holm within each ablation group × column at alpha "
+        f"{paired_tests.ALPHA}. Hits@1 (primary, closely tied to MRR) and F1 "
+        f"(secondary) show their interval and unadjusted p without a decision "
+        f"(—). Intervals are not adjusted. Compared results must share "
+        f"candidates, protocol and known pairs. Ceiling: the most the metric "
+        f"can reach on the stored top-20 lists (F1: its recall ceiling)._"
     )
 
 
 def _interval_cell(row: dict) -> str:
     """Render a bootstrap interval as ``[low, high]``."""
     return f"[{row['ci_low']:.4f}, {row['ci_high']:.4f}]"
+
+
+def _decision_cells(row: dict) -> dict:
+    """Render the Holm decision of a decision-metric row, or dashes for the others."""
+    if "p_holm" not in row:
+        return {"p (Holm)": _NO_DECISION, "m": _NO_DECISION, "Sig.": _NO_DECISION}
+    return {"p (Holm)": row["p_holm"], "m": row["family_size"],
+            "Sig.": "yes" if row["significant"] else "no"}
 
 
 def _paired_row(row: dict) -> dict:
@@ -1172,9 +1213,7 @@ def _paired_row(row: dict) -> dict:
         "Δ (B − A)": row["delta"],
         "95% CI": _interval_cell(row),
         "p": row["p_value"],
-        "p (Holm)": row["p_holm"],
-        "m": row["family_size"],
-        "Sig.": "yes" if row["significant"] else "no",
+        **_decision_cells(row),
         "Ceiling": row["ceiling"],
         "n": row["n_units"],
     }
@@ -1194,7 +1233,7 @@ def _untested_note(rows: List[dict]) -> str:
         for row in rows if not row["tested"]
     }
     lines = [f"- {a} vs {b} on {ds}: {reason}" for (a, b, ds), reason in reasons.items()]
-    return "Not tested:\n\n" + "\n".join(lines) if lines else ""
+    return f"{_UNTESTED_INTRO}\n\n" + "\n".join(lines) if lines else ""
 
 
 def _paired_section(rows: List[dict]) -> str:

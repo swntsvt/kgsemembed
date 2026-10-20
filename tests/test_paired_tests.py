@@ -132,7 +132,7 @@ def test_holm_caps_at_one() -> None:
     assert pt.holm_adjust([0.6, 0.9]) == [1.0, 1.0]
 
 
-def test_families_are_one_group_column_and_metric() -> None:
+def test_families_are_one_group_and_column_of_mrr_tests() -> None:
     rows = [
         {"group": "B", "dataset_id": "D1", "metric": "mrr", "tested": True, "p_value": 0.03},
         {"group": "B", "dataset_id": "D1", "metric": "mrr", "tested": True, "p_value": 0.04},
@@ -142,6 +142,16 @@ def test_families_are_one_group_column_and_metric() -> None:
     pt.apply_holm(rows)
     assert [row.get("family_size") for row in rows] == [2, 2, 1, None]
     assert [row.get("significant") for row in rows] == [False, False, True, None]
+
+
+def test_only_mrr_carries_a_decision() -> None:
+    rows = [
+        {"group": "E", "dataset_id": "D1", "metric": metric, "tested": True, "p_value": 0.001}
+        for metric in pt.METRICS
+    ]
+    pt.apply_holm(rows)
+    assert [("significant" in row) for row in rows] == [True, False, False]
+    assert rows[0]["family_size"] == 1
 
 
 # ---------------------------------------------------------------------------
@@ -183,7 +193,8 @@ def test_run_tests_every_column_and_metric_of_a_comparison(tmp_path: Path) -> No
     d1_mrr = next(r for r in rows if r["dataset_id"] == "D1" and r["metric"] == "mrr")
     assert d1_mrr["delta"] > 0 and d1_mrr["significant"] and d1_mrr["ceiling"] == 0.9
     d3 = [r for r in rows if r["dataset_id"] == "D3"]
-    assert all(r["delta"] == 0 and not r["significant"] for r in d3)
+    assert all(r["delta"] == 0 for r in d3)
+    assert [r["significant"] for r in d3 if "significant" in r] == [False]
     assert next(r for r in rows if r["dataset_id"] == "D2")["ceiling"] is None
 
 
@@ -261,3 +272,23 @@ def test_each_condition_is_loaded_once_per_run(tmp_path: Path, monkeypatch) -> N
     monkeypatch.setattr(pt, "load_sidecars", lambda *a: loads.append(a[1:]) or original(*a))
     pt.run_paired_tests(tmp_path, None, _FAST)
     assert len(loads) == len(set(loads))
+
+
+def test_results_from_different_setups_are_not_compared(tmp_path: Path) -> None:
+    _seed_group_e(tmp_path)
+    sidecar = _sidecar(*_lists(40, 1))
+    payload = {**_payload(sidecar), "population": {"n_test_refs": 40, "n_train_refs": 726}}
+    _write(tmp_path, "C10", "D1", "p", sidecar, payload)
+    rows = [r for r in pt.run_paired_tests(tmp_path, None, _FAST)
+            if r["dataset_id"] == "D1" and r["group"] == "E"]
+    assert len(rows) == 3 and all(not r["tested"] and "setup differs" in r["reason"] for r in rows)
+
+
+def test_an_unexpected_value_type_makes_a_comparison_untested(tmp_path: Path) -> None:
+    _seed_group_e(tmp_path)
+    path = tmp_path / "C10" / "D5" / "p_entities.json"
+    sidecar = json.loads(path.read_text(encoding="utf-8"))
+    sidecar["test_sources"][0]["best_gold_rank"] = "one"
+    path.write_text(json.dumps(sidecar), encoding="utf-8")
+    rows = [r for r in pt.run_paired_tests(tmp_path, None, _FAST) if r["dataset_id"] == "D5"]
+    assert rows and not any(r["tested"] for r in rows)

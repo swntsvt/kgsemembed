@@ -1581,7 +1581,9 @@ def _paired_rows() -> List[dict]:
         "ci_high": 0.07, "p_value": 0.0001, "p_holm": 0.0001, "family_size": 1,
         "significant": True, "ceiling": 0.886, "n_units": 4605, "n_pairs": 1,
     }
-    rows = [{**tested, "metric": metric} for metric in ("mrr", "hits_at_1", "f1")]
+    rows = [{**tested, "metric": "mrr"}]
+    undecided = {k: v for k, v in tested.items() if k not in ("p_holm", "family_size", "significant")}
+    rows += [{**undecided, "metric": metric} for metric in ("hits_at_1", "f1")]
     untested = {"group": "D", "condition_a": "C5", "condition_b": "C14", "dataset_id": "D5",
                 "tested": False, "reason": "C14/D5 has no per-source sidecar."}
     return rows + [{**untested, "metric": metric} for metric in ("mrr", "hits_at_1", "f1")]
@@ -1591,9 +1593,12 @@ def test_paired_section_renders_each_metric_and_the_untested_list(tmp_path: Path
     text = _report_text(tmp_path, tmp_path, paired_results=_paired_rows())
     section = text.split("# Per-Dataset Paired Tests", 1)[1].split("\n# ", 1)[0]
     assert _headings_of(section) == ["## MRR (primary)", "## Hits@1 (primary)", "## F1 (secondary)"]
-    row = ("| E | C20 vs C10 | D1 | 0.6000 | 0.6500 | 0.0500 | [0.0300, 0.0700] | 0.0001 "
-           "| 0.0001 | 1 | yes | 0.8860 | 4605 |")
-    assert section.count(row) == 3
+    decided = ("| E | C20 vs C10 | D1 | 0.6000 | 0.6500 | 0.0500 | [0.0300, 0.0700] | 0.0001 "
+               "| 0.0001 | 1 | yes | 0.8860 | 4605 |")
+    undecided = ("| E | C20 vs C10 | D1 | 0.6000 | 0.6500 | 0.0500 | [0.0300, 0.0700] | 0.0001 "
+                 "| — | — | — | 0.8860 | 4605 |")
+    assert section.count(decided) == 1 and section.count(undecided) == 2
+    assert "--force_recompute" in section
     assert section.count("- C5 vs C14 on D5: C14/D5 has no per-source sidecar.") == 1
 
 
@@ -1645,3 +1650,28 @@ def test_cli_runs_without_the_ceilings_file(full_results_dir: Path, tmp_path: Pa
     _run_cli(["--results_dir", str(full_results_dir), "--output", str(output),
               "--ceilings", str(tmp_path / "absent.json")])
     assert "# Per-Dataset Paired Tests" in output.read_text(encoding="utf-8")
+
+
+def test_hits_at_1_mean_is_missing_when_any_pair_lacks_it(tmp_path: Path) -> None:
+    _write_result(tmp_path, "C1", "D3", "p0", 0.5)
+    _write_result(tmp_path, "C1", "D3", "p1", 0.5,
+                  overrides={"metrics": {key: 0.5 for key in _METRIC_KEYS}})
+    summary = build_condition_summary_table(load_all_results(str(tmp_path)))
+    assert pd.isna(summary.loc[0, "mean_hits_at_1"])
+    assert summary.loc[0, "mean_mrr"] == pytest.approx(0.5)
+    section = _per_dataset_section(_report_text(tmp_path, tmp_path))
+    assert _sub_table(section, "D3")[2:] == ["| C1 | 0.5000 | N/A | 0.5000 |"]
+
+
+def test_cli_survives_a_failing_paired_test_run(
+    full_results_dir: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import scripts.generate_report as script
+
+    def broken(*_args, **_kwargs):
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(script, "run_paired_tests", broken)
+    output = tmp_path / "report.md"
+    _run_cli(["--results_dir", str(full_results_dir), "--output", str(output)])
+    assert "# Sanity Checks" in output.read_text(encoding="utf-8")

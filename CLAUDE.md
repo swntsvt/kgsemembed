@@ -1235,9 +1235,12 @@ source by source, from the per-source sidecars:
   outcomes swapped with probability 1/2), two-sided,
   `(1 + #{|Δ*| ≥ |Δ|}) / (R + 1)`. Both use `N_REPLICATES` = 10,000 and
   `SEED` = 42 (one generator per test, so each test is reproducible alone).
-- **Multiplicity**: Holm within each ablation group × column × metric
-  (`apply_holm`), alpha 0.05; only tested rows count. Intervals unadjusted.
-  MRR and Hits@1 are primary, F1 secondary.
+- **Decision (MRR only)**: only MRR (`DECISION_METRIC`) gets a significance
+  decision, Holm within each ablation group × column (`apply_holm`), alpha
+  0.05; only tested rows count. Hits@1 (primary, but nearly a function of
+  MRR's first rank) and F1 (secondary) show interval and unadjusted p with no
+  decision (`—`), so two correlated primary tests never each spend the full
+  alpha. Intervals unadjusted.
 - Each row carries the column's top-20 ceiling (MRR/Hits@1: ranking ceiling;
   F1: recall ceiling) from `metric_ceilings.json`.
 - **Sidecar check** (`check_sidecar`): a sidecar is used only if its `result`
@@ -1245,9 +1248,14 @@ source by source, from the per-source sidecars:
   reference count equal the result file beside it, so a sidecar left behind
   when results are copied between directories is never paired with a newer
   result. Copy `*_entities.json` together with `*_results.json`.
+- **Same setup** (`check_same_references`): compared results must share pairs,
+  test reference sources and gold targets, `candidates_sha256`,
+  `evaluation_protocol` and `population.n_train_refs`, so a pre-#137 D1
+  result is never paired with a post-#137 one.
 - Any failure of one comparison (missing, stale or malformed sidecar,
-  different references: `check_same_references`) makes it "not tested" with
-  its reason; the rest of the report is unaffected. All results written
+  different references or setup, unexpected value types) makes it "not
+  tested" with its reason; `generate_report.py` also logs and omits the
+  section if the whole run fails. All results written
   before #140 are not tested. `SidecarCache` loads each condition and column
   once per run; a pair with no units contributes no difference.
 - Cost: about 1.2 s per D1 ranking test (F1 is faster since it counts only
@@ -1279,8 +1287,11 @@ D4 columns.
   under metric-named keys (`delta_f1`, `delta_mrr`). `export_stats_table`
   and the report's table have a `Metric` column and a generic `delta`.
 - Without the ceilings file `generate_report.py` warns and runs without
-  ceilings; Hits@1 of results that neither record nor can derive it is left
-  out of the Hits@1 means, with one warning naming how many.
+  ceilings. A Hits@1 mean (per column, per condition, per pivot cell) is
+  missing whenever any pair in it lacks Hits@1, never an average of the rest;
+  one warning names how many results lack it.
+- Scoring and the sidecar share `run_experiment._population_lists`, the one
+  definition of the judgeable validation/test lists.
 
 ## Result JSON schema
 
