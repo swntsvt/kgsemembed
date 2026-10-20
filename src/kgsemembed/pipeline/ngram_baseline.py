@@ -15,7 +15,8 @@ unchanged: thresholds are tuned on the validation population only.
 Results are written to ``{results_dir}/B0/{dataset_id}/{pair}_results.json``
 with the C-condition schema (no model fields), beside a
 ``{pair}_entities.json`` sidecar holding each test reference source's best
-gold rank, counted as MRR counts it (known D1 pairs removed).  B0 is not a registered condition and never writes into
+gold rank, counted as MRR counts it (known D1 pairs removed), and each test
+source's top-1 prediction (:mod:`kgsemembed.evaluation.per_source`).  B0 is not a registered condition and never writes into
 ``data/results/``.
 
 Usage
@@ -35,17 +36,19 @@ from typing import Dict, List, Optional, Tuple
 
 from kgsemembed.candidates.ngram import NgramConfig, load_candidates, score_pair_candidates
 from kgsemembed.datasets import AlignmentPair, load_dataset
-from kgsemembed.evaluation.metrics import EntityPair, RankedList, _reference_map, compute_recall_at_k
-from kgsemembed.evaluation.population import judgeable_ranked_lists
+from kgsemembed.evaluation.metrics import RankedList, compute_recall_at_k
+from kgsemembed.evaluation.per_source import SIDECAR_SUFFIX, link_to_result
 from kgsemembed.pipeline.run_experiment import (
     _COUNT_KEYS,
     _METRIC_KEYS,
     _PER_ENTITY_TYPE_KEY,
     _POPULATION_KEY,
+    PER_SOURCE_KEY,
     _candidate_count,
     _candidate_digest,
     _evaluate_pair,
     _provenance,
+    with_per_source,
     _result_path,
     _seed_random_state,
 )
@@ -182,36 +185,6 @@ def build_ranked_lists(pair: AlignmentPair, scored: ScoredCandidates) -> List[Ra
     ]
 
 
-def gold_rank_records(ranked_lists: List[RankedList], references: List[EntityPair]) -> List[dict]:
-    """
-    Record the best gold rank of every test reference source.
-
-    Parameters
-    ----------
-    ranked_lists : List[RankedList]
-        Ranked lists of the pair's sources.
-    references : List[EntityPair]
-        Test reference pairs.
-
-    Returns
-    -------
-    List[dict]
-        ``source``, ``ranked`` (whether the source has a ranked list),
-        ``gold_targets``, ``gold_ranks`` (1-based rank of each gold
-        target, ``None`` when it was not ranked) and ``best_gold_rank``
-        (``None`` when no gold target was ranked), sorted by source URI.
-    """
-    ranked = {lst[0][0]: [target for _, target, _ in lst] for lst in ranked_lists if lst}
-    records = []
-    for source, gold in sorted(_reference_map(references).items()):
-        positions = {target: rank for rank, target in enumerate(ranked.get(source, []), start=1)}
-        ranks = [positions.get(target) for target in gold]
-        best = min((rank for rank in ranks if rank is not None), default=None)
-        records.append({"source": source, "ranked": source in ranked, "gold_targets": gold,
-                        "gold_ranks": ranks, "best_gold_rank": best})
-    return records
-
-
 def result_payload(pair: AlignmentPair, metrics: Dict[str, object], stored: Dict[str, List[str]]) -> dict:
     """
     Assemble a B0 result in the C-condition result schema.
@@ -251,7 +224,7 @@ def _write_json(path: Path, payload: object) -> None:
     path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
 
 
-def evaluate_pair(pair: AlignmentPair, data_dir: str | Path) -> Tuple[dict, List[dict]]:
+def evaluate_pair(pair: AlignmentPair, data_dir: str | Path) -> Tuple[dict, dict]:
     """
     Score one pair's stored candidates in n-gram order under the protocol.
 
@@ -264,17 +237,19 @@ def evaluate_pair(pair: AlignmentPair, data_dir: str | Path) -> Tuple[dict, List
 
     Returns
     -------
-    Tuple[dict, List[dict]]
+    Tuple[dict, dict]
         Result payload, with ``candidate_recall_at_20`` (the ceiling no
-        re-ranking can exceed), and the test-source gold-rank records.
+        re-ranking can exceed), and the per-source sidecar record
+        (:func:`kgsemembed.evaluation.per_source.per_source_record`).
     """
     stored = load_candidates(pair.dataset_id, pair.pair_name, data_dir)
     scored = scored_candidates(pair)
     check_stored_order(scored, stored, f"{pair.dataset_id}/{pair.pair_name}")
     ranked_lists = build_ranked_lists(pair, scored)
-    payload = result_payload(pair, _evaluate_pair(pair, ranked_lists), stored)
+    metrics = with_per_source(pair, ranked_lists, _evaluate_pair(pair, ranked_lists))
+    payload = result_payload(pair, metrics, stored)
     payload["candidate_recall_at_20"] = compute_recall_at_k(ranked_lists, pair.test_refs, NGRAM_CONFIG.top_k)
-    return payload, gold_rank_records(judgeable_ranked_lists(pair, ranked_lists), pair.test_refs)
+    return payload, metrics[PER_SOURCE_KEY]
 
 
 def run_pair(pair: AlignmentPair, data_dir: str | Path, results_dir: str | Path, force: bool) -> None:
@@ -296,9 +271,9 @@ def run_pair(pair: AlignmentPair, data_dir: str | Path, results_dir: str | Path,
     if path.exists() and not force:
         _LOGGER.info("Skipping existing result: %s", path)
         return
-    payload, records = evaluate_pair(pair, data_dir)
+    payload, sidecar = evaluate_pair(pair, data_dir)
+    _write_json(path.with_name(f"{pair.pair_name}{SIDECAR_SUFFIX}"), link_to_result(sidecar, payload))
     _write_json(path, payload)
-    _write_json(path.with_name(f"{pair.pair_name}_entities.json"), {"test_sources": records})
     _LOGGER.info("%s/%s: MRR %.4f F1 %.4f", pair.dataset_id, pair.pair_name,
                  payload["metrics"]["mrr"], payload["metrics"]["f1"])
 
