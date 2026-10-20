@@ -36,12 +36,14 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from kgsemembed.evaluation.metrics import EVALUATION_PROTOCOL_VERSION  # noqa: E402
 from kgsemembed.verbalisation.base import annotation_predicates_digest  # noqa: E402
+from kgsemembed.verbalisation.v8 import v8_exclusions_digest  # noqa: E402
 from scripts.dataset_provenance import _table as _provenance_table  # noqa: E402
 
 _REPO_ROOT = Path(__file__).resolve().parents[1]
 _D1_KNOWN_PAIRS = 726
 _ANNOTATION_COMPONENTS = frozenset({"V1", "V2"})
 _ANNOTATION_DATASETS = frozenset({"D1", "D2"})
+_V8_CHANGED_DATASETS = frozenset({"D1", "D2", "D4_instance", "D5"})
 _GIT_TIMEOUT_SECONDS = 30
 _REF_PREFIXES = ("refs/heads/", "refs/remotes/", "refs/tags/")
 
@@ -69,6 +71,8 @@ class ResultRecord:
         ``evaluation_protocol``.
     annotation_digest : Optional[str]
         ``annotation_predicates_sha256``, absent before #136.
+    v8_digest : Optional[str]
+        ``v8_exclusions_sha256``, absent before #145.
     n_train_refs : Optional[int]
         Known pairs in the population record.
     candidates_sha256 : str
@@ -88,6 +92,7 @@ class ResultRecord:
     git_dirty: Optional[bool]
     protocol: Optional[int]
     annotation_digest: Optional[str]
+    v8_digest: Optional[str]
     n_train_refs: Optional[int]
     candidates_sha256: str
     versions: str
@@ -130,6 +135,7 @@ def _record(tree: str, payload: dict) -> ResultRecord:
         git_commit=str(payload.get("git_commit")), git_dirty=payload.get("git_dirty"),
         protocol=payload.get("evaluation_protocol"),
         annotation_digest=payload.get("annotation_predicates_sha256"),
+        v8_digest=payload.get("v8_exclusions_sha256"),
         n_train_refs=population.get("n_train_refs"),
         candidates_sha256=str(payload.get("candidates_sha256")),
         versions=json.dumps(payload.get("versions"), sort_keys=True),
@@ -159,6 +165,11 @@ def reads_annotations(record: ResultRecord) -> bool:
     """Return whether the result's text depends on the #136 annotation predicates."""
     components = set(record.strategy.split("+"))
     return record.dataset_id in _ANNOTATION_DATASETS and bool(components & _ANNOTATION_COMPONENTS)
+
+
+def reads_v8_exclusions(record: ResultRecord) -> bool:
+    """Return whether the result's text depends on the #145 V8 exclusions."""
+    return record.dataset_id in _V8_CHANGED_DATASETS and "V8" in record.strategy.split("+")
 
 
 def digest_state(record: ResultRecord, current: str) -> str:
@@ -209,6 +220,8 @@ def flags(record: ResultRecord, current_digest: str, pair_hashes: Dict[Tuple[str
         reasons.append("D1 before the known-pair fix (#137)")
     if reads_annotations(record) and digest_state(record, current_digest) != "current":
         reasons.append("V1/V2 text before #136")
+    if reads_v8_exclusions(record) and record.v8_digest != v8_exclusions_digest():
+        reasons.append("V8 text before #145")
     if len(pair_hashes.get((record.dataset_id, record.pair_name), ())) > 1:
         reasons.append("candidate hash differs within the pair")
     return reasons
@@ -413,7 +426,7 @@ def flag_section(records: Sequence[ResultRecord], current: str) -> List[str]:
     lines = ["## 4. Flagged results", ""]
     if not rows:
         return lines + ["None: every result is from a clean tree, current protocol, current D1 "
-                        "population, current V1/V2 annotation predicates where they apply, and one "
+                        "population, current V1/V2 annotation predicates and V8 exclusions where they apply, and one "
                         "candidate hash per pair.", ""]
     return lines + _table(["Tree", "Condition", "Column", "Pair", "Reasons"], rows)
 
@@ -430,6 +443,8 @@ def _preamble(records: Sequence[ResultRecord], current: str) -> List[str]:
         f"Current annotation-predicate digest: `{current[:12]}…`.",
         "- **Annotation digest** matters only where V1 or V2 text is read on D1 or D2; elsewhere the",
         "  #136 change left the text byte-identical, so `absent` is expected.",
+        f"- **V8 exclusion digest** (`{v8_exclusions_digest()[:12]}…`) matters only where V8 text is read on",
+        "  D1, D2, D4_instance or D5; on D3 and D4_schema #145 left the text byte-identical.",
         f"- **n_train_refs** must be {_D1_KNOWN_PAIRS} on D1 (#137 known pairs); D5 records its training links.",
         "- **On develop** tests `origin/develop` (the local `develop` only when the clone has no",
         "  remote-tracking copy). **Local refs** are read from this clone, so they can differ on",
