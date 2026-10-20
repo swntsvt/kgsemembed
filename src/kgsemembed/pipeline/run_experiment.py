@@ -48,7 +48,7 @@ from kgsemembed.evaluation import (
     top_ranked_pairs,
     tune_threshold,
 )
-from kgsemembed.evaluation.per_source import per_source_record
+from kgsemembed.evaluation.per_source import SIDECAR_SUFFIX, link_to_result, per_source_record
 from kgsemembed.evaluation.population import (
     EvaluationPopulations,
     build_populations,
@@ -79,7 +79,6 @@ _FAILURE_KEY = "n_failed_pairs"
 _PER_ENTITY_TYPE_KEY = "per_entity_type"
 _POPULATION_KEY = "population"
 PER_SOURCE_KEY = "per_source"
-_SIDECAR_SUFFIX = "_entities.json"
 _COUNT_KEYS = ("tp", "fp", "fn")
 _VAL = "val"
 _TEST = "test"
@@ -552,7 +551,7 @@ def _process_pair(
     ranked_lists = _build_ranked_lists(
         pair, source_embeddings, candidates, candidate_index, candidate_embeddings
     )
-    return _evaluate_pair(pair, ranked_lists)
+    return with_per_source(pair, ranked_lists, _evaluate_pair(pair, ranked_lists))
 
 
 def _evaluate_pair(
@@ -571,19 +570,44 @@ def _evaluate_pair(
     Returns
     -------
     Dict[str, object]
-        Test metrics with TP/FP/FN counts, the per-entity-type breakdown, the
-        population summary under ``"population"`` and the per-source sidecar
-        record under :data:`PER_SOURCE_KEY`.
+        Test metrics with TP/FP/FN counts, the per-entity-type breakdown, and
+        the population summary under ``"population"``.
     """
     populations = build_populations(pair)
-    judgeable = judgeable_ranked_lists(pair, ranked_lists)
-    split_lists = _split_ranked_lists(judgeable, populations)
+    split_lists = _split_ranked_lists(judgeable_ranked_lists(pair, ranked_lists), populations)
     threshold = _resolve_threshold(split_lists[_VAL], pair.val_refs)
     metrics = compute_all_metrics(split_lists[_TEST], pair.test_refs, threshold=threshold)
     metrics[_PER_ENTITY_TYPE_KEY] = _per_entity_type_metrics(pair, split_lists, threshold)
     metrics[_POPULATION_KEY] = _population_record(pair, split_lists, populations)
-    metrics[PER_SOURCE_KEY] = per_source_record(split_lists[_TEST], pair.test_refs, metrics)
     return metrics
+
+
+def with_per_source(
+    pair: AlignmentPair, ranked_lists: List[RankedList], metrics: Dict[str, object]
+) -> Dict[str, object]:
+    """
+    Add the per-source sidecar record to metrics from :func:`_evaluate_pair`.
+
+    Only the writers of sidecars (this runner and B0) call it, so the ablation
+    runners that share :func:`_evaluate_pair` neither pay for nor depend on it.
+
+    Parameters
+    ----------
+    pair : AlignmentPair
+        Alignment pair being evaluated.
+    ranked_lists : List[RankedList]
+        Ranked candidate lists of every source of the pair.
+    metrics : Dict[str, object]
+        Output of :func:`_evaluate_pair` for the same lists.
+
+    Returns
+    -------
+    Dict[str, object]
+        ``metrics`` with the record under :data:`PER_SOURCE_KEY`.
+    """
+    judgeable = judgeable_ranked_lists(pair, ranked_lists)
+    test_lists = restrict_ranked_lists(judgeable, build_populations(pair).test_sources)
+    return {**metrics, PER_SOURCE_KEY: per_source_record(test_lists, pair.test_refs, metrics)}
 
 
 def _candidate_count(candidates: Dict[str, List[str]]) -> int:
@@ -833,8 +857,8 @@ def _write_result(
         "v8_exclusions_sha256": v8_exclusions_digest(),
         **_provenance(model_info),
     }
-    sidecar = path.with_name(f"{pair.pair_name}{_SIDECAR_SUFFIX}")
-    sidecar.write_text(json.dumps(metrics[PER_SOURCE_KEY]), encoding="utf-8")
+    sidecar = link_to_result(metrics[PER_SOURCE_KEY], payload)
+    path.with_name(f"{pair.pair_name}{SIDECAR_SUFFIX}").write_text(json.dumps(sidecar), encoding="utf-8")
     path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
 
 

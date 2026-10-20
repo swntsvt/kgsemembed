@@ -1225,9 +1225,9 @@ definitions live in the `metrics.py` module docstring; in short:
 source by source, from the per-source sidecars:
 
 - **Units**: test reference sources for MRR and Hits@1 (1:N counted once, at
-  the best gold rank). F1: test reference sources plus unmatched sources
-  either condition made a judgeable prediction for, each with its TP/FP/FN;
-  F1 is recomputed from their sums (missing on one side = zeros).
+  the best gold rank). F1: test reference sources plus other sources either
+  condition predicted (top-1 at or above its threshold), each with its
+  TP/FP/FN; F1 is recomputed from their sums (missing on one side = zeros).
 - **Statistic**: B − A of the column value (D3: mean of its 21 pair values),
   positive when B is better.
 - **Interval**: 95% percentile bootstrap, units resampled within each pair
@@ -1240,10 +1240,18 @@ source by source, from the per-source sidecars:
   MRR and Hits@1 are primary, F1 secondary.
 - Each row carries the column's top-20 ceiling (MRR/Hits@1: ranking ceiling;
   F1: recall ceiling) from `metric_ceilings.json`.
-- A comparison without sidecars is listed as not tested (all results written
-  before #140). Two conditions must share pairs, test reference sources and
-  gold targets (`check_same_references`).
-- Cost: about 1.2 s per D1 ranking test and 5 s per D1 F1 test.
+- **Sidecar check** (`check_sidecar`): a sidecar is used only if its `result`
+  link (run timestamp, candidates digest, commit), threshold, TP/FP and test
+  reference count equal the result file beside it, so a sidecar left behind
+  when results are copied between directories is never paired with a newer
+  result. Copy `*_entities.json` together with `*_results.json`.
+- Any failure of one comparison (missing, stale or malformed sidecar,
+  different references: `check_same_references`) makes it "not tested" with
+  its reason; the rest of the report is unaffected. All results written
+  before #140 are not tested. `SidecarCache` loads each condition and column
+  once per run; a pair with no units contributes no difference.
+- Cost: about 1.2 s per D1 ranking test (F1 is faster since it counts only
+  predicted unmatched sources).
 - Checked: the sidecars of all 26 B0 pairs reproduce stored MRR, Hits@1 and
   F1 to 1e-15; C1/C2 on D2 re-run with the #140 code reproduce their stored
   metrics exactly.
@@ -1268,7 +1276,11 @@ D4 columns.
   (secondary): `wilcoxon_comparison(..., metric=)` and
   `run_group_comparisons(..., metric=)` default to `"f1"` for the historical
   scripts; results carry `metric`, `mean_a`, `mean_b`, `delta` and the same
-  under metric-named keys (`delta_f1`, `delta_mrr`).
+  under metric-named keys (`delta_f1`, `delta_mrr`). `export_stats_table`
+  and the report's table have a `Metric` column and a generic `delta`.
+- Without the ceilings file `generate_report.py` warns and runs without
+  ceilings; Hits@1 of results that neither record nor can derive it is left
+  out of the Hits@1 means, with one warning naming how many.
 
 ## Result JSON schema
 
@@ -1311,9 +1323,12 @@ Every file written by `run_experiment.py` contains:
 `n_test_refs`, `test_sources` (per test reference source: `source`,
 `ranked`, `gold_targets`, `gold_ranks`, `best_gold_rank`, on the judgeable
 lists) and `predictions` (top-1 of every ranked test-population source:
-`source`, `target`, `score`, `predicted`, `correct`). Writing refuses
-predictions that do not reproduce the result's TP/FP. B0 writes the same
-format. Results written before #140 have no sidecar, or (B0) only
+`source`, `target`, `score`, `predicted`, `correct`) and `result` (`link_to_result`: the result's
+`run_timestamp`, `candidates_sha256`, `git_commit`). Writing refuses
+predictions that do not reproduce the result's TP/FP. Only the sidecar
+writers (`run_experiment._process_pair` via `with_per_source`, and B0) build
+it; `_evaluate_pair`, shared with the ablation runners, does not. The file
+suffix is `per_source.SIDECAR_SUFFIX`. B0 writes the same format. Results written before #140 have no sidecar, or (B0) only
 `test_sources`. About 15 MB per condition over all 26 pairs.
 
 `hf_revision_pinned`, `device` and `device_override` (#141) are absent from

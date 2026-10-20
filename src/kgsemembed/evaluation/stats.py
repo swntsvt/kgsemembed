@@ -55,6 +55,7 @@ _SUB_DATASETS: Dict[str, Tuple[str, ...]] = {"D4": ("D4_schema", "D4_instance")}
 _TABLE_COLUMNS: Tuple[str, ...] = (
     "Condition A",
     "Condition B",
+    "Metric",
     "n",
     "pairs (W/T/L)",
     "p-value",
@@ -843,6 +844,7 @@ def _format_row(result: dict) -> str:
     cells = (
         result["condition_a"],
         result["condition_b"],
+        result.get("metric", "f1"),
         str(result["n_units"]),
         pair_outcome_cell(result),
         _p_value_cell(result),

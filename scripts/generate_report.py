@@ -20,7 +20,8 @@ from __future__ import annotations
 import argparse
 import logging
 import random
-from typing import List
+from pathlib import Path
+from typing import List, Optional
 
 import numpy as np
 
@@ -64,13 +65,21 @@ def _collect_comparisons(results_dir: str) -> List[dict]:
     return comparisons
 
 
+def _load_counts(path: str) -> Optional[dict]:
+    """Load the reference counts, or return ``None`` with a warning when absent."""
+    if not Path(path).is_file():
+        _LOGGER.warning("No reference counts at %s; ceilings and older results' Hits@1 omitted.", path)
+        return None
+    return load_reference_counts(path)
+
+
 def main() -> None:
     """Load results, gather statistical comparisons, and write the report."""
     random.seed(42)
     np.random.seed(42)
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s %(message)s")
     args = _build_arg_parser().parse_args()
-    counts = load_reference_counts(args.ceilings)
+    counts = _load_counts(args.ceilings)
     df = load_all_results(args.results_dir, include_entity_type_breakdown=True, counts=counts)
     comparisons = _collect_comparisons(args.results_dir)
     paired = run_paired_tests(args.results_dir, counts)

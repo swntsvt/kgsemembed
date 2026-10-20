@@ -1398,7 +1398,7 @@ def test_stats_columns_match_export_stats_table(tmp_path: Path) -> None:
 def test_report_stats_row_carries_effect_size(tmp_path: Path) -> None:
     rows = _report_with_stats(tmp_path, _synthetic_stats(effect_size_r=0.7333))
     assert rows[-1] == (
-        "| C1 | C2 | 6 | 20/2/4 | 0.0321 | 0.0312 | True | 0.0187 | 0.7333 |  |"
+        "| C1 | C2 | f1 | 6 | 20/2/4 | 0.0321 | 0.0312 | True | 0.0187 | 0.7333 |  |"
     )
 
 
@@ -1406,7 +1406,7 @@ def test_report_stats_row_marks_untested_p_value(tmp_path: Path) -> None:
     stats = _synthetic_stats()
     stats[0]["p_value"] = None
     rows = _report_with_stats(tmp_path, stats)
-    assert rows[-1].split(" | ")[4] == "N/A"
+    assert rows[-1].split(" | ")[5] == "N/A"
 
 
 def test_report_stats_warning_is_displayed(tmp_path: Path) -> None:
@@ -1453,14 +1453,14 @@ def test_report_stats_long_warning_collapses_to_one_line(tmp_path: Path) -> None
 @pytest.mark.parametrize("effect_size", [0.0, 0.5, 1.0, -0.25])
 def test_report_stats_renders_effect_size_values(tmp_path: Path, effect_size: float) -> None:
     rows = _report_with_stats(tmp_path, _synthetic_stats(effect_size_r=effect_size))
-    assert rows[-1].split(" | ")[8] == f"{effect_size:.4f}"
+    assert rows[-1].split(" | ")[9] == f"{effect_size:.4f}"
 
 
 def test_report_stats_tolerates_missing_effect_size(tmp_path: Path) -> None:
     stats = _synthetic_stats()
     del stats[0]["effect_size_r"]
     rows = _report_with_stats(tmp_path, stats)
-    assert rows[-1] == "| C1 | C2 | 6 | 20/2/4 | 0.0321 | 0.0312 | True | 0.0187 | N/A |  |"
+    assert rows[-1] == "| C1 | C2 | f1 | 6 | 20/2/4 | 0.0321 | 0.0312 | True | 0.0187 | N/A |  |"
 
 
 def test_report_stats_preserves_existing_columns(tmp_path: Path) -> None:
@@ -1621,3 +1621,27 @@ def test_consistency_section_lists_mrr_before_f1_and_is_labelled(tmp_path: Path)
     section = text.split("# Cross-Dataset Consistency (Wilcoxon)", 1)[1].split("\n# ", 1)[0]
     assert _headings_of(section) == ["## MRR", "## F1 (secondary)"]
     assert "consistency summary, not the primary test" in section
+
+
+def test_missing_hits_at_1_is_warned_about_once(tmp_path: Path) -> None:
+    metrics = {key: 0.5 for key in _METRIC_KEYS}
+    for pair in ("a", "b"):
+        _write_result(tmp_path, "C1", "D1", pair, 0.5, overrides={"metrics": metrics})
+    logger = logging.getLogger("kgsemembed.evaluation.aggregator")
+    records: List[logging.LogRecord] = []
+    handler = logging.Handler()
+    handler.emit = records.append
+    logger.addHandler(handler)
+    try:
+        load_all_results(str(tmp_path))
+    finally:
+        logger.removeHandler(handler)
+    messages = [r.getMessage() for r in records if "Hits@1" in r.getMessage()]
+    assert len(messages) == 1 and "2 result(s)" in messages[0]
+
+
+def test_cli_runs_without_the_ceilings_file(full_results_dir: Path, tmp_path: Path) -> None:
+    output = tmp_path / "report.md"
+    _run_cli(["--results_dir", str(full_results_dir), "--output", str(output),
+              "--ceilings", str(tmp_path / "absent.json")])
+    assert "# Per-Dataset Paired Tests" in output.read_text(encoding="utf-8")

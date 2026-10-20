@@ -37,6 +37,7 @@ from typing import Dict, List, Optional, Tuple
 from kgsemembed.candidates.ngram import NgramConfig, load_candidates, score_pair_candidates
 from kgsemembed.datasets import AlignmentPair, load_dataset
 from kgsemembed.evaluation.metrics import RankedList, compute_recall_at_k
+from kgsemembed.evaluation.per_source import SIDECAR_SUFFIX, link_to_result
 from kgsemembed.pipeline.run_experiment import (
     _COUNT_KEYS,
     _METRIC_KEYS,
@@ -47,6 +48,7 @@ from kgsemembed.pipeline.run_experiment import (
     _candidate_digest,
     _evaluate_pair,
     _provenance,
+    with_per_source,
     _result_path,
     _seed_random_state,
 )
@@ -244,7 +246,7 @@ def evaluate_pair(pair: AlignmentPair, data_dir: str | Path) -> Tuple[dict, dict
     scored = scored_candidates(pair)
     check_stored_order(scored, stored, f"{pair.dataset_id}/{pair.pair_name}")
     ranked_lists = build_ranked_lists(pair, scored)
-    metrics = _evaluate_pair(pair, ranked_lists)
+    metrics = with_per_source(pair, ranked_lists, _evaluate_pair(pair, ranked_lists))
     payload = result_payload(pair, metrics, stored)
     payload["candidate_recall_at_20"] = compute_recall_at_k(ranked_lists, pair.test_refs, NGRAM_CONFIG.top_k)
     return payload, metrics[PER_SOURCE_KEY]
@@ -270,7 +272,7 @@ def run_pair(pair: AlignmentPair, data_dir: str | Path, results_dir: str | Path,
         _LOGGER.info("Skipping existing result: %s", path)
         return
     payload, sidecar = evaluate_pair(pair, data_dir)
-    _write_json(path.with_name(f"{pair.pair_name}_entities.json"), sidecar)
+    _write_json(path.with_name(f"{pair.pair_name}{SIDECAR_SUFFIX}"), link_to_result(sidecar, payload))
     _write_json(path, payload)
     _LOGGER.info("%s/%s: MRR %.4f F1 %.4f", pair.dataset_id, pair.pair_name,
                  payload["metrics"]["mrr"], payload["metrics"]["f1"])

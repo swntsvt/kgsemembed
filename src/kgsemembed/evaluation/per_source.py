@@ -14,13 +14,19 @@ contributed to its metrics:
   gold count this decomposes TP, FP and FN by source, so F1 can be resampled.
 
 :func:`per_source_record` checks that the predictions reproduce the result's
-TP and FP counts before anything is written.
+TP and FP counts before anything is written, and :func:`link_to_result` adds a
+``result`` block (run timestamp, candidate digest, commit) that the reader
+compares with the result file beside it, so a sidecar left over from another
+run is never paired with a newer result.
 """
 
 from typing import Dict, List
 
 from kgsemembed.evaluation.metrics import EntityPair, RankedList, _reference_map
 from kgsemembed.utils.errors import PipelineStageError
+
+SIDECAR_SUFFIX = "_entities.json"
+RESULT_LINK_KEYS = ("run_timestamp", "candidates_sha256", "git_commit")
 
 
 def gold_rank_records(ranked_lists: List[RankedList], references: List[EntityPair]) -> List[dict]:
@@ -130,3 +136,23 @@ def per_source_record(
         "test_sources": gold_rank_records(test_lists, references),
         "predictions": predictions,
     }
+
+
+def link_to_result(sidecar: dict, payload: dict) -> dict:
+    """
+    Tie a sidecar to the result it was written with.
+
+    Parameters
+    ----------
+    sidecar : dict
+        Output of :func:`per_source_record`.
+    payload : dict
+        The result payload written beside it.
+
+    Returns
+    -------
+    dict
+        ``sidecar`` with a ``result`` block copying :data:`RESULT_LINK_KEYS`
+        from ``payload``.
+    """
+    return {**sidecar, "result": {key: payload.get(key) for key in RESULT_LINK_KEYS}}

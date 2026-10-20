@@ -9,7 +9,7 @@ import pytest
 
 from kgsemembed.evaluation import paired_tests as pt
 from kgsemembed.evaluation.metrics import compute_all_metrics
-from kgsemembed.evaluation.per_source import per_source_record
+from kgsemembed.evaluation.per_source import link_to_result, per_source_record
 from kgsemembed.utils.errors import DataError
 
 _FAST = pt.TestSettings(n_replicates=500, seed=7)
@@ -31,11 +31,26 @@ def _lists(n: int, hit_every: int, prefix: str = "s") -> Tuple[list, list]:
     return lists, refs
 
 
-def _write(results_dir: Path, condition: str, column: str, pair: str, sidecar: dict) -> None:
+def _payload(sidecar: dict, run: str = "2026-10-20T00:00:00Z") -> dict:
+    """A result file consistent with ``sidecar``."""
+    predictions = sidecar.get("predictions", [])
+    return {
+        "run_timestamp": run, "candidates_sha256": "c" * 64, "git_commit": "abc",
+        "metrics": {"threshold": sidecar.get("threshold")},
+        "counts": {"tp": sum(r["correct"] for r in predictions),
+                   "fp": sum(r["predicted"] and not r["correct"] for r in predictions)},
+        "population": {"n_test_refs": sidecar.get("n_test_refs")},
+    }
+
+
+def _write(results_dir: Path, condition: str, column: str, pair: str, sidecar: dict,
+           payload: dict | None = None) -> None:
     directory = results_dir / condition / column
     directory.mkdir(parents=True, exist_ok=True)
-    (directory / f"{pair}_results.json").write_text("{}", encoding="utf-8")
-    (directory / f"{pair}_entities.json").write_text(json.dumps(sidecar), encoding="utf-8")
+    payload = payload or _payload(sidecar)
+    (directory / f"{pair}_results.json").write_text(json.dumps(payload), encoding="utf-8")
+    linked = link_to_result(sidecar, payload) if "predictions" in sidecar else sidecar
+    (directory / f"{pair}_entities.json").write_text(json.dumps(linked), encoding="utf-8")
 
 
 # ---------------------------------------------------------------------------
@@ -64,7 +79,9 @@ def test_f1_units_include_unmatched_predictions_as_false_positives() -> None:
 
 
 def test_aligned_arrays_fill_a_unit_missing_on_one_side_with_zeros() -> None:
-    a, b = pt.aligned_arrays({"s": (1.0, 0.0, 0.0)}, {"s": (1.0, 0.0, 0.0), "u": (0.0, 1.0, 0.0)})
+    a, b = pt.aligned_arrays(
+        {"s": (1.0, 0.0, 0.0)}, {"s": (1.0, 0.0, 0.0), "u": (0.0, 1.0, 0.0)}, "f1"
+    )
     assert a.tolist() == [[1.0, 0.0, 0.0], [0.0, 0.0, 0.0]]
     assert b.tolist() == [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0]]
 
@@ -74,7 +91,7 @@ def test_aligned_arrays_fill_a_unit_missing_on_one_side_with_zeros() -> None:
 # ---------------------------------------------------------------------------
 def _pair_arrays(hit_a: int, hit_b: int, n: int = 60, metric: str = "mrr") -> List[pt.PairArrays]:
     side_a, side_b = _sidecar(*_lists(n, hit_a)), _sidecar(*_lists(n, hit_b))
-    return [pt.aligned_arrays(pt.unit_values(side_a, metric), pt.unit_values(side_b, metric))]
+    return [pt.aligned_arrays(pt.unit_values(side_a, metric), pt.unit_values(side_b, metric), metric)]
 
 
 def test_identical_conditions_have_no_difference() -> None:
@@ -97,8 +114,8 @@ def test_results_are_reproducible_from_the_seed() -> None:
 
 
 def test_column_value_is_the_mean_over_pairs_not_a_pooled_value() -> None:
-    small = pt.aligned_arrays(*(pt.unit_values(_sidecar(*_lists(2, 1, "a")), "hits_at_1"),) * 2)
-    large = pt.aligned_arrays(*(pt.unit_values(_sidecar(*_lists(98, 99, "b")), "hits_at_1"),) * 2)
+    small = pt.aligned_arrays(*(pt.unit_values(_sidecar(*_lists(2, 1, "a")), "hits_at_1"),) * 2, "hits_at_1")
+    large = pt.aligned_arrays(*(pt.unit_values(_sidecar(*_lists(98, 99, "b")), "hits_at_1"),) * 2, "hits_at_1")
     result = pt.paired_test([small, large], "hits_at_1", _FAST)
     assert result["value_a"] == pytest.approx((1.0 + 1 / 98) / 2)
     assert (result["n_pairs"], result["n_units"]) == (2, 100)
@@ -174,3 +191,73 @@ def test_run_marks_comparisons_without_sidecars_untested(tmp_path: Path) -> None
     rows = pt.run_paired_tests(tmp_path, None, _FAST)
     assert rows and not any(r["tested"] for r in rows)
     assert all("reason" in r for r in rows)
+
+
+# ---------------------------------------------------------------------------
+# Review fixes: sidecar checks, robustness, F1 units, caching
+# ---------------------------------------------------------------------------
+def test_f1_units_leave_out_sources_neither_condition_predicted() -> None:
+    sidecar = _sidecar([[("s", "a", 0.9)], [("u", "z", 0.1)]], [("s", "a")])
+    assert set(pt.unit_values(sidecar, "f1")) == {"s"}
+
+
+def test_a_sidecar_from_another_run_is_refused(tmp_path: Path) -> None:
+    sidecar = _sidecar(*_lists(4, 1))
+    _write(tmp_path, "C1", "D1", "p", sidecar)
+    newer = _payload(sidecar, run="2026-10-21T00:00:00Z")
+    (tmp_path / "C1" / "D1" / "p_results.json").write_text(json.dumps(newer), encoding="utf-8")
+    with pytest.raises(pt.StaleSidecarError, match="result"):
+        pt.load_sidecars(tmp_path, "C1", "D1")
+
+
+def test_a_sidecar_with_other_counts_is_refused(tmp_path: Path) -> None:
+    sidecar = _sidecar(*_lists(4, 1))
+    payload = _payload(sidecar)
+    payload["counts"]["fp"] += 1
+    _write(tmp_path, "C1", "D1", "p", sidecar, payload)
+    with pytest.raises(pt.StaleSidecarError, match="tp_fp"):
+        pt.load_sidecars(tmp_path, "C1", "D1")
+
+
+def test_a_sidecar_without_a_result_link_is_refused(tmp_path: Path) -> None:
+    sidecar = _sidecar(*_lists(4, 1))
+    directory = tmp_path / "C1" / "D1"
+    directory.mkdir(parents=True)
+    (directory / "p_results.json").write_text(json.dumps(_payload(sidecar)), encoding="utf-8")
+    (directory / "p_entities.json").write_text(json.dumps(sidecar), encoding="utf-8")
+    with pytest.raises(pt.StaleSidecarError):
+        pt.load_sidecars(tmp_path, "C1", "D1")
+
+
+def test_different_references_make_one_comparison_untested_not_the_run(tmp_path: Path) -> None:
+    _seed_group_e(tmp_path)
+    _write(tmp_path, "C10", "D2", "p", _sidecar(*_lists(41, 1)))
+    rows = [r for r in pt.run_paired_tests(tmp_path, None, _FAST) if r["group"] == "E"]
+    d2 = [r for r in rows if r["dataset_id"] == "D2"]
+    assert all(not r["tested"] and "differ" in r["reason"] for r in d2)
+    assert all(r["tested"] for r in rows if r["dataset_id"] != "D2")
+
+
+def test_a_malformed_sidecar_makes_its_comparisons_untested(tmp_path: Path) -> None:
+    _seed_group_e(tmp_path)
+    (tmp_path / "C10" / "D5" / "p_entities.json").write_text("{not json", encoding="utf-8")
+    rows = [r for r in pt.run_paired_tests(tmp_path, None, _FAST) if r["dataset_id"] == "D5"]
+    assert rows and not any(r["tested"] for r in rows)
+
+
+def test_a_pair_without_units_contributes_no_difference() -> None:
+    empty = pt.aligned_arrays({}, {}, "mrr")
+    assert empty[0].shape == (0, 2)
+    pairs = [empty, *_pair_arrays(4, 1)]
+    result = pt.paired_test(pairs, "mrr", _FAST)
+    assert result["n_pairs"] == 2 and result["value_a"] == pytest.approx(0.625 / 2)
+    assert result["ci_low"] > 0
+
+
+def test_each_condition_is_loaded_once_per_run(tmp_path: Path, monkeypatch) -> None:
+    _seed_group_e(tmp_path)
+    loads = []
+    original = pt.load_sidecars
+    monkeypatch.setattr(pt, "load_sidecars", lambda *a: loads.append(a[1:]) or original(*a))
+    pt.run_paired_tests(tmp_path, None, _FAST)
+    assert len(loads) == len(set(loads))

@@ -396,6 +396,7 @@ def _collect_records(
     """
     records: List[dict] = []
     seen: set = set()
+    missing_hits = 0
     for path in sorted(root.rglob(_RESULT_GLOB)):
         payload = _load_json(path)
         if payload is None:
@@ -408,10 +409,16 @@ def _collect_records(
             _LOGGER.warning("Duplicate result for %s; skipping %s.", key, path)
             continue
         seen.add(key)
+        missing_hits += record[_HITS_AT_1] is None
         record[_ENTITY_TYPE_COLUMN] = _OVERALL_ENTITY_TYPE
         records.append(record)
         if include_entity_type_breakdown:
             records.extend(_entity_type_records(payload, record))
+    if missing_hits:
+        _LOGGER.warning(
+            "Hits@1 is neither recorded nor derivable for %d result(s); Hits@1 "
+            "means leave them out, unlike MRR and F1.", missing_hits,
+        )
     return records
 
 
@@ -1080,6 +1087,7 @@ def _stats_row(result: dict) -> dict:
     return {
         "Condition A": result["condition_a"],
         "Condition B": result["condition_b"],
+        "Metric": result.get("metric", "f1"),
         "n": result["n_units"],
         "pairs (W/T/L)": pair_outcome_cell(result),
         "p-value": None if p_value is None else round(float(p_value), 4),
