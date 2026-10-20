@@ -19,7 +19,7 @@ Phase 2 datasets: D1 (SNOMED-FMA Body), D2 (Anatomy MA-NCI), D3 (Conference,
 21 pairs), D4 (memoryalpha-stexpanded, schema and instance), D5
 (DBpedia-Wikidata 15K EN, OpenEA). Five datasets total.
 
-**Current focus**: Issue #141 — pinned model revisions, device check and recording (`--allow_device`), and `requirements-lock.txt`; the tag and archive follow the C1–C20 re-run after #140. Previously #142 — retire C12 (duplicate of C9; IDs not renumbered), move C19 to a sanity-check group and section, correct stale condition descriptions and PPAS labels, and average the report's summary table over dataset columns. Next: #140 (per-source sidecars and per-dataset tests), then one C1–C20 re-run. Previously #145 — V8 excludes annotation predicates (FMA, oboInOwl, OWL axiom annotations, DBkWik page text, description/name vocabularies) instead of listing them as relationships; text inventory, per-predicate classification and V8 re-runs (`artifacts/issue-145/`). Previously #139 — re-ranking MRR and source-level Hits@1 as the paper's primary metrics (F1 secondary), one definition of each metric's unit, ceiling and 1:N handling, and tables that show the top-20 ceiling, D3 micro F1 and F1's reference counts (`artifacts/issue-139/`). Previously #138 — dataset and reference-alignment provenance, each dataset's protocol against its benchmark's official one, and the paper's datasets/protocol text (`artifacts/issue-138/`); #137 — stage-1 n-gram ranking baseline (B0) and the written evaluation protocol (`artifacts/issue-137/`); #136 — V1/V2 read the synonym and definition predicates D1/D2 actually use; #134 — text-serialization-order experiment on D1 and D2 (effect of item order with the selected set held fixed; order frozen on D2 validation before any test evaluation); #128, #130 and #131 merged (Phase 2)
+**Current focus**: Issue #140 — per-dataset paired tests (bootstrap intervals, randomisation p-values, Holm within group × column × metric) on MRR and Hits@1 (F1 secondary) from new per-source sidecars; Wilcoxon kept as a cross-dataset consistency summary on MRR; `report.md` leads with MRR. Next: one C1–C20 re-run (sidecars, Hits@k, device and pinned revisions), then #141's tag and archive. Previously #141 — pinned model revisions, device check and recording (`--allow_device`), and `requirements-lock.txt`. Previously #142 — retire C12 (duplicate of C9; IDs not renumbered), move C19 to a sanity-check group and section, correct stale condition descriptions and PPAS labels, and average the report's summary table over dataset columns. Next: #140 (per-source sidecars and per-dataset tests), then one C1–C20 re-run. Previously #145 — V8 excludes annotation predicates (FMA, oboInOwl, OWL axiom annotations, DBkWik page text, description/name vocabularies) instead of listing them as relationships; text inventory, per-predicate classification and V8 re-runs (`artifacts/issue-145/`). Previously #139 — re-ranking MRR and source-level Hits@1 as the paper's primary metrics (F1 secondary), one definition of each metric's unit, ceiling and 1:N handling, and tables that show the top-20 ceiling, D3 micro F1 and F1's reference counts (`artifacts/issue-139/`). Previously #138 — dataset and reference-alignment provenance, each dataset's protocol against its benchmark's official one, and the paper's datasets/protocol text (`artifacts/issue-138/`); #137 — stage-1 n-gram ranking baseline (B0) and the written evaluation protocol (`artifacts/issue-137/`); #136 — V1/V2 read the synonym and definition predicates D1/D2 actually use; #134 — text-serialization-order experiment on D1 and D2 (effect of item order with the selected set held fixed; order frozen on D2 validation before any test evaluation); #128, #130 and #131 merged (Phase 2)
 
 ## Git Workflow
 
@@ -118,9 +118,12 @@ python -m kgsemembed.pipeline.run_experiment \
 python scripts/generate_candidates.py --datasets D1 D2 D3 D4 D5 \
     --data_dir data/
 
-# Generate the results report. The Statistical Significance section tests
-# dataset columns, not alignment pairs (see "Statistical analysis"), and only
-# accepts results written under the current evaluation protocol.
+# Generate the results report (#140; a few minutes, no model). Its primary
+# analysis is the per-dataset paired tests, read from the per-source sidecars;
+# the Wilcoxon over dataset columns is a consistency summary on MRR and F1
+# (see "Statistical analysis"). Only results under the current evaluation
+# protocol are accepted. --ceilings (default artifacts/issue-139/
+# metric_ceilings.json) supplies ceilings and older results' Hits@1.
 python scripts/generate_report.py \
     --results_dir data/results/ --output data/results/report.md
 
@@ -1209,10 +1212,43 @@ definitions live in the `metrics.py` module docstring; in short:
   a re-run. #134's "source-level Hit@1" is this Hits@1.
 - **D3**: the table's D3 column is the macro mean over 21 pairs (as is every
   statistic); the F1 table adds D3$_\mu$, pooled TP/FP/FN.
-- `evaluation/stats.py` and `report.md` still test and rank F1 (#140 covers
-  the per-dataset significance tests).
+- `report.md` ranks by MRR, with Hits@1 and F1 beside it (#140); its summary,
+  breakdown and group tables lead with MRR. The entity-type analysis is still
+  on F1.
 
 ## Statistical analysis
+
+### Per-dataset paired tests (#140, primary)
+
+`evaluation/paired_tests.py` tests every registered comparison
+(`stats.registered_comparisons()`) within every dataset column it covers,
+source by source, from the per-source sidecars:
+
+- **Units**: test reference sources for MRR and Hits@1 (1:N counted once, at
+  the best gold rank). F1: test reference sources plus unmatched sources
+  either condition made a judgeable prediction for, each with its TP/FP/FN;
+  F1 is recomputed from their sums (missing on one side = zeros).
+- **Statistic**: B − A of the column value (D3: mean of its 21 pair values),
+  positive when B is better.
+- **Interval**: 95% percentile bootstrap, units resampled within each pair
+  (D3 pairs are strata). **p**: paired randomisation test (each unit's two
+  outcomes swapped with probability 1/2), two-sided,
+  `(1 + #{|Δ*| ≥ |Δ|}) / (R + 1)`. Both use `N_REPLICATES` = 10,000 and
+  `SEED` = 42 (one generator per test, so each test is reproducible alone).
+- **Multiplicity**: Holm within each ablation group × column × metric
+  (`apply_holm`), alpha 0.05; only tested rows count. Intervals unadjusted.
+  MRR and Hits@1 are primary, F1 secondary.
+- Each row carries the column's top-20 ceiling (MRR/Hits@1: ranking ceiling;
+  F1: recall ceiling) from `metric_ceilings.json`.
+- A comparison without sidecars is listed as not tested (all results written
+  before #140). Two conditions must share pairs, test reference sources and
+  gold targets (`check_same_references`).
+- Cost: about 1.2 s per D1 ranking test and 5 s per D1 F1 test.
+- Checked: the sidecars of all 26 B0 pairs reproduce stored MRR, Hits@1 and
+  F1 to 1e-15; C1/C2 on D2 re-run with the #140 code reproduce their stored
+  metrics exactly.
+
+### Cross-dataset consistency (Wilcoxon)
 
 `evaluation/stats.py` tests **dataset columns**, not alignment pairs: D1, D2,
 D3 (mean of its 21 pairs), D4_schema, D4_instance, D5. The 21 D3 pairs share
@@ -1228,6 +1264,11 @@ D4 columns.
   under group B's alpha/3 no comparison can be significant; results carry
   `min_attainable_p` and `underpowered`. Only group E (alpha/1) can reach
   significance. Pair-level W/T/L counts are descriptive only.
+- It is reported as a consistency summary, on MRR (primary) and F1
+  (secondary): `wilcoxon_comparison(..., metric=)` and
+  `run_group_comparisons(..., metric=)` default to `"f1"` for the historical
+  scripts; results carry `metric`, `mean_a`, `mean_b`, `delta` and the same
+  under metric-named keys (`delta_f1`, `delta_mrr`).
 
 ## Result JSON schema
 
@@ -1264,6 +1305,16 @@ Every file written by `run_experiment.py` contains:
   "git_commit", "git_dirty"
 }
 ```
+
+**Per-source sidecar (#140)**: beside each result, `{pair}_entities.json`
+(`evaluation/per_source.py`, written before the result) holds `threshold`,
+`n_test_refs`, `test_sources` (per test reference source: `source`,
+`ranked`, `gold_targets`, `gold_ranks`, `best_gold_rank`, on the judgeable
+lists) and `predictions` (top-1 of every ranked test-population source:
+`source`, `target`, `score`, `predicted`, `correct`). Writing refuses
+predictions that do not reproduce the result's TP/FP. B0 writes the same
+format. Results written before #140 have no sidecar, or (B0) only
+`test_sources`. About 15 MB per condition over all 26 pairs.
 
 `hf_revision_pinned`, `device` and `device_override` (#141) are absent from
 results written before #141; their `hf_revision` equals the pin.

@@ -1,9 +1,12 @@
 """Command-line entry point for the Phase 2 experiment report.
 
-Loads previously generated result files, runs the per-group Wilcoxon
-comparisons, and renders a Markdown report.  Statistical comparison for one
+Loads previously generated result files, runs the per-dataset paired tests of
+every registered comparison (#140; the primary analysis, read from the
+per-source sidecars), the cross-dataset Wilcoxon consistency summary on MRR
+and on F1, and renders a Markdown report.  Statistical comparison for one
 ablation group failing does not abort the report: the failure is logged and the
-remaining groups continue.
+remaining groups continue.  A comparison without sidecars is listed as not
+tested.
 
 Usage
 -----
@@ -23,9 +26,12 @@ import numpy as np
 
 from kgsemembed.evaluation import run_group_comparisons
 from kgsemembed.evaluation.aggregator import generate_markdown_report, load_all_results
+from kgsemembed.evaluation.paired_tests import run_paired_tests
+from kgsemembed.evaluation.reference_counts import DEFAULT_COUNTS_PATH, load_reference_counts
 
 _LOGGER = logging.getLogger("kgsemembed.scripts.generate_report")
 _ABLATION_GROUPS = ("A", "B", "C", "D", "E")
+_WILCOXON_METRICS = ("mrr", "f1")
 
 
 def _build_arg_parser() -> argparse.ArgumentParser:
@@ -39,17 +45,22 @@ def _build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--output", default="data/results/report.md", help="Destination Markdown report path."
     )
+    parser.add_argument(
+        "--ceilings", default=str(DEFAULT_COUNTS_PATH),
+        help="Per-pair reference counts and ceilings (scripts/metric_ceilings.py).",
+    )
     return parser
 
 
 def _collect_comparisons(results_dir: str) -> List[dict]:
     """Run every ablation group's comparisons, skipping failures with a warning."""
     comparisons: List[dict] = []
-    for group in _ABLATION_GROUPS:
-        try:
-            comparisons.extend(run_group_comparisons(group, results_dir))
-        except Exception as exc:
-            _LOGGER.warning("Skipping ablation group %s: %s", group, exc)
+    for metric in _WILCOXON_METRICS:
+        for group in _ABLATION_GROUPS:
+            try:
+                comparisons.extend(run_group_comparisons(group, results_dir, metric=metric))
+            except Exception as exc:
+                _LOGGER.warning("Skipping ablation group %s on %s: %s", group, metric, exc)
     return comparisons
 
 
@@ -59,9 +70,11 @@ def main() -> None:
     np.random.seed(42)
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s %(message)s")
     args = _build_arg_parser().parse_args()
-    df = load_all_results(args.results_dir, include_entity_type_breakdown=True)
+    counts = load_reference_counts(args.ceilings)
+    df = load_all_results(args.results_dir, include_entity_type_breakdown=True, counts=counts)
     comparisons = _collect_comparisons(args.results_dir)
-    generate_markdown_report(df, comparisons or None, args.output)
+    paired = run_paired_tests(args.results_dir, counts)
+    generate_markdown_report(df, comparisons or None, args.output, paired_results=paired)
     print(f"Report written to {args.output}")
 
 

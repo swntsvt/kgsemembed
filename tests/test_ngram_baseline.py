@@ -13,6 +13,7 @@ from rdflib.namespace import OWL, RDF, RDFS
 from kgsemembed.candidates.ngram import dump_candidates
 from kgsemembed.datasets import AlignmentPair
 from kgsemembed.pipeline import ngram_baseline as baseline
+from kgsemembed.evaluation.per_source import gold_rank_records
 from kgsemembed.utils.errors import DataError
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -93,7 +94,7 @@ def test_gold_rank_records() -> None:
         [("a", "x", 0.9), ("a", "g", 0.5)],
         [("b", "y", 0.9)],
     ]
-    records = baseline.gold_rank_records(ranked, [("a", "g"), ("b", "g"), ("c", "g")])
+    records = gold_rank_records(ranked, [("a", "g"), ("b", "g"), ("c", "g")])
     assert [r["best_gold_rank"] for r in records] == [2, None, None]
     assert [r["gold_ranks"] for r in records] == [[2], [None], [None]]
     assert [r["ranked"] for r in records] == [True, True, False]
@@ -106,8 +107,10 @@ def test_sidecar_ranks_skip_known_pairs(tmp_path: Path, monkeypatch: pytest.Monk
     _write_stored(tmp_path, _stored(pair))
     assert _stored(pair)[_NS + "s3"][:2] == [_NS + "t3", _NS + "t5"]
     pair = dataclasses.replace(pair, train_refs=[(_NS + "s3", _NS + "t3")])
-    _payload, records = baseline.evaluate_pair(pair, tmp_path)
+    _payload, sidecar = baseline.evaluate_pair(pair, tmp_path)
+    records = sidecar["test_sources"]
     assert {r["source"]: r["best_gold_rank"] for r in records}[_NS + "s3"] == 1
+    assert all(p["source"] != _NS + "s3" or p["target"] != _NS + "t3" for p in sidecar["predictions"])
 
 
 def test_refuses_historical_results_dir() -> None:

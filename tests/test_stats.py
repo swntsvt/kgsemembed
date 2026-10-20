@@ -28,6 +28,7 @@ from kgsemembed.evaluation.stats import (
     _MIN_PAIRED_OBSERVATIONS,
     expand_dataset_ids,
     minimum_attainable_p,
+    registered_comparisons,
 )
 from kgsemembed.utils.errors import DataError
 
@@ -48,6 +49,7 @@ def _write_result(
     metrics: Dict[str, float] = {"precision": 0.5, "recall": 0.5}
     if f1 is not None:
         metrics["f1"] = f1
+        metrics["mrr"] = 1.0 - f1
     payload = {
         "condition_id": condition_id,
         "dataset_id": dataset_id,
@@ -394,6 +396,10 @@ def test_wilcoxon_return_keys(tmp_path: Path) -> None:
         "p_value",
         "significant",
         "min_attainable_p",
+        "metric",
+        "mean_a",
+        "mean_b",
+        "delta",
         "mean_f1_a",
         "mean_f1_b",
         "delta_f1",
@@ -404,6 +410,28 @@ def test_wilcoxon_return_keys(tmp_path: Path) -> None:
         "wilcoxon_warning",
     }
     assert result["n_units"] == 6
+
+
+def test_wilcoxon_can_test_mrr_instead_of_f1(tmp_path: Path) -> None:
+    _write_units(tmp_path, "C1", _BASE)
+    _write_units(tmp_path, "C2", _shifted([0.2] * 6))
+    on_mrr = wilcoxon_comparison("C1", "C2", _ALL_DATASETS, str(tmp_path), metric="mrr")
+    assert on_mrr["metric"] == "mrr"
+    assert on_mrr["delta"] == on_mrr["delta_mrr"] == pytest.approx(-0.2)
+    assert "delta_f1" not in on_mrr
+    assert on_mrr["effect_size_r"] == pytest.approx(-1.0)
+
+
+def test_group_comparisons_pass_the_metric_through(tmp_path: Path) -> None:
+    _seed_group(tmp_path, "E")
+    (result,) = run_group_comparisons("E", str(tmp_path), metric="mrr")
+    assert result["metric"] == "mrr" and result["delta"] == pytest.approx(-0.1)
+
+
+def test_registered_comparisons_list_every_group() -> None:
+    comparisons = registered_comparisons()
+    assert comparisons["E"] == (("C20", "C10", ("D1", "D2", "D3", "D4", "D5")),)
+    assert sum(len(c) for c in comparisons.values()) == 12
 
 
 # ---------------------------------------------------------------------------
@@ -728,7 +756,7 @@ def test_export_header_matches_schema(tmp_path: Path) -> None:
     content = output.read_text(encoding="utf-8")
     header = (
         "Condition A | Condition B | n | pairs (W/T/L) | p-value | min p "
-        "| Corrected sig. | delta-F1 | effect_size_r | Warning"
+        "| Corrected sig. | delta | effect_size_r | Warning"
     )
     assert header in content
 

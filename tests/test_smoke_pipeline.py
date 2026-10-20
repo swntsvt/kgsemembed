@@ -316,6 +316,32 @@ def _run_and_read_payload(tmp_path):
     )
 
 
+def test_result_is_written_with_a_per_source_sidecar(fakes, tmp_path):
+    payload = _run_and_read_payload(tmp_path)
+    sidecar = json.loads(
+        (tmp_path / "results" / "C1" / "D2" / "d2_pair_entities.json").read_text()
+    )
+    assert set(sidecar) == {"threshold", "n_test_refs", "test_sources", "predictions"}
+    assert sidecar["threshold"] == payload["metrics"]["threshold"]
+    assert sidecar["n_test_refs"] == payload["population"]["n_test_refs"]
+    correct = sum(record["correct"] for record in sidecar["predictions"])
+    assert correct == payload["counts"]["tp"]
+
+
+def test_sidecar_reproduces_the_result_metrics(fakes, tmp_path):
+    import numpy as np
+
+    from kgsemembed.evaluation import paired_tests
+
+    payload = _run_and_read_payload(tmp_path)
+    sidecar = json.loads(
+        (tmp_path / "results" / "C1" / "D2" / "d2_pair_entities.json").read_text()
+    )
+    for metric in paired_tests.METRICS:
+        sums = np.array(list(paired_tests.unit_values(sidecar, metric).values())).sum(axis=0)
+        assert paired_tests.statistic(sums, metric) == pytest.approx(payload["metrics"][metric])
+
+
 def test_hf_revision_comes_from_the_loaded_model(fakes, tmp_path):
     payload = _run_and_read_payload(tmp_path)
     assert payload["hf_revision"] == "revision-M1"

@@ -30,10 +30,13 @@ from typing import Dict, Iterable, List, Optional, Tuple
 
 import pandas as pd
 
+from kgsemembed.evaluation import paired_tests
+from kgsemembed.evaluation.reference_counts import result_metric
 from kgsemembed.evaluation.stats import (
     _TABLE_COLUMNS as _STATS_COLUMNS,
     _sanitise_warning,
     pair_outcome_cell,
+    result_delta,
 )
 from kgsemembed.pipeline.conditions import (
     EXPERIMENT_CONDITIONS,
@@ -68,7 +71,8 @@ _METRIC_FIELDS = (
 )
 _COUNT_FIELDS = ("n_source_entities", "n_candidates_per_entity")
 _REQUIRED_FIELDS = (*_TOP_LEVEL_FIELDS, *_METRIC_FIELDS, *_COUNT_FIELDS)
-_RESULT_COLUMNS = (*_REQUIRED_FIELDS, "ablation_group")
+_HITS_AT_1 = "hits_at_1"
+_RESULT_COLUMNS = (*_REQUIRED_FIELDS, _HITS_AT_1, "ablation_group")
 
 _PER_ENTITY_TYPE_FIELD = "per_entity_type"
 _ENTITY_TYPE_COLUMN = "entity_type"
@@ -109,9 +113,11 @@ _ONE_BUCKET_ONLY = (
 )
 
 _SUMMARY_FLOAT_FIELDS = (
+    "mean_mrr",
+    "std_mrr",
+    "mean_hits_at_1",
     "mean_f1",
     "std_f1",
-    "mean_mrr",
     "mean_recall_at_1",
     "mean_recall_at_5",
     "mean_recall_at_10",
@@ -125,7 +131,9 @@ _SUMMARY_COLUMNS = (
     "n_columns",
 )
 _SUMMARY_KEYS = ["condition_id", "strategy", "model_key", "ablation_group"]
-_COLUMN_METRICS = ["f1", "mrr", "recall_at_1", "recall_at_5", "recall_at_10"]
+_COLUMN_METRICS = ["mrr", _HITS_AT_1, "f1", "recall_at_1", "recall_at_5", "recall_at_10"]
+_LEAD_METRICS = ("mrr", _HITS_AT_1, "f1")
+_LEAD_LABELS = {"mrr": "MRR", _HITS_AT_1: "Hits@1", "f1": "F1"}
 _REGISTRY_ORDER = {c.condition_id: index for index, c in enumerate(EXPERIMENT_CONDITIONS)}
 _SUMMARY_NOTE = (
     "_Means over the dataset columns each condition was run on: D1, D2, D3 (the "
@@ -138,6 +146,18 @@ _SUMMARY_NOTE = (
 _ABLATION_GROUPS = ("A", "B", "C", "D", "E")
 _GROUP_REFERENCE_CONDITIONS: Dict[str, Tuple[str, ...]] = {"E": ("C10",)}
 
+_PAIRED_TITLE = "Per-Dataset Paired Tests"
+_PAIRED_HEADINGS = {"mrr": "MRR (primary)", _HITS_AT_1: "Hits@1 (primary)", "f1": "F1 (secondary)"}
+_CONSISTENCY_TITLE = "Cross-Dataset Consistency (Wilcoxon)"
+_CONSISTENCY_HEADINGS = {"mrr": "MRR", "f1": "F1 (secondary)"}
+_CONSISTENCY_NOTE = (
+    "_A consistency summary, not the primary test: a two-sided Wilcoxon "
+    "signed-rank test over the dataset columns (D3 as one column), Bonferroni "
+    "within each ablation group. With at most six columns the smallest "
+    "attainable p is 0.03125, so only group E (alpha / 1) can reach "
+    "significance. The per-dataset paired tests above are the primary "
+    "analysis._"
+)
 _CONFOUNDED_STRATEGY_AND_MODEL = "Confounded (strategy V4 vs V4+V6, model M2 vs M3)"
 _CONFOUNDED_MODEL = "Confounded (model M2 vs M3)"
 
@@ -234,7 +254,15 @@ def _load_json(path: Path) -> Optional[dict]:
         return None
 
 
-def _build_record(payload: dict, path: Path) -> Optional[dict]:
+def _hits_at_1(payload: dict, counts: Optional[dict]) -> Optional[float]:
+    """Return a result's source-level Hits@1, derived for older results, or ``None``."""
+    try:
+        return result_metric(payload, _HITS_AT_1, counts)
+    except (KeyError, TypeError, ValueError):
+        return None
+
+
+def _build_record(payload: dict, path: Path, counts: Optional[dict] = None) -> Optional[dict]:
     """
     Flatten a result payload into a single row, or skip it with a warning.
 
@@ -244,6 +272,9 @@ def _build_record(payload: dict, path: Path) -> Optional[dict]:
         Parsed result JSON payload.
     path : Path
         Source file, used only for diagnostic logging.
+    counts : Optional[dict]
+        Per-pair reference counts, used to derive Hits@1 of results written
+        before it was recorded (#139); without them such a row has none.
 
     Returns
     -------
@@ -264,6 +295,7 @@ def _build_record(payload: dict, path: Path) -> Optional[dict]:
     if missing:
         _LOGGER.warning("Skipping %s; missing required fields: %s", path, missing)
         return None
+    record[_HITS_AT_1] = _hits_at_1(payload, counts)
     try:
         record["ablation_group"] = get_condition(record["condition_id"]).ablation_group
     except KeyError:
@@ -335,13 +367,16 @@ def _entity_type_records(payload: dict, record: dict) -> List[dict]:
             continue
         row = dict(record)
         row.update({field: metrics[field] for field in _METRIC_FIELDS})
+        row[_HITS_AT_1] = metrics.get(_HITS_AT_1)
         row[_ENTITY_TYPE_COLUMN] = entity_type
         row[_REF_COUNT_COLUMN] = metrics.get(_REF_COUNT_COLUMN)
         rows.append(row)
     return rows
 
 
-def _collect_records(root: Path, include_entity_type_breakdown: bool) -> List[dict]:
+def _collect_records(
+    root: Path, include_entity_type_breakdown: bool, counts: Optional[dict] = None
+) -> List[dict]:
     """
     Read every result file under ``root`` into flat rows.
 
@@ -351,6 +386,8 @@ def _collect_records(root: Path, include_entity_type_breakdown: bool) -> List[di
         Root directory walked recursively for ``*_results.json`` files.
     include_entity_type_breakdown : bool
         Append one row per entity type after each pair-level row.
+    counts : Optional[dict]
+        Per-pair reference counts for deriving older results' Hits@1.
 
     Returns
     -------
@@ -363,7 +400,7 @@ def _collect_records(root: Path, include_entity_type_breakdown: bool) -> List[di
         payload = _load_json(path)
         if payload is None:
             continue
-        record = _build_record(payload, path)
+        record = _build_record(payload, path, counts)
         if record is None:
             continue
         key = (record["condition_id"], record["dataset_id"], record["pair_name"])
@@ -424,6 +461,7 @@ def check_known_pair_counts(paths: Iterable[Path]) -> None:
 def load_all_results(
     results_dir: str = _DEFAULT_RESULTS_DIR,
     include_entity_type_breakdown: bool = False,
+    counts: Optional[dict] = None,
 ) -> pd.DataFrame:
     """
     Load every experiment result file under ``results_dir`` into one DataFrame.
@@ -445,6 +483,12 @@ def load_all_results(
         that reports a ``per_entity_type`` block, tagging each row with
         ``entity_type`` and ``n_refs``.  Pair-level rows are retained unchanged
         and carry ``entity_type == "overall"``.
+    counts : Optional[dict]
+        Per-pair reference counts
+        (:func:`kgsemembed.evaluation.reference_counts.load_reference_counts`).
+        ``hits_at_1`` is read from each result, or derived from its Recall@1
+        and these counts when it was not recorded; without them it is missing
+        for such results.
 
     Returns
     -------
@@ -464,7 +508,7 @@ def load_all_results(
         _LOGGER.warning("Results directory not found: %s", root)
         return _empty_results_frame(include_entity_type_breakdown)
     check_known_pair_counts(sorted(root.rglob(_RESULT_GLOB)))
-    records = _collect_records(root, include_entity_type_breakdown)
+    records = _collect_records(root, include_entity_type_breakdown, counts)
     if not records:
         return _empty_results_frame(include_entity_type_breakdown)
     return pd.DataFrame.from_records(
@@ -501,17 +545,21 @@ def build_condition_summary_table(df: pd.DataFrame) -> pd.DataFrame:
     -------
     pd.DataFrame
         One row per condition over :data:`_SUMMARY_COLUMNS`, in registry
-        order: means and the population standard deviation of F1 over the
-        condition's dataset columns, rounded to four decimal places, and the
-        number of columns.
+        order: means over the condition's dataset columns (MRR and Hits@1
+        first, then F1 and Recall@k), the population standard deviation of MRR
+        and F1 across them, rounded to four decimal places, and the number of
+        columns.
     """
     if df.empty:
         return pd.DataFrame(columns=list(_SUMMARY_COLUMNS))
-    grouped = _dataset_column_means(df).groupby(_SUMMARY_KEYS, sort=False)
+    columns = _dataset_column_means(df.astype({_HITS_AT_1: float}))
+    grouped = columns.groupby(_SUMMARY_KEYS, sort=False)
     summary = grouped.agg(
+        mean_mrr=("mrr", "mean"),
+        std_mrr=("mrr", lambda scores: float(scores.std(ddof=0))),
+        mean_hits_at_1=(_HITS_AT_1, "mean"),
         mean_f1=("f1", "mean"),
         std_f1=("f1", lambda scores: float(scores.std(ddof=0))),
-        mean_mrr=("mrr", "mean"),
         mean_recall_at_1=("recall_at_1", "mean"),
         mean_recall_at_5=("recall_at_5", "mean"),
         mean_recall_at_10=("recall_at_10", "mean"),
@@ -586,34 +634,46 @@ def _section(title: str, body: str) -> str:
     return f"# {title}\n\n{body}"
 
 
+def _lead_pivots(df: pd.DataFrame) -> Dict[str, pd.DataFrame]:
+    """Return the condition × dataset pivot of each lead metric (MRR, Hits@1, F1)."""
+    frame = df.astype({_HITS_AT_1: float})
+    return {metric: build_dataset_breakdown_table(frame, metric) for metric in _LEAD_METRICS}
+
+
+def _cell(pivot: pd.DataFrame, condition_id: str, dataset_id: str) -> Optional[float]:
+    """Return one pivot value, or ``None`` when the pivot lacks it."""
+    if dataset_id not in pivot.columns or condition_id not in pivot.index:
+        return None
+    value = pivot.loc[condition_id, dataset_id]
+    return None if pd.isna(value) else float(value)
+
+
 def _best_conditions(df: pd.DataFrame) -> List[tuple]:
-    """Return ``(dataset_id, condition_id, mean_f1)`` of the best condition per dataset."""
-    breakdown = build_dataset_breakdown_table(df, "f1")
+    """Return ``(dataset_id, condition_id)`` of the best condition by MRR per dataset."""
+    breakdown = build_dataset_breakdown_table(df, "mrr")
     best: List[tuple] = []
     for dataset_id in breakdown.columns:
         column = breakdown[dataset_id].dropna()
-        if column.empty:
-            continue
-        winner = column.idxmax()
-        best.append((dataset_id, winner, float(column.loc[winner])))
+        if not column.empty:
+            best.append((dataset_id, column.idxmax()))
     return best
 
 
 def _executive_summary_section(df: pd.DataFrame, summary: pd.DataFrame) -> str:
-    """Build the executive-summary section naming the best condition per dataset."""
+    """Build the executive-summary section naming the best condition by MRR per dataset."""
     best = _best_conditions(df) if not df.empty else []
     if not best:
         return _section("Executive Summary", "_No results available._")
-    meta = summary.set_index("condition_id")
+    meta, pivots = summary.set_index("condition_id"), _lead_pivots(df)
     records = [
         {
             "Dataset": dataset_id,
-            "Best Condition": condition_id,
+            "Best Condition (MRR)": condition_id,
             "Strategy": meta.loc[condition_id, "strategy"],
             "Model": meta.loc[condition_id, "model_key"],
-            "Mean F1": value,
+            **{_LEAD_LABELS[m]: _cell(pivots[m], condition_id, dataset_id) for m in _LEAD_METRICS},
         }
-        for dataset_id, condition_id, value in best
+        for dataset_id, condition_id in best
     ]
     return _section("Executive Summary", _render_dataframe(pd.DataFrame.from_records(records)))
 
@@ -625,17 +685,19 @@ def _condition_summary_section(summary: pd.DataFrame) -> str:
     return _section("Condition Summary Table", f"{_SUMMARY_NOTE}\n\n{_render_dataframe(summary)}")
 
 
-def _per_dataset_block(breakdown: pd.DataFrame, dataset_id: str) -> str:
-    """Build one per-dataset breakdown sub-table from the shared F1 pivot."""
+def _per_dataset_block(pivots: Dict[str, pd.DataFrame], dataset_id: str) -> str:
+    """Build one per-dataset sub-table ranked by MRR, with Hits@1 and F1 beside it."""
     heading = f"## {dataset_id}"
-    if dataset_id not in breakdown.columns:
+    mrr = pivots["mrr"]
+    if dataset_id not in mrr.columns or mrr[dataset_id].dropna().empty:
         return f"{heading}\n\n_No results available for {dataset_id}._"
-    frame = breakdown[dataset_id].dropna().reset_index()
-    if frame.empty:
-        return f"{heading}\n\n_No results available for {dataset_id}._"
-    frame.columns = ["condition_id", "mean_f1"]
+    conditions = mrr[dataset_id].dropna().index
+    frame = pd.DataFrame({
+        "condition_id": list(conditions),
+        **{f"mean_{m}": [_cell(pivots[m], c, dataset_id) for c in conditions] for m in _LEAD_METRICS},
+    })
     frame = frame.sort_values(
-        ["mean_f1", "condition_id"], ascending=[False, True]
+        ["mean_mrr", "condition_id"], ascending=[False, True]
     ).reset_index(drop=True)
     return f"{heading}\n\n{_render_dataframe(frame)}"
 
@@ -662,12 +724,12 @@ def _present_dataset_ids(df: pd.DataFrame) -> List[str]:
 
 
 def _per_dataset_section(df: pd.DataFrame) -> str:
-    """Build the per-dataset breakdown section reusing the shared F1 pivot."""
+    """Build the per-dataset breakdown section, each column ranked by MRR."""
     dataset_ids = _present_dataset_ids(df) if not df.empty else []
     if not dataset_ids:
         return _section("Per-Dataset Breakdown", "_No results available._")
-    breakdown = build_dataset_breakdown_table(df, "f1")
-    blocks = [_per_dataset_block(breakdown, dataset_id) for dataset_id in dataset_ids]
+    pivots = _lead_pivots(df)
+    blocks = [_per_dataset_block(pivots, dataset_id) for dataset_id in dataset_ids]
     return _section("Per-Dataset Breakdown", "\n\n".join(blocks))
 
 
@@ -1023,20 +1085,30 @@ def _stats_row(result: dict) -> dict:
         "p-value": None if p_value is None else round(float(p_value), 4),
         "min p": round(float(result["min_attainable_p"]), 4),
         "Corrected sig.": bool(result.get("corrected_significant", False)),
-        "delta-F1": round(float(result["delta_f1"]), 4),
+        "delta": round(result_delta(result), 4),
         "effect_size_r": _effect_size_cell(result),
         "Warning": _warning_cell(result),
     }
 
 
+def _stats_table(results: List[dict]) -> str:
+    """Render Wilcoxon results with the columns the exported stats table uses."""
+    frame = pd.DataFrame.from_records(
+        [_stats_row(result) for result in results], columns=list(_STATS_COLUMNS)
+    )
+    return _render_dataframe(frame)
+
+
 def _statistical_section(stats_results: List[dict]) -> str:
     """
-    Build the statistical-significance section from Wilcoxon comparison results.
+    Build the cross-dataset consistency section from Wilcoxon comparison results.
 
+    The dataset-level Wilcoxon is a summary of whether a difference keeps its
+    sign across dataset columns, not the primary test: with at most six
+    columns no comparison outside group E can reach significance.  Results on
+    MRR come first, then F1 (secondary); results without a ``metric`` are F1.
     The columns are the ones :func:`kgsemembed.evaluation.export_stats_table`
-    writes, so the aggregated report and the exported stats table always expose
-    the same statistical fields, including ``effect_size_r`` and the trailing
-    warning footnote.
+    writes, so both outputs expose the same statistical fields.
 
     Parameters
     ----------
@@ -1049,11 +1121,93 @@ def _statistical_section(stats_results: List[dict]) -> str:
         The rendered Markdown section.
     """
     if not stats_results:
-        return _section("Statistical Significance", "_No statistical comparison results available._")
-    frame = pd.DataFrame.from_records(
-        [_stats_row(result) for result in stats_results], columns=list(_STATS_COLUMNS)
+        return _section(_CONSISTENCY_TITLE, "_No statistical comparison results available._")
+    blocks = [_CONSISTENCY_NOTE]
+    for metric in ("mrr", "f1"):
+        results = [r for r in stats_results if r.get("metric", "f1") == metric]
+        if results:
+            blocks.append(f"## {_CONSISTENCY_HEADINGS[metric]}\n\n{_stats_table(results)}")
+    return _section(_CONSISTENCY_TITLE, "\n\n".join(blocks))
+
+
+def _paired_method_note() -> str:
+    """Describe the per-dataset paired tests with their settings."""
+    defaults = paired_tests.TestSettings()
+    return (
+        f"_Per registered comparison and dataset column: B − A (positive when B "
+        f"is better), {int(paired_tests.CONFIDENCE * 100)}% percentile bootstrap "
+        f"interval over test sources resampled within each pair (D3's 21 pairs "
+        f"are strata; its value is their mean), and a paired randomisation test "
+        f"swapping each source's two outcomes; {defaults.n_replicates:,} "
+        f"replicates each, seed {defaults.seed}. MRR and Hits@1 count test "
+        f"reference sources; F1 adds unmatched sources' predictions and is "
+        f"recomputed from TP, FP and FN. Holm adjustment within each ablation "
+        f"group × column × metric at alpha {paired_tests.ALPHA}; intervals are "
+        f"not adjusted. Ceiling: the most the metric can reach on the stored "
+        f"top-20 lists (F1: its recall ceiling)._"
     )
-    return _section("Statistical Significance", _render_dataframe(frame))
+
+
+def _interval_cell(row: dict) -> str:
+    """Render a bootstrap interval as ``[low, high]``."""
+    return f"[{row['ci_low']:.4f}, {row['ci_high']:.4f}]"
+
+
+def _paired_row(row: dict) -> dict:
+    """Project one tested paired-test row onto the report columns."""
+    return {
+        "Group": row["group"],
+        "Comparison": f"{row['condition_a']} vs {row['condition_b']}",
+        "Column": row["dataset_id"],
+        "A": row["value_a"],
+        "B": row["value_b"],
+        "Δ (B − A)": row["delta"],
+        "95% CI": _interval_cell(row),
+        "p": row["p_value"],
+        "p (Holm)": row["p_holm"],
+        "m": row["family_size"],
+        "Sig.": "yes" if row["significant"] else "no",
+        "Ceiling": row["ceiling"],
+        "n": row["n_units"],
+    }
+
+
+def _paired_block(rows: List[dict], metric: str) -> str:
+    """Render the tested rows of one metric as a sub-table."""
+    tested = [_paired_row(row) for row in rows if row["tested"] and row["metric"] == metric]
+    body = _render_dataframe(pd.DataFrame.from_records(tested)) if tested else "_Not tested._"
+    return f"## {_PAIRED_HEADINGS[metric]}\n\n{body}"
+
+
+def _untested_note(rows: List[dict]) -> str:
+    """List each comparison and column that could not be tested, once."""
+    reasons = {
+        (row["condition_a"], row["condition_b"], row["dataset_id"]): row["reason"]
+        for row in rows if not row["tested"]
+    }
+    lines = [f"- {a} vs {b} on {ds}: {reason}" for (a, b, ds), reason in reasons.items()]
+    return "Not tested:\n\n" + "\n".join(lines) if lines else ""
+
+
+def _paired_section(rows: List[dict]) -> str:
+    """
+    Build the per-dataset paired-test section, the report's primary analysis.
+
+    Parameters
+    ----------
+    rows : List[dict]
+        Output of :func:`kgsemembed.evaluation.paired_tests.run_paired_tests`.
+
+    Returns
+    -------
+    str
+        Method note, one sub-table per metric (MRR, Hits@1, then F1 as
+        secondary) and a list of comparisons that could not be tested.
+    """
+    blocks = [_paired_method_note()]
+    blocks += [_paired_block(rows, metric) for metric in paired_tests.METRICS]
+    blocks.append(_untested_note(rows))
+    return _section(_PAIRED_TITLE, "\n\n".join(block for block in blocks if block))
 
 
 def _mean_metric(
@@ -1189,15 +1343,19 @@ def generate_markdown_report(
     df: pd.DataFrame,
     stats_results: Optional[List[dict]] = None,
     output_path: str = "data/results/report.md",
+    paired_results: Optional[List[dict]] = None,
 ) -> None:
     """
     Render the full Phase 2 experiment report to ``output_path``.
 
     Sections are emitted in a fixed order: executive summary, condition summary,
-    per-dataset breakdown, entity-type analysis, ablation-group analysis, an
-    optional statistical-significance section, PPAS ablation and sanity
-    checks.  The statistical section is included only when ``stats_results``
-    is not ``None``.  Sanity-check conditions appear only in the last section.
+    per-dataset breakdown, entity-type analysis, ablation-group analysis, the
+    optional per-dataset paired tests (primary analysis) and cross-dataset
+    Wilcoxon consistency summary, PPAS ablation and sanity checks.  The two
+    statistical sections are included only when ``paired_results`` and
+    ``stats_results``, respectively, are not ``None``.  Ranking tables lead
+    with MRR, then Hits@1, then F1.  Sanity-check conditions appear only in
+    the last section.
     Parent directories are created as needed and identical inputs always produce
     byte-for-byte identical output.
 
@@ -1214,6 +1372,8 @@ def generate_markdown_report(
         Wilcoxon comparison results to render; ``None`` omits the section.
     output_path : str
         Destination Markdown file.
+    paired_results : Optional[List[dict]]
+        Per-dataset paired-test rows to render; ``None`` omits the section.
     """
     pairs = _pair_level_frame(df)
     main = _without_sanity_checks(pairs)
@@ -1225,6 +1385,8 @@ def generate_markdown_report(
         _entity_type_section(_without_sanity_checks(df)),
         _ablation_group_section(summary),
     ]
+    if paired_results is not None:
+        sections.append(_paired_section(paired_results))
     if stats_results is not None:
         sections.append(_statistical_section(stats_results))
     sections.append(_ppas_section(pairs))

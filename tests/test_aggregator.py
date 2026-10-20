@@ -52,6 +52,7 @@ _EXPECTED_RESULT_COLUMNS = [
     "recall_at_10",
     "n_source_entities",
     "n_candidates_per_entity",
+    "hits_at_1",
     "ablation_group",
 ]
 _EXPECTED_SUMMARY_COLUMNS = [
@@ -59,9 +60,11 @@ _EXPECTED_SUMMARY_COLUMNS = [
     "strategy",
     "model_key",
     "ablation_group",
+    "mean_mrr",
+    "std_mrr",
+    "mean_hits_at_1",
     "mean_f1",
     "std_f1",
-    "mean_mrr",
     "mean_recall_at_1",
     "mean_recall_at_5",
     "mean_recall_at_10",
@@ -84,7 +87,7 @@ _METRIC_KEYS = (
 # Synthetic result fixtures
 # ---------------------------------------------------------------------------
 def _metrics(f1: float) -> Dict[str, float]:
-    return {key: f1 for key in _METRIC_KEYS}
+    return {key: f1 for key in (*_METRIC_KEYS, "hits_at_1")}
 
 
 def _write_result(
@@ -601,7 +604,7 @@ def test_report_seven_sections_with_stats(full_results_dir: Path, tmp_path: Path
         "# Per-Dataset Breakdown",
         "# Entity-Type Analysis",
         "# Ablation Group Analysis",
-        "# Statistical Significance",
+        "# Cross-Dataset Consistency (Wilcoxon)",
         "# PPAS Ablation",
         "# Sanity Checks",
     ]
@@ -647,7 +650,7 @@ def test_report_six_sections_without_stats(full_results_dir: Path, tmp_path: Pat
     generate_markdown_report(df, None, str(output))
     headings = _headings(output.read_text(encoding="utf-8"))
     assert len(headings) == 7
-    assert "# Statistical Significance" not in headings
+    assert "# Cross-Dataset Consistency (Wilcoxon)" not in headings
 
 
 def test_report_is_deterministic(full_results_dir: Path, tmp_path: Path) -> None:
@@ -685,7 +688,7 @@ def test_report_empty_stats_list_includes_section(full_results_dir: Path, tmp_pa
     output = tmp_path / "report.md"
     generate_markdown_report(df, [], str(output))
     text = output.read_text(encoding="utf-8")
-    assert "# Statistical Significance" in text
+    assert "# Cross-Dataset Consistency (Wilcoxon)" in text
     assert "_No statistical comparison results available._" in text
 
 
@@ -745,12 +748,12 @@ def test_report_per_dataset_production_dataset_layout(tmp_path: Path) -> None:
         "## D4_schema",
         "## D5",
     ]
-    assert _sub_table(section, "D1")[2:] == ["| C1 | 0.1000 |"]
-    assert _sub_table(section, "D2")[2:] == ["| C1 | 0.2000 |"]
-    assert _sub_table(section, "D3")[2:] == ["| C1 | 0.3000 |"]
-    assert _sub_table(section, "D4_schema")[2:] == ["| C1 | 0.4000 |"]
-    assert _sub_table(section, "D4_instance")[2:] == ["| C1 | 0.5000 |"]
-    assert _sub_table(section, "D5")[2:] == ["| C1 | 0.6000 |"]
+    assert _sub_table(section, "D1")[2:] == ["| C1 | 0.1000 | 0.1000 | 0.1000 |"]
+    assert _sub_table(section, "D2")[2:] == ["| C1 | 0.2000 | 0.2000 | 0.2000 |"]
+    assert _sub_table(section, "D3")[2:] == ["| C1 | 0.3000 | 0.3000 | 0.3000 |"]
+    assert _sub_table(section, "D4_schema")[2:] == ["| C1 | 0.4000 | 0.4000 | 0.4000 |"]
+    assert _sub_table(section, "D4_instance")[2:] == ["| C1 | 0.5000 | 0.5000 | 0.5000 |"]
+    assert _sub_table(section, "D5")[2:] == ["| C1 | 0.6000 | 0.6000 | 0.6000 |"]
 
 
 def test_executive_summary_covers_d4_sub_datasets(tmp_path: Path) -> None:
@@ -776,8 +779,8 @@ def test_report_per_dataset_renders_d4_sub_datasets(tmp_path: Path) -> None:
     generate_markdown_report(df, None, str(output))
     section = _per_dataset_section(output.read_text(encoding="utf-8"))
     assert "_No results available for D4._" not in section
-    assert _sub_table(section, "D4_schema")[2:] == ["| C1 | 0.6000 |"]
-    assert _sub_table(section, "D4_instance")[2:] == ["| C1 | 0.7000 |"]
+    assert _sub_table(section, "D4_schema")[2:] == ["| C1 | 0.6000 | 0.6000 | 0.6000 |"]
+    assert _sub_table(section, "D4_instance")[2:] == ["| C1 | 0.7000 | 0.7000 | 0.7000 |"]
 
 
 def test_report_per_dataset_headings_are_sorted(tmp_path: Path) -> None:
@@ -792,7 +795,7 @@ def test_report_per_dataset_headings_are_sorted(tmp_path: Path) -> None:
     assert headings == ["## D1", "## D4_instance", "## D4_schema", "## D5"]
 
 
-def test_report_per_dataset_rows_sorted_by_mean_f1(tmp_path: Path) -> None:
+def test_report_per_dataset_rows_sorted_by_mrr(tmp_path: Path) -> None:
     results_dir = tmp_path / "results"
     for condition_id, f1 in (("C1", 0.30), ("C2", 0.90), ("C3", 0.30)):
         _write_result(results_dir, condition_id, "D4_schema", "schema_pair", f1)
@@ -801,9 +804,9 @@ def test_report_per_dataset_rows_sorted_by_mean_f1(tmp_path: Path) -> None:
     generate_markdown_report(df, None, str(output))
     section = _per_dataset_section(output.read_text(encoding="utf-8"))
     assert _sub_table(section, "D4_schema")[2:] == [
-        "| C2 | 0.9000 |",
-        "| C1 | 0.3000 |",
-        "| C3 | 0.3000 |",
+        "| C2 | 0.9000 | 0.9000 | 0.9000 |",
+        "| C1 | 0.3000 | 0.3000 | 0.3000 |",
+        "| C3 | 0.3000 | 0.3000 | 0.3000 |",
     ]
 
 
@@ -824,7 +827,7 @@ def test_report_per_dataset_all_nan_metric_keeps_heading(tmp_path: Path) -> None
     section = _per_dataset_section(output.read_text(encoding="utf-8"))
     assert _headings_of(section) == ["## D4_instance", "## D4_schema"]
     assert "_No results available for D4_instance._" in section
-    assert _sub_table(section, "D4_schema")[2:] == ["| C1 | 0.5000 |"]
+    assert _sub_table(section, "D4_schema")[2:] == ["| C1 | 0.5000 | 0.5000 | 0.5000 |"]
 
 
 def test_report_per_dataset_empty_results_note(tmp_path: Path) -> None:
@@ -1258,7 +1261,7 @@ def test_breakdown_rows_do_not_inflate_the_other_sections(tmp_path: Path) -> Non
     _write_breakdown_result(results_dir, "C1", ("D3", "cmt-edas"), _cmt_edas_buckets())
     text = _entity_type_report(results_dir, tmp_path / "report.md")
     per_dataset = _per_dataset_section(text)
-    assert _sub_table(per_dataset, "D3")[2:] == ["| C1 | 0.1700 |"]
+    assert _sub_table(per_dataset, "D3")[2:] == ["| C1 | 0.1700 | 0.1700 | 0.1700 |"]
     summary = text.split("# Condition Summary Table", 1)[1].split("\n# ", 1)[0]
     assert summary.strip().splitlines()[-1].endswith("| 1 |")
 
@@ -1355,8 +1358,8 @@ def test_condition_summary_section_explains_it_is_not_a_ranking(
 # Statistical section
 # ---------------------------------------------------------------------------
 def _stats_table_lines(text: str) -> List[str]:
-    """Return the table rows of the report's Statistical Significance section."""
-    body = text.split("# Statistical Significance", 1)[1].split("\n# ", 1)[0]
+    """Return the table rows of the report's Cross-Dataset Consistency section."""
+    body = text.split("# Cross-Dataset Consistency (Wilcoxon)", 1)[1].split("\n# ", 1)[0]
     return [line for line in body.splitlines() if line.startswith("|")]
 
 
@@ -1462,7 +1465,7 @@ def test_report_stats_tolerates_missing_effect_size(tmp_path: Path) -> None:
 
 def test_report_stats_preserves_existing_columns(tmp_path: Path) -> None:
     header = _report_with_stats(tmp_path, _synthetic_stats())[0]
-    for column in ("Condition A", "Condition B", "n", "p-value", "Corrected sig.", "delta-F1"):
+    for column in ("Condition A", "Condition B", "n", "p-value", "Corrected sig.", "delta"):
         assert column in header
 
 
@@ -1493,7 +1496,7 @@ def test_cli_group_failure_is_resilient(
 ) -> None:
     import scripts.generate_report as script
 
-    def fake_run_group_comparisons(group: str, results_dir: str) -> List[dict]:
+    def fake_run_group_comparisons(group: str, results_dir: str, metric: str = "f1") -> List[dict]:
         if group == "A":
             return _synthetic_stats()
         raise ValueError(f"insufficient data for group {group}")
@@ -1502,7 +1505,7 @@ def test_cli_group_failure_is_resilient(
     output = tmp_path / "report.md"
     _run_cli(["--results_dir", str(full_results_dir), "--output", str(output)])
     text = output.read_text(encoding="utf-8")
-    assert "# Statistical Significance" in text
+    assert "# Cross-Dataset Consistency (Wilcoxon)" in text
     assert "| C1 | C2 |" in text
 
 
@@ -1526,3 +1529,95 @@ def test_matching_or_unrecorded_known_pairs_load(tmp_path: Path) -> None:
     _write_result(tmp_path, "C3", "D1", "d1", 0.3)
     _write_result(tmp_path, "C1", "D2", "d2", 0.3, overrides=_known(0))
     assert len(load_all_results(str(tmp_path))) == 4
+
+
+# ---------------------------------------------------------------------------
+# MRR-first ordering and the per-dataset paired tests (#140)
+# ---------------------------------------------------------------------------
+def _write_scored(results_dir: Path, condition_id: str, mrr: float, f1: float) -> None:
+    metrics = {**_metrics(f1), "mrr": mrr, "hits_at_1": mrr - 0.1}
+    _write_result(results_dir, condition_id, "D1", "d1", f1, overrides={"metrics": metrics})
+
+
+def _report_text(results_dir: Path, tmp_path: Path, **kwargs) -> str:
+    output = tmp_path / "report.md"
+    generate_markdown_report(load_all_results(str(results_dir)), output_path=str(output), **kwargs)
+    return output.read_text(encoding="utf-8")
+
+
+def test_per_dataset_breakdown_ranks_by_mrr_not_f1(tmp_path: Path) -> None:
+    _write_scored(tmp_path, "C1", mrr=0.9, f1=0.2)
+    _write_scored(tmp_path, "C2", mrr=0.5, f1=0.8)
+    section = _per_dataset_section(_report_text(tmp_path, tmp_path))
+    assert _sub_table(section, "D1")[0] == "| condition_id | mean_mrr | mean_hits_at_1 | mean_f1 |"
+    assert _sub_table(section, "D1")[2:] == [
+        "| C1 | 0.9000 | 0.8000 | 0.2000 |",
+        "| C2 | 0.5000 | 0.4000 | 0.8000 |",
+    ]
+
+
+def test_executive_summary_names_the_best_condition_by_mrr(tmp_path: Path) -> None:
+    _write_scored(tmp_path, "C1", mrr=0.9, f1=0.2)
+    _write_scored(tmp_path, "C2", mrr=0.5, f1=0.8)
+    text = _report_text(tmp_path, tmp_path)
+    assert "| Dataset | Best Condition (MRR) | Strategy | Model | MRR | Hits@1 | F1 |" in text
+    assert "| D1 | C1 | V1 | M1 | 0.9000 | 0.8000 | 0.2000 |" in text
+
+
+def test_hits_at_1_of_an_older_result_is_derived_from_the_counts(tmp_path: Path) -> None:
+    metrics = {key: 0.5 for key in _METRIC_KEYS}
+    _write_result(tmp_path, "C1", "D1", "d1", 0.5,
+                  overrides={"metrics": metrics, "population": {"n_test_refs": 12}})
+    counts = {("D1", "d1"): {"n_test_refs": 12, "n_test_reference_sources": 10}}
+    assert load_all_results(str(tmp_path))["hits_at_1"].isna().all()
+    derived = load_all_results(str(tmp_path), counts=counts)["hits_at_1"].iloc[0]
+    assert derived == pytest.approx(0.6)
+
+
+def _paired_rows() -> List[dict]:
+    tested = {
+        "group": "E", "condition_a": "C20", "condition_b": "C10", "dataset_id": "D1",
+        "tested": True, "value_a": 0.6, "value_b": 0.65, "delta": 0.05, "ci_low": 0.03,
+        "ci_high": 0.07, "p_value": 0.0001, "p_holm": 0.0001, "family_size": 1,
+        "significant": True, "ceiling": 0.886, "n_units": 4605, "n_pairs": 1,
+    }
+    rows = [{**tested, "metric": metric} for metric in ("mrr", "hits_at_1", "f1")]
+    untested = {"group": "D", "condition_a": "C5", "condition_b": "C14", "dataset_id": "D5",
+                "tested": False, "reason": "C14/D5 has no per-source sidecar."}
+    return rows + [{**untested, "metric": metric} for metric in ("mrr", "hits_at_1", "f1")]
+
+
+def test_paired_section_renders_each_metric_and_the_untested_list(tmp_path: Path) -> None:
+    text = _report_text(tmp_path, tmp_path, paired_results=_paired_rows())
+    section = text.split("# Per-Dataset Paired Tests", 1)[1].split("\n# ", 1)[0]
+    assert _headings_of(section) == ["## MRR (primary)", "## Hits@1 (primary)", "## F1 (secondary)"]
+    row = ("| E | C20 vs C10 | D1 | 0.6000 | 0.6500 | 0.0500 | [0.0300, 0.0700] | 0.0001 "
+           "| 0.0001 | 1 | yes | 0.8860 | 4605 |")
+    assert section.count(row) == 3
+    assert section.count("- C5 vs C14 on D5: C14/D5 has no per-source sidecar.") == 1
+
+
+def test_paired_section_states_method_seed_and_replicates(tmp_path: Path) -> None:
+    text = _report_text(tmp_path, tmp_path, paired_results=[])
+    section = text.split("# Per-Dataset Paired Tests", 1)[1]
+    assert "10,000 replicates" in section and "seed 42" in section and "Holm" in section
+
+
+def test_statistical_sections_follow_the_group_analysis_in_order(tmp_path: Path) -> None:
+    stats = [{**_synthetic_stats()[0], "metric": "mrr"}, *_synthetic_stats()]
+    headings = _headings(_report_text(tmp_path, tmp_path, stats_results=stats, paired_results=[]))
+    assert headings[4:] == [
+        "# Ablation Group Analysis",
+        "# Per-Dataset Paired Tests",
+        "# Cross-Dataset Consistency (Wilcoxon)",
+        "# PPAS Ablation",
+        "# Sanity Checks",
+    ]
+
+
+def test_consistency_section_lists_mrr_before_f1_and_is_labelled(tmp_path: Path) -> None:
+    stats = [*_synthetic_stats(), {**_synthetic_stats()[0], "metric": "mrr"}]
+    text = _report_text(tmp_path, tmp_path, stats_results=stats)
+    section = text.split("# Cross-Dataset Consistency (Wilcoxon)", 1)[1].split("\n# ", 1)[0]
+    assert _headings_of(section) == ["## MRR", "## F1 (secondary)"]
+    assert "consistency summary, not the primary test" in section

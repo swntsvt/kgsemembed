@@ -60,7 +60,7 @@ _TABLE_COLUMNS: Tuple[str, ...] = (
     "p-value",
     "min p",
     "Corrected sig.",
-    "delta-F1",
+    "delta",
     "effect_size_r",
     "Warning",
 )
@@ -70,6 +70,7 @@ _NO_WARNING_CELL = "-"
 _NOT_TESTED_CELL = "n/a"
 
 _RELIABILITY_WARNINGS = (RuntimeWarning, UserWarning)
+_METRIC_LABELS = {"f1": "F1", "mrr": "MRR"}
 
 
 @dataclass(frozen=True)
@@ -145,17 +146,18 @@ def _extract_pair_name(payload: dict, path: Path) -> str:
     return pair_name
 
 
-def _extract_f1(payload: dict, pair_name: str) -> float:
-    """Return the F1 metric recorded for an alignment pair."""
+def _extract_f1(payload: dict, pair_name: str, metric: str = "f1") -> float:
+    """Return one metric (F1 by default) recorded for an alignment pair."""
+    label = _METRIC_LABELS.get(metric, metric)
     metrics = payload.get("metrics")
-    if not isinstance(metrics, dict) or "f1" not in metrics:
-        raise DataError(f"Result for pair {pair_name!r} is missing the F1 metric.")
+    if not isinstance(metrics, dict) or metric not in metrics:
+        raise DataError(f"Result for pair {pair_name!r} is missing the {label} metric.")
     try:
-        return float(metrics["f1"])
+        return float(metrics[metric])
     except (TypeError, ValueError) as exc:
         raise DataError(
-            f"Result for pair {pair_name!r} has a non-numeric F1 metric: "
-            f"{metrics['f1']!r}."
+            f"Result for pair {pair_name!r} has a non-numeric {label} metric: "
+            f"{metrics[metric]!r}."
         ) from exc
 
 
@@ -254,6 +256,7 @@ def _f1_by_unit(
     condition_id: str,
     dataset_ids: List[str],
     results_dir: str,
+    metric: str = "f1",
 ) -> Dict[str, Dict[str, float]]:
     """
     Map each result directory to the F1 of every alignment pair it holds.
@@ -291,16 +294,16 @@ def _f1_by_unit(
                 f"{condition_id!r} across datasets."
             )
         seen |= set(results)
-        units[dataset_id] = _unit_scores(results)
+        units[dataset_id] = _unit_scores(results, metric)
     return units
 
 
-def _unit_scores(results: Dict[str, dict]) -> Dict[str, float]:
-    """Return ``{pair_name: f1}`` for one result directory, checking the protocol."""
+def _unit_scores(results: Dict[str, dict], metric: str = "f1") -> Dict[str, float]:
+    """Return ``{pair_name: metric}`` for one result directory, checking the protocol."""
     scores: Dict[str, float] = {}
     for pair_name in sorted(results):
         _require_current_protocol(results[pair_name], pair_name)
-        scores[pair_name] = _extract_f1(results[pair_name], pair_name)
+        scores[pair_name] = _extract_f1(results[pair_name], pair_name, metric)
     return scores
 
 
@@ -611,6 +614,7 @@ def wilcoxon_comparison(
     condition_b_id: str,
     dataset_ids: List[str],
     results_dir: str = _DEFAULT_RESULTS_DIR,
+    metric: str = "f1",
 ) -> dict:
     """
     Compare two conditions with a paired Wilcoxon signed-rank test over datasets.
@@ -630,15 +634,19 @@ def wilcoxon_comparison(
         Datasets whose alignment pairs are compared; ``"D4"`` expands.
     results_dir : str
         Root directory of previously generated result files.
+    metric : str
+        Result metric to test, ``"f1"`` (default) or ``"mrr"``.
 
     Returns
     -------
     dict
+        ``metric``, ``mean_a``, ``mean_b`` and ``delta`` (``mean_b - mean_a``)
+        under generic names and again as ``mean_{metric}_a`` /
+        ``mean_{metric}_b`` / ``delta_{metric}``, plus
         ``condition_a``, ``condition_b``, ``units`` (column names), ``n_units``,
         ``n_pairs``, ``n_nonzero``, ``testable``, ``statistic`` and ``p_value``
         (``None`` when not testable), ``significant``, ``min_attainable_p``,
-        ``mean_f1_a`` and ``mean_f1_b`` (means of the column means),
-        ``delta_f1`` (``mean_f1_b - mean_f1_a``), signed ``effect_size_r``,
+        signed ``effect_size_r``,
         ``pair_wins``/``pair_ties``/``pair_losses``, and ``wilcoxon_warning``.
 
     Raises
@@ -649,8 +657,8 @@ def wilcoxon_comparison(
         exists for either condition.
     """
     paired = _paired_units(
-        _f1_by_unit(condition_a_id, dataset_ids, results_dir),
-        _f1_by_unit(condition_b_id, dataset_ids, results_dir),
+        _f1_by_unit(condition_a_id, dataset_ids, results_dir, metric),
+        _f1_by_unit(condition_b_id, dataset_ids, results_dir, metric),
     )
     if not paired:
         raise DataError(
@@ -667,11 +675,33 @@ def wilcoxon_comparison(
         **fields,
         "significant": bool(fields["testable"] and fields["p_value"] < _DEFAULT_ALPHA),
         "min_attainable_p": minimum_attainable_p(fields["n_nonzero"]),
-        "mean_f1_a": float(np.mean(means_a)),
-        "mean_f1_b": float(np.mean(means_b)),
-        "delta_f1": float(np.mean(means_b) - np.mean(means_a)),
+        **_mean_fields(metric, means_a, means_b),
         "effect_size_r": _rank_biserial_effect_size(means_a, means_b),
         **_pair_outcomes(paired),
+    }
+
+
+def _mean_fields(metric: str, means_a: List[float], means_b: List[float]) -> dict:
+    """Return the column-mean fields under generic and metric-specific names."""
+    mean_a, mean_b = float(np.mean(means_a)), float(np.mean(means_b))
+    return {
+        "metric": metric, "mean_a": mean_a, "mean_b": mean_b, "delta": mean_b - mean_a,
+        f"mean_{metric}_a": mean_a, f"mean_{metric}_b": mean_b, f"delta_{metric}": mean_b - mean_a,
+    }
+
+
+def registered_comparisons() -> Dict[str, Tuple[Tuple[str, str, Tuple[str, ...]], ...]]:
+    """
+    Return every registered comparison as ``(condition_a, condition_b, datasets)`` by group.
+
+    Returns
+    -------
+    Dict[str, Tuple[Tuple[str, str, Tuple[str, ...]], ...]]
+        Ablation group to its comparisons, in registry order.
+    """
+    return {
+        group: tuple((c.condition_a, c.condition_b, c.datasets) for c in comparisons)
+        for group, comparisons in _GROUP_COMPARISONS.items()
     }
 
 
@@ -715,6 +745,7 @@ def run_group_comparisons(
     group: str,
     results_dir: str = _DEFAULT_RESULTS_DIR,
     alpha: float = _DEFAULT_ALPHA,
+    metric: str = "f1",
 ) -> List[dict]:
     """
     Run every canonical comparison for an ablation group with Bonferroni correction.
@@ -731,6 +762,8 @@ def run_group_comparisons(
         Root directory of previously generated result files.
     alpha : float
         Family-wise significance level to correct within the group.
+    metric : str
+        Result metric to test, ``"f1"`` (default) or ``"mrr"``.
 
     Returns
     -------
@@ -752,6 +785,7 @@ def run_group_comparisons(
                 comparison.condition_b,
                 list(comparison.datasets),
                 results_dir,
+                metric,
             ),
             alpha_corrected,
         )
@@ -794,6 +828,11 @@ def _p_value_cell(result: dict) -> str:
     return _NOT_TESTED_CELL if p_value is None else f"{p_value:.4f}"
 
 
+def result_delta(result: dict) -> float:
+    """Return a comparison's ``mean_b - mean_a``, reading the F1 key of older results."""
+    return float(result["delta"] if "delta" in result else result["delta_f1"])
+
+
 def pair_outcome_cell(result: dict) -> str:
     """Render pair-level wins, ties, and losses of B as ``W/T/L``."""
     return f"{result['pair_wins']}/{result['pair_ties']}/{result['pair_losses']}"
@@ -809,7 +848,7 @@ def _format_row(result: dict) -> str:
         _p_value_cell(result),
         f"{result['min_attainable_p']:.4f}",
         str(result["corrected_significant"]),
-        f"{result['delta_f1']:.4f}",
+        f"{result_delta(result):.4f}",
         f"{result['effect_size_r']:.4f}",
         _warning_cell(result),
     )

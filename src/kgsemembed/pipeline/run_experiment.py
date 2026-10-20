@@ -48,6 +48,7 @@ from kgsemembed.evaluation import (
     top_ranked_pairs,
     tune_threshold,
 )
+from kgsemembed.evaluation.per_source import per_source_record
 from kgsemembed.evaluation.population import (
     EvaluationPopulations,
     build_populations,
@@ -77,6 +78,8 @@ _RANDOM_SEED = 42
 _FAILURE_KEY = "n_failed_pairs"
 _PER_ENTITY_TYPE_KEY = "per_entity_type"
 _POPULATION_KEY = "population"
+PER_SOURCE_KEY = "per_source"
+_SIDECAR_SUFFIX = "_entities.json"
 _COUNT_KEYS = ("tp", "fp", "fn")
 _VAL = "val"
 _TEST = "test"
@@ -568,8 +571,9 @@ def _evaluate_pair(
     Returns
     -------
     Dict[str, object]
-        Test metrics with TP/FP/FN counts, the per-entity-type breakdown, and
-        the population summary under ``"population"``.
+        Test metrics with TP/FP/FN counts, the per-entity-type breakdown, the
+        population summary under ``"population"`` and the per-source sidecar
+        record under :data:`PER_SOURCE_KEY`.
     """
     populations = build_populations(pair)
     judgeable = judgeable_ranked_lists(pair, ranked_lists)
@@ -578,6 +582,7 @@ def _evaluate_pair(
     metrics = compute_all_metrics(split_lists[_TEST], pair.test_refs, threshold=threshold)
     metrics[_PER_ENTITY_TYPE_KEY] = _per_entity_type_metrics(pair, split_lists, threshold)
     metrics[_POPULATION_KEY] = _population_record(pair, split_lists, populations)
+    metrics[PER_SOURCE_KEY] = per_source_record(split_lists[_TEST], pair.test_refs, metrics)
     return metrics
 
 
@@ -828,6 +833,8 @@ def _write_result(
         "v8_exclusions_sha256": v8_exclusions_digest(),
         **_provenance(model_info),
     }
+    sidecar = path.with_name(f"{pair.pair_name}{_SIDECAR_SUFFIX}")
+    sidecar.write_text(json.dumps(metrics[PER_SOURCE_KEY]), encoding="utf-8")
     path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
 
 
