@@ -882,6 +882,13 @@ python scripts/annotation_fix_report.py --old_dir data/results/ \
   double (1,983 → 4,372, TP 1,551 → 1,590), the threshold sensitivity #139
   describes, not a ranking loss. Group E (F1): 5/0/21, p 0.6875, ΔF1 −0.0324
   → 5/0/21, p 0.5625, −0.0423; not significant before or after.
+- **Stored results replaced**: the 28 re-runs are copied into `data/results/`
+  (byte-identical); the replaced files and the previous `report.md` are kept
+  in `data/results_pre145/`. In the regenerated report, group B's C9 vs C10
+  goes from 24/0/2, p 0.0312 to 23/0/3, p 0.0625 (still not significant
+  under alpha/4). `artifacts/issue-138/results_inventory.md` is regenerated:
+  every V8 result now carries the current exclusion digest and nothing is
+  flagged.
 
 ```bash
 # Text inventory and predicate classification (no model, ~5 min each).
