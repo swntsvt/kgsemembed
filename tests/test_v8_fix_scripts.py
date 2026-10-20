@@ -76,12 +76,12 @@ def test_classification_lists_a_declared_annotation_property_v8_keeps() -> None:
 
 def test_affected_conditions_are_the_v8_strategies() -> None:
     ids = {c.condition_id for c in report.affected_conditions()}
-    assert ids == {"C9", "C10", "C11", "C12", "C13", "C15", "C16", "C18", "C19"}
+    assert ids == {"C9", "C10", "C11", "C13", "C15", "C16", "C18", "C19"}
 
 
 def test_condition_columns_skip_d3_and_expand_d4() -> None:
-    c12 = next(c for c in report.affected_conditions() if c.condition_id == "C12")
-    assert report._condition_columns(c12) == ["D4_schema", "D4_instance"]
+    c9 = next(c for c in report.affected_conditions() if c.condition_id == "C9")
+    assert report._condition_columns(c9) == ["D1", "D2", "D4_schema", "D4_instance", "D5"]
 
 
 def _write(results_dir: Path, condition_id: str, column: str, value: float, **extra) -> None:
@@ -103,13 +103,13 @@ def test_comparison_rows_report_differences_missing_and_reproduction(tmp_path: P
     old_dir, new_dir = tmp_path / "old", tmp_path / "new"
     _write(old_dir, "C11", "D2", 0.8)
     _rerun(new_dir, "C11", "D2", 0.9)
-    _write(old_dir, "C12", "D4_schema", 0.5)
-    _rerun(new_dir, "C12", "D4_schema", 0.6)
+    _write(old_dir, "C9", "D4_schema", 0.5)
+    _rerun(new_dir, "C9", "D4_schema", 0.6)
     rows = report.comparison_rows(old_dir, new_dir, counts={})
     assert "| C11 | V2+V8 | M4 | D2 | 0.8000 → 0.9000 (+0.1000) | 0.8000 → 0.9000 (+0.1000) " \
            "| 0.8000 → 0.9000 (+0.1000) |" in rows["rows"]
     assert "C11/D1" in rows["missing"]
-    assert rows["not_reproduced"] == ["C12/D4_schema"]
+    assert rows["not_reproduced"] == ["C9/D4_schema"]
 
 
 def test_comparison_refuses_a_rerun_with_another_v8_digest(tmp_path: Path) -> None:

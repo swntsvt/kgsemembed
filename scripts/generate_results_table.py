@@ -33,6 +33,9 @@ same populations, so every row is directly comparable with it.  B0 takes part
 in the bold best-per-column and the Mean column.  Without ``--baseline_dir``
 the F1 table is unchanged.
 
+The sanity check C19 (identical to C10 by design) is not a result and is left
+out; ``report.md`` checks it.  C12 is retired (#142).
+
 Strategy, model and ablation group come from the condition registry, so the
 table cannot drift from the conditions that were actually run.  Results are
 read through ``kgsemembed.evaluation.load_all_results``, so malformed files,
@@ -76,10 +79,10 @@ _LOGGER = logging.getLogger("kgsemembed.scripts.generate_results_table")
 
 _CONDITION_ORDER = (
     "C1", "C2", "C17",
-    "C9", "C12", "C3", "C10", "C18",
+    "C9", "C3", "C10", "C18",
     "C20",
     "C4", "C5", "C6", "C7", "C8", "C11", "C13", "C16",
-    "C14", "C15", "C19",
+    "C14", "C15",
 )
 _DATASETS = ("D1", "D2", "D3", "D4_schema", "D4_instance", "D5")
 _COLUMN_HEADS = (
@@ -92,7 +95,7 @@ _F1_COLUMN_HEADS = (
     "D1", "D2", "D3", r"D3$_{\mu}$", r"D4$_{\mathrm{sc}}$", r"D4$_{\mathrm{in}}$", "D5"
 )
 _D3_PAIR_COUNT = 21
-_MODEL_MARKERS = {"M2_uncapped": r"M2$^\dagger$", "M4": r"M4$^\ddagger$"}
+_MODEL_MARKERS = {"M4": r"M4$^\ddagger$"}
 _MISSING = "---"
 _CAPTION = (
     r"\caption{Mean test F1 per condition per dataset (secondary matching "
@@ -104,8 +107,6 @@ _CAPTION = (
     r"threshold and value rest. "
     r"Dashes in dataset columns indicate conditions not run on that dataset. "
     r"Bold: best result per dataset column. "
-    r"$\dagger$: M2\_uncapped (same weights as M2, "
-    r"\texttt{ppas\_budget=None}); C19 is identical to C10 by design. "
     r"C20 (V2, M2) is the controlled baseline for C10 (V2+V8, M2): "
     r"the two differ only by the V8 component, and C20 forms its own "
     r"group (E), placed after group B so it sits beside C10. "

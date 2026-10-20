@@ -19,7 +19,7 @@ Phase 2 datasets: D1 (SNOMED-FMA Body), D2 (Anatomy MA-NCI), D3 (Conference,
 21 pairs), D4 (memoryalpha-stexpanded, schema and instance), D5
 (DBpedia-Wikidata 15K EN, OpenEA). Five datasets total.
 
-**Current focus**: Issue #145 — V8 excludes annotation predicates (FMA, oboInOwl, OWL axiom annotations, DBkWik page text, description/name vocabularies) instead of listing them as relationships; text inventory, per-predicate classification and V8 re-runs (`artifacts/issue-145/`). Previously #139 — re-ranking MRR and source-level Hits@1 as the paper's primary metrics (F1 secondary), one definition of each metric's unit, ceiling and 1:N handling, and tables that show the top-20 ceiling, D3 micro F1 and F1's reference counts (`artifacts/issue-139/`). Previously #138 — dataset and reference-alignment provenance, each dataset's protocol against its benchmark's official one, and the paper's datasets/protocol text (`artifacts/issue-138/`); #137 — stage-1 n-gram ranking baseline (B0) and the written evaluation protocol (`artifacts/issue-137/`); #136 — V1/V2 read the synonym and definition predicates D1/D2 actually use; #134 — text-serialization-order experiment on D1 and D2 (effect of item order with the selected set held fixed; order frozen on D2 validation before any test evaluation); #128, #130 and #131 merged (Phase 2)
+**Current focus**: Issue #142 — retire C12 (duplicate of C9; IDs not renumbered), move C19 to a sanity-check group and section, correct stale condition descriptions and PPAS labels, and average the report's summary table over dataset columns. Next: #141 (pin model revisions, record device, lock file) and #140 (per-source sidecars and per-dataset tests), then one C1–C20 re-run. Previously #145 — V8 excludes annotation predicates (FMA, oboInOwl, OWL axiom annotations, DBkWik page text, description/name vocabularies) instead of listing them as relationships; text inventory, per-predicate classification and V8 re-runs (`artifacts/issue-145/`). Previously #139 — re-ranking MRR and source-level Hits@1 as the paper's primary metrics (F1 secondary), one definition of each metric's unit, ceiling and 1:N handling, and tables that show the top-20 ceiling, D3 micro F1 and F1's reference counts (`artifacts/issue-139/`). Previously #138 — dataset and reference-alignment provenance, each dataset's protocol against its benchmark's official one, and the paper's datasets/protocol text (`artifacts/issue-138/`); #137 — stage-1 n-gram ranking baseline (B0) and the written evaluation protocol (`artifacts/issue-137/`); #136 — V1/V2 read the synonym and definition predicates D1/D2 actually use; #134 — text-serialization-order experiment on D1 and D2 (effect of item order with the selected set held fixed; order frozen on D2 validation before any test evaluation); #128, #130 and #131 merged (Phase 2)
 
 ## Git Workflow
 
@@ -355,9 +355,25 @@ kgsemembed/                      # repo root
 
 - **Configuration**: Experiment conditions are defined as `ExperimentCondition`
   dataclasses in `src/kgsemembed/pipeline/conditions.py`. There are currently
-  **20 conditions (C1–C20)**, validated at import time; the count is asserted
-  against `_EXPECTED_CONDITION_COUNT`. No external config file drives the
-  Phase 2 pipeline.
+  **19 conditions (C1–C11, C13–C20)**, validated at import time; the count is
+  asserted against `_EXPECTED_CONDITION_COUNT`. No external config file drives
+  the Phase 2 pipeline. "C1–C20" elsewhere means this range.
+- **Retired IDs (#142)**: C12 (V8/M2 on D3/D4) duplicated C9 with identical
+  results and is removed; `RETIRED_CONDITION_IDS` refuses its reuse, and the
+  other conditions keep their numbers so stored results, tags and artefacts
+  stay unambiguous. Its `C12 vs C1` comparison is gone, so group B has three
+  comparisons (alpha / 3). Old `data/results/C12/` files are skipped by the
+  report loader as an unregistered condition.
+- **Sanity check C19 (group `S`, #142)**: C19 must reproduce C10 (V2+V8
+  never consults a budget). It is out of the summary, breakdown, group and
+  LaTeX results tables; `report.md`'s "Sanity Checks" section compares it
+  with C10 pair by pair (`Reproduces?`).
+- **`apply_ppas` is metadata**: it is recorded in each result but never passed
+  to the verbaliser; whether PPAS can sample is `ppas_effective`.
+- **Report aggregates (#142)**: the Condition Summary Table averages over
+  dataset columns (D3 = mean of its 21 pairs; D4_schema/D4_instance separate),
+  reports `n_columns`, and lists conditions in registry order without ranking
+  them, since conditions cover different columns.
 - **C20 / ablation group E**: C20 (V2/M2) is the controlled baseline for V8.
   It differs from C10 (V2+V8/M2) only by the V8 component, and sits alone in
   group E so its Wilcoxon test gets its own Bonferroni family (alpha / 1)
@@ -412,8 +428,8 @@ Registered in `src/kgsemembed/embeddings/models.py` as `MODEL_REGISTRY`.
   due to custom remote code. `bge-m3` is a stock XLM-RoBERTa architecture and
   reaches its 8192-token context without any.
 - **M2_uncapped**: same weights as M2, `ppas_budget=None`. Used only for the
-  controlled PPAS ablation (C19). V2+V8 does not invoke PPAS under any model,
-  so C19 is bit-for-bit identical to C10 (both record `ppas_effective: false`).
+  C19 sanity check. V2+V8 does not invoke PPAS under any model, so C19 is
+  bit-for-bit identical to C10 (both record `ppas_effective: false`).
 - **M5 bidirectional attention**: stella_en_1.5B_v5 is Qwen2 fine-tuned with
   the causal mask removed; its repository restores that via custom
   `modeling_qwen.Qwen2Model` (`is_causal=False`). Loaded without that code,
@@ -899,7 +915,7 @@ python scripts/v8_inventory.py predicates
 # Re-runs (long: run in tmux) and the before/after report.
 python -m kgsemembed.pipeline.run_experiment \
     --conditions C9 C10 C11 C12 C13 C15 C16 C18 C19 --datasets D1 D2 D4 D5 \
-    --data_dir data/ --results_dir data/results_issue145/
+    --data_dir data/ --results_dir data/results_issue145/   # at 4e234e1; C12 retired in #142
 python scripts/v8_fix_report.py --old_dir data/results/ --new_dir data/results_issue145/
 ```
 
@@ -1191,7 +1207,7 @@ D4 columns.
 - `effect_size_r` is the signed matched-pairs rank-biserial
   `(R+ - R-)/(R+ + R-)`, positive when B beats A.
 - With n columns the smallest attainable p is `2/2**n` (0.03125 at n=6), so
-  under group B's alpha/4 no comparison can be significant; results carry
+  under group B's alpha/3 no comparison can be significant; results carry
   `min_attainable_p` and `underpowered`. Only group E (alpha/1) can reach
   significance. Pair-level W/T/L counts are descriptive only.
 
