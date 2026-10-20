@@ -417,7 +417,7 @@ def test_condition_run_is_isolated_from_preceding_conditions(monkeypatch) -> Non
     model_info = {
         "model_id": "test",
         "model_key": "M1",
-        "device": "cpu",
+        "device": "mps",
         "hf_revision": "abc123",
     }
 

@@ -27,7 +27,7 @@ import time
 from datetime import datetime, timezone
 from importlib import metadata
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 
 import hydra
 import numpy as np
@@ -39,6 +39,7 @@ from kgsemembed.candidates import build_candidate_table, generate_candidates, lo
 from kgsemembed.datasets import AlignmentPair, load_dataset, load_oaei_dataset
 from kgsemembed.datasets.loader import _SPLIT_SEED, _resolve_entity_type
 from kgsemembed.embeddings import EmbeddingEncoder, MODEL_REGISTRY, load_sentence_transformer
+from kgsemembed.embeddings.models import require_device
 from kgsemembed.evaluation import (
     EntityPair,
     RankedList,
@@ -779,8 +780,12 @@ def _provenance(model_info: Optional[Dict[str, str]]) -> Dict[str, object]:
     Dict[str, object]
         Provenance fields to merge into a result payload.
     """
+    info = model_info or {}
     return {
         "hf_revision": _model_revision(model_info),
+        "hf_revision_pinned": info.get("hf_revision_pinned", _UNKNOWN_VERSION),
+        "device": info.get("device", _UNKNOWN_VERSION),
+        "device_override": bool(info.get("device_override", False)),
         "kgsemembed_version": _package_version(),
         "python_version": sys.version,
         "run_timestamp": _utc_timestamp(),
@@ -1061,12 +1066,35 @@ def _release_model(model: object) -> None:
     gc.collect()
 
 
+def _load_checked_model(
+    model_key: str, allowed_device: Optional[str]
+) -> Tuple[object, Dict[str, object]]:
+    """
+    Load a model and refuse it unless it runs on MPS or the allowed device.
+
+    Parameters
+    ----------
+    model_key : str
+        Registered model key, e.g. ``"M2"``.
+    allowed_device : Optional[str]
+        Non-MPS device accepted explicitly, recorded as ``device_override``.
+
+    Returns
+    -------
+    Tuple[object, Dict[str, object]]
+        The loaded model and its provenance, including the device check.
+    """
+    model, model_info = load_sentence_transformer(model_key)
+    return model, {**model_info, **require_device(model_info, allowed_device)}
+
+
 def run_condition(
     condition_id: str,
     dataset_ids: Optional[List[str]] = None,
     data_dir: str | Path = "data/",
     results_dir: str | Path = "data/results/",
     force_recompute: bool = False,
+    allowed_device: Optional[str] = None,
 ) -> Dict[str, Dict[str, float]]:
     """
     Execute the full Phase 2 pipeline for a single experimental condition.
@@ -1088,6 +1116,8 @@ def run_condition(
         Output directory for result JSON files.
     force_recompute : bool
         Recompute and overwrite existing result files when ``True``.
+    allowed_device : Optional[str]
+        Non-MPS device to accept explicitly; ``None`` requires MPS.
 
     Returns
     -------
@@ -1102,10 +1132,12 @@ def run_condition(
     ------
     KeyError
         If ``condition_id`` is not registered.
+    ConfigurationError
+        If the model is on neither MPS nor ``allowed_device``.
     """
     _seed_random_state()
     condition = get_condition(condition_id)
-    model, model_info = load_sentence_transformer(condition.model_key)
+    model, model_info = _load_checked_model(condition.model_key, allowed_device)
     try:
         encoder = EmbeddingEncoder(condition.model_key, model)
         return _run_condition_with_encoder(
@@ -1177,6 +1209,7 @@ def run_all_conditions(
     data_dir: str | Path = "data/",
     results_dir: str | Path = "data/results/",
     force_recompute: bool = False,
+    allowed_device: Optional[str] = None,
 ) -> Dict[str, Dict[str, Dict[str, float]]]:
     """
     Execute multiple conditions, grouping by embedding model to load each once.
@@ -1197,6 +1230,8 @@ def run_all_conditions(
         Output directory for result JSON files.
     force_recompute : bool
         Recompute and overwrite existing result files when ``True``.
+    allowed_device : Optional[str]
+        Non-MPS device to accept explicitly; ``None`` requires MPS.
 
     Returns
     -------
@@ -1206,7 +1241,7 @@ def run_all_conditions(
     conditions = _select_conditions(condition_ids)
     summary: Dict[str, Dict[str, Dict[str, float]]] = {}
     for model_key, group in _group_by_model(conditions).items():
-        model, model_info = load_sentence_transformer(model_key)
+        model, model_info = _load_checked_model(model_key, allowed_device)
         try:
             encoder = EmbeddingEncoder(model_key, model)
             for condition in group:
@@ -1239,6 +1274,10 @@ def _build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--force_recompute", action="store_true", help="Overwrite existing result files."
     )
+    parser.add_argument(
+        "--allow_device", default=None, choices=("cpu", "cuda"),
+        help="Accept this non-MPS device explicitly (recorded as device_override).",
+    )
     return parser
 
 
@@ -1252,6 +1291,7 @@ def cli_main(argv: Optional[List[str]] = None) -> None:
         data_dir=args.data_dir,
         results_dir=args.results_dir,
         force_recompute=args.force_recompute,
+        allowed_device=args.allow_device,
     )
 
 

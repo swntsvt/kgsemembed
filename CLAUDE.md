@@ -19,7 +19,7 @@ Phase 2 datasets: D1 (SNOMED-FMA Body), D2 (Anatomy MA-NCI), D3 (Conference,
 21 pairs), D4 (memoryalpha-stexpanded, schema and instance), D5
 (DBpedia-Wikidata 15K EN, OpenEA). Five datasets total.
 
-**Current focus**: Issue #142 — retire C12 (duplicate of C9; IDs not renumbered), move C19 to a sanity-check group and section, correct stale condition descriptions and PPAS labels, and average the report's summary table over dataset columns. Next: #141 (pin model revisions, record device, lock file) and #140 (per-source sidecars and per-dataset tests), then one C1–C20 re-run. Previously #145 — V8 excludes annotation predicates (FMA, oboInOwl, OWL axiom annotations, DBkWik page text, description/name vocabularies) instead of listing them as relationships; text inventory, per-predicate classification and V8 re-runs (`artifacts/issue-145/`). Previously #139 — re-ranking MRR and source-level Hits@1 as the paper's primary metrics (F1 secondary), one definition of each metric's unit, ceiling and 1:N handling, and tables that show the top-20 ceiling, D3 micro F1 and F1's reference counts (`artifacts/issue-139/`). Previously #138 — dataset and reference-alignment provenance, each dataset's protocol against its benchmark's official one, and the paper's datasets/protocol text (`artifacts/issue-138/`); #137 — stage-1 n-gram ranking baseline (B0) and the written evaluation protocol (`artifacts/issue-137/`); #136 — V1/V2 read the synonym and definition predicates D1/D2 actually use; #134 — text-serialization-order experiment on D1 and D2 (effect of item order with the selected set held fixed; order frozen on D2 validation before any test evaluation); #128, #130 and #131 merged (Phase 2)
+**Current focus**: Issue #141 — pinned model revisions, device check and recording (`--allow_device`), and `requirements-lock.txt`; the tag and archive follow the C1–C20 re-run after #140. Previously #142 — retire C12 (duplicate of C9; IDs not renumbered), move C19 to a sanity-check group and section, correct stale condition descriptions and PPAS labels, and average the report's summary table over dataset columns. Next: #140 (per-source sidecars and per-dataset tests), then one C1–C20 re-run. Previously #145 — V8 excludes annotation predicates (FMA, oboInOwl, OWL axiom annotations, DBkWik page text, description/name vocabularies) instead of listing them as relationships; text inventory, per-predicate classification and V8 re-runs (`artifacts/issue-145/`). Previously #139 — re-ranking MRR and source-level Hits@1 as the paper's primary metrics (F1 secondary), one definition of each metric's unit, ceiling and 1:N handling, and tables that show the top-20 ceiling, D3 micro F1 and F1's reference counts (`artifacts/issue-139/`). Previously #138 — dataset and reference-alignment provenance, each dataset's protocol against its benchmark's official one, and the paper's datasets/protocol text (`artifacts/issue-138/`); #137 — stage-1 n-gram ranking baseline (B0) and the written evaluation protocol (`artifacts/issue-137/`); #136 — V1/V2 read the synonym and definition predicates D1/D2 actually use; #134 — text-serialization-order experiment on D1 and D2 (effect of item order with the selected set held fixed; order frozen on D2 validation before any test evaluation); #128, #130 and #131 merged (Phase 2)
 
 ## Git Workflow
 
@@ -94,6 +94,11 @@ permission prompts in Claude Code.
 ```bash
 venv/bin/pip install -r requirements.txt
 venv/bin/pip install -e .                    # editable install
+
+# Exact environment of the stored results (#141); regenerate it with
+# `venv/bin/pip freeze --exclude-editable` after any upgrade, or
+# tests/test_environment_lock.py fails.
+venv/bin/pip install -r requirements-lock.txt && venv/bin/pip install -e . --no-deps
 ```
 
 ### Running Experiments
@@ -416,7 +421,14 @@ Registered in `src/kgsemembed/embeddings/models.py` as `MODEL_REGISTRY`.
 | M4 | `FremyCompany/BioLORD-2023` | 512 | 420 | 32 |
 | M5 | `dunzhang/stella_en_1.5B_v5` | 512 | 420 | 8 |
 
-- `SentenceTransformer()` is called with `model_id` and `device` only, so no
+- **Pinned revisions (#141)**: every `ModelConfig` has a `revision` (the
+  commit every stored result records: M1 `1110a243fdf4`, M2/M2_uncapped
+  `d4aa6901d3a4`, M3 `5617a9f61b02`, M4 `167aab527b23`, M5 `7817065102fd`;
+  full hashes in `models.py` and `tests/test_models.py`). The loader passes
+  it to `SentenceTransformer` and raises `ConfigurationError` if the model
+  resolves to another commit. A new revision is a deliberate change that
+  requires re-runs, never a silent upgrade.
+- `SentenceTransformer()` is called with `model_id`, `device` and `revision` only, so no
   model executes custom modelling code at load time. Adding a model that
   would need to is a design decision, not a config change. Every model loads
   as a stock `transformers` architecture, but that is not the same as running
@@ -448,8 +460,14 @@ Registered in `src/kgsemembed/embeddings/models.py` as `MODEL_REGISTRY`.
   `encode_batch(role="source")`, never via `encode_candidate()`. The encoder
   applies it internally — never pre-prefix verbalised text yourself.
 - `load_sentence_transformer()` returns a `(model, model_info)` tuple.
-  `model_info` keys: `model_id`, `model_key`, `device`, `hf_revision`. Always
-  assert `device` starts with `"mps"` after loading.
+  `model_info` keys: `model_id`, `model_key`, `device`, `hf_revision`,
+  `hf_revision_pinned`. `require_device(model_info, allowed_device)`
+  (`embeddings/models.py`) refuses any device not starting with `"mps"`
+  unless it is named explicitly; `run_experiment` and `ppas_ablation` call it
+  after loading and expose it as `--allow_device {cpu,cuda}`. Results record
+  `device` and `device_override` (`true` only under that flag);
+  `serialization_order.py` and `predicate_role_diagnostics.py` keep their
+  own MPS assertion.
 
 PPAS budgets are consulted independently by the verbalisers through
 `PPAS_BUDGETS` in `src/kgsemembed/verbalisation/ppas.py`, keyed by the same
@@ -1238,8 +1256,8 @@ Every file written by `run_experiment.py` contains:
                  "reference_complete"},
   "n_source_entities", "n_candidates_per_entity", "candidates_sha256",
   "annotation_predicates_sha256", "v8_exclusions_sha256",
-  "hf_revision", "kgsemembed_version",
-  "python_version", "run_timestamp",
+  "hf_revision", "hf_revision_pinned", "device", "device_override",
+  "kgsemembed_version", "python_version", "run_timestamp",
   "versions": {"python", "torch", "transformers", "sentence_transformers",
                "numpy", "scipy", "rdflib"},
   "random_seed", "split_seed", "evaluation_protocol",
@@ -1247,6 +1265,8 @@ Every file written by `run_experiment.py` contains:
 }
 ```
 
+`hf_revision_pinned`, `device` and `device_override` (#141) are absent from
+results written before #141; their `hf_revision` equals the pin.
 `hits_at_k` (source-level, #139) is absent from results written before #139;
 see "Metrics (#139)" for how Hits@1 is recovered from them.
 `per_entity_type` is non-empty only for mixed-type pairs (D3, D4_schema).

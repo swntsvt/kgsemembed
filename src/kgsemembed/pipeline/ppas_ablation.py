@@ -53,7 +53,7 @@ from kgsemembed.candidates import load_candidates
 from kgsemembed.candidates.ngram import _candidates_path
 from kgsemembed.datasets import AlignmentPair, load_dataset
 from kgsemembed.embeddings import EmbeddingEncoder, MODEL_REGISTRY, load_sentence_transformer
-from kgsemembed.embeddings.models import PAD_TO_MULTIPLE_OF
+from kgsemembed.embeddings.models import PAD_TO_MULTIPLE_OF, require_device
 from kgsemembed.evaluation import RankedList
 from kgsemembed.evaluation.population import without_known_pairs
 from kgsemembed.pipeline.ablation_conditions import (
@@ -1129,16 +1129,21 @@ def run_ablation(
     condition_ids : Optional[List[str]]
         Conditions to run; ``None`` runs every registered one.
     settings_kwargs : Dict[str, object]
-        ``data_dir``, ``results_dir``, ``force_recompute`` and ``max_sources``.
+        ``data_dir``, ``results_dir``, ``force_recompute`` and ``max_sources``,
+        plus an optional ``allowed_device`` (a non-MPS device accepted
+        explicitly; MPS is required otherwise).
 
     Returns
     -------
     List[Dict[str, object]]
         Result payloads written by the run.
     """
+    settings_kwargs = dict(settings_kwargs)
+    allowed_device = settings_kwargs.pop("allowed_device", None)
     conditions = _select_conditions(condition_ids)
     _guard_results_dir(Path(settings_kwargs["results_dir"]), conditions, dataset_ids)
     model, model_info = load_sentence_transformer(ABLATION_MODEL_KEY)
+    model_info = {**model_info, **require_device(model_info, allowed_device)}
     encoder = EmbeddingEncoder(ABLATION_MODEL_KEY, model)
     settings = RunSettings(
         model_info=model_info, tokenizer_id=model.tokenizer.name_or_path,
@@ -1163,6 +1168,10 @@ def _build_arg_parser() -> argparse.ArgumentParser:
         "--max_sources", type=int, default=None,
         help="Smoke run: keep this many sources (stable crc32 subset).",
     )
+    parser.add_argument(
+        "--allow_device", default=None, choices=("cpu", "cuda"),
+        help="Accept this non-MPS device explicitly (recorded as device_override).",
+    )
     return parser
 
 
@@ -1175,6 +1184,7 @@ def cli_main(argv: Optional[List[str]] = None) -> None:
     settings_kwargs = {
         "data_dir": Path(args.data_dir), "results_dir": Path(args.results_dir),
         "force_recompute": args.force_recompute, "max_sources": args.max_sources,
+        "allowed_device": args.allow_device,
     }
     run_ablation(args.datasets, args.conditions, settings_kwargs)
 

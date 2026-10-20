@@ -22,7 +22,7 @@ from rdflib.namespace import OWL, RDF
 import kgsemembed.pipeline.run_experiment as runner
 from kgsemembed.datasets import AlignmentPair, load_pair_from_dir
 from kgsemembed.embeddings.models import MODEL_REGISTRY
-from kgsemembed.utils.errors import DataError
+from kgsemembed.utils.errors import ConfigurationError, DataError
 
 _VECTORS = {
     "s1": [1.0, 0.0, 0.0],
@@ -150,7 +150,7 @@ def fakes(monkeypatch):
         return object(), {
             "model_key": model_key,
             "model_id": f"fake/{model_key}",
-            "device": "cpu",
+            "device": "mps",
             "hf_revision": f"revision-{model_key}",
         }
 
@@ -235,6 +235,9 @@ def test_result_json_matches_required_schema(fakes, tmp_path):
         "annotation_predicates_sha256",
         "v8_exclusions_sha256",
         "hf_revision",
+        "hf_revision_pinned",
+        "device",
+        "device_override",
         "kgsemembed_version",
         "python_version",
         "run_timestamp",
@@ -318,9 +321,47 @@ def test_hf_revision_comes_from_the_loaded_model(fakes, tmp_path):
     assert payload["hf_revision"] == "revision-M1"
 
 
+def test_result_records_the_device_without_override(fakes, tmp_path):
+    payload = _run_and_read_payload(tmp_path)
+    assert (payload["device"], payload["device_override"]) == ("mps", False)
+
+
+def _load_on_cpu(fakes, monkeypatch):
+    monkeypatch.setattr(
+        runner, "load_sentence_transformer",
+        lambda key: (object(), {"model_key": key, "device": "cpu", "hf_revision": "r"}),
+    )
+
+
+def test_run_condition_refuses_a_non_mps_device(fakes, monkeypatch, tmp_path):
+    _load_on_cpu(fakes, monkeypatch)
+    with pytest.raises(ConfigurationError, match="allow_device"):
+        runner.run_condition("C1", dataset_ids=["D2"], data_dir=tmp_path, results_dir=tmp_path)
+    assert not list(tmp_path.rglob("*_results.json"))
+
+
+def test_allowed_device_is_recorded_as_an_override(fakes, monkeypatch, tmp_path):
+    _load_on_cpu(fakes, monkeypatch)
+    runner.run_condition(
+        "C1", dataset_ids=["D2"], data_dir=tmp_path, results_dir=tmp_path / "results",
+        allowed_device="cpu",
+    )
+    payload = json.loads(
+        (tmp_path / "results" / "C1" / "D2" / "d2_pair_results.json").read_text()
+    )
+    assert (payload["device"], payload["device_override"]) == ("cpu", True)
+
+
+def test_cli_passes_the_allowed_device(monkeypatch):
+    seen = {}
+    monkeypatch.setattr(runner, "run_all_conditions", lambda **kwargs: seen.update(kwargs))
+    runner.cli_main(["--conditions", "C1", "--allow_device", "cpu"])
+    assert seen["allowed_device"] == "cpu"
+
+
 def test_hf_revision_is_unknown_when_the_loader_reports_none(fakes, monkeypatch, tmp_path):
     monkeypatch.setattr(
-        runner, "load_sentence_transformer", lambda _key: (object(), {"device": "cpu"})
+        runner, "load_sentence_transformer", lambda _key: (object(), {"device": "mps"})
     )
     payload = _run_and_read_payload(tmp_path)
     assert payload["hf_revision"] == "unknown"
@@ -1193,7 +1234,7 @@ def test_run_condition_over_sample_pair_with_mocked_encoder(monkeypatch, tmp_pat
     monkeypatch.setattr(
         runner,
         "load_sentence_transformer",
-        lambda _key: (object(), {"device": "cpu", "hf_revision": "sample-revision"}),
+        lambda _key: (object(), {"device": "mps", "hf_revision": "sample-revision"}),
     )
     monkeypatch.setattr(runner, "EmbeddingEncoder", _SampleEncoder)
     monkeypatch.setattr(runner, "load_dataset", lambda _d, _dir: [pair])
