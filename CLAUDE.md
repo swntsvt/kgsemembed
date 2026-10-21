@@ -1098,6 +1098,10 @@ python scripts/v8_fix_report.py --old_dir data/results/ --new_dir data/results_i
   superseded trees (`results_pre*`, `results_issue*`, `results_retired/`).
 - **Environment**: `requirements-lock.txt` is the macOS arm64, Python 3.12.14
   environment; the archive's outputs need no model or dataset to rebuild.
+- **Checked** (fresh clone, new venv from the lock, archive extracted, no
+  datasets): `report.md` and the four tables regenerate byte-identically;
+  the suite passes except the 6 `tests/test_dataset_loader.py` tests that
+  read `data/`.
 
 ```bash
 # Build the archive (from a checkout at the tag, with the stored data)
