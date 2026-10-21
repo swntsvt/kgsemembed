@@ -1,0 +1,266 @@
+{
+  "condition_id": "SO-all-sel_uri-ren_uri-48",
+  "dataset_id": "D1",
+  "pair_name": "d1_snomed_fma",
+  "strategy": "V6-KV-select",
+  "model_key": "M2",
+  "model_id": "BAAI/bge-large-en-v1.5",
+  "apply_ppas": false,
+  "ppas_effective": false,
+  "token_budget": 48,
+  "metrics": {
+    "f1": 0.1183094859565448,
+    "precision": 0.09047619047619047,
+    "recall": 0.17087638729429774,
+    "threshold": 0.81,
+    "mrr": 0.35664091048927327,
+    "recall_at_1": 0.22770761576731727,
+    "recall_at_5": 0.3827018752391887,
+    "recall_at_10": 0.5114810562571757
+  },
+  "counts": {
+    "tp": 893,
+    "fp": 8977,
+    "fn": 4333
+  },
+  "per_entity_type": {},
+  "population": {
+    "n_train_refs": 0,
+    "n_val_refs": 1304,
+    "n_test_refs": 5226,
+    "n_val_ranked_sources": 4903,
+    "n_test_ranked_sources": 19279,
+    "n_val_unmatched_sources": 3752,
+    "n_test_unmatched_sources": 14674,
+    "reference_complete": true
+  },
+  "n_source_entities": 24182,
+  "n_candidates_per_entity": 20,
+  "candidates_sha256": "a65eb2480a75f9ec5ce0d797993b21b5a098d47d9d863121c456d805c95cc688",
+  "candidates_file": "data/candidates/D1/d1_snomed_fma_candidates.json",
+  "dataset_files_sha256": {
+    "d1_snomed_fma/source.rdf": "a0fb689dde7b95bfe737f780fc869d73b1b3b59ae8586df6076996507f92a091",
+    "d1_snomed_fma/target.rdf": "c1777ae5546dd78fc8750e312460da58d1ea9322e84a5f0a54c7b7312fd6fd57",
+    "d1_snomed_fma/reference.rdf": "de7358d1841fed495d47257dd244e0fc630cdde088cd352b164fb6b3b9f7d388"
+  },
+  "ablation": {
+    "policy": "deterministic",
+    "seed": null,
+    "nominal_token_budget": 48,
+    "budget_includes_special_tokens": true,
+    "token_counting": "model tokenizer on the final joined text, special tokens included, no truncation",
+    "tokenizer": "BAAI/bge-large-en-v1.5",
+    "tokenizer_revision": "d4aa6901d3a41ba39fb536a557fa166f842b0e09",
+    "representation": "Structured key-value items (V6 rendering) from _collect_triples; literal datatype suffix stripped; empty and duplicate items dropped; selected items joined in canonical order",
+    "item_separator": " | ",
+    "deterministic_order": "lexicographic (predicate URI, object term)",
+    "policy_label": "",
+    "role_arm": "A0",
+    "excluded_roles": [],
+    "role_map": {
+      "name": "roles_v1",
+      "config_hash": "d4c5bd86becb0725c9c59bae44d19d05cc18db872d9ff90046601a9f45c434cf",
+      "roles": {
+        "http://purl.obolibrary.org/obo/IAO_0000115": "definition",
+        "http://purl.org/sig/ont/fma/AAL": "identifier",
+        "http://purl.org/sig/ont/fma/CMA_label": "identifier",
+        "http://purl.org/sig/ont/fma/DK__Freesurfer_": "identifier",
+        "http://purl.org/sig/ont/fma/Eponym": "other",
+        "http://purl.org/sig/ont/fma/FMAID": "identifier",
+        "http://purl.org/sig/ont/fma/JHU_DTI-81": "other",
+        "http://purl.org/sig/ont/fma/JHU_White-Matter_Tractography_Atlas": "other",
+        "http://purl.org/sig/ont/fma/Neurolex": "identifier",
+        "http://purl.org/sig/ont/fma/RadLex_ID": "identifier",
+        "http://purl.org/sig/ont/fma/Talairach": "identifier",
+        "http://purl.org/sig/ont/fma/definition": "definition",
+        "http://purl.org/sig/ont/fma/fma0329122": "identifier",
+        "http://purl.org/sig/ont/fma/homonym_for": "other",
+        "http://purl.org/sig/ont/fma/homonym_of": "other",
+        "http://purl.org/sig/ont/fma/non-English_equivalent": "non_english",
+        "http://purl.org/sig/ont/fma/preferred_name": "preferred_name",
+        "http://purl.org/sig/ont/fma/slot_synonym": "synonym",
+        "http://purl.org/sig/ont/fma/synonym": "synonym",
+        "http://www.geneontology.org/formats/oboInOwl#hasAlternativeId": "identifier",
+        "http://www.geneontology.org/formats/oboInOwl#hasBroadSynonym": "synonym",
+        "http://www.geneontology.org/formats/oboInOwl#hasDbXref": "identifier",
+        "http://www.geneontology.org/formats/oboInOwl#hasDefinition": "definition",
+        "http://www.geneontology.org/formats/oboInOwl#hasExactSynonym": "synonym",
+        "http://www.geneontology.org/formats/oboInOwl#hasNarrowSynonym": "synonym",
+        "http://www.geneontology.org/formats/oboInOwl#hasRelatedSynonym": "synonym",
+        "http://www.geneontology.org/formats/oboInOwl#hasSynonym": "synonym",
+        "http://www.w3.org/1999/02/22-rdf-syntax-ns#type": "core",
+        "http://www.w3.org/2000/01/rdf-schema#comment": "definition",
+        "http://www.w3.org/2000/01/rdf-schema#label": "core",
+        "http://www.w3.org/2000/01/rdf-schema#subClassOf": "core",
+        "http://www.w3.org/2002/07/owl#disjointWith": "disjointness",
+        "http://www.w3.org/2004/02/skos/core#altLabel": "synonym",
+        "http://www.w3.org/2004/02/skos/core#definition": "definition",
+        "http://www.w3.org/2004/02/skos/core#prefLabel": "preferred_name"
+      }
+    },
+    "filter_mode": "all",
+    "order_mode": "deterministic",
+    "predicate_config": {
+      "name": "base",
+      "config_hash": "eb299c6ac2d9cc54735618672736ad573ad3c71c725543037a2e86b8457558bb",
+      "tiers_sha256": "34f65847c146167e7356959bfc6fe5717a43a4be05c9993fcc01a898aa12776d",
+      "covered_predicates": [
+        "http://purl.obolibrary.org/obo/IAO_0000115",
+        "http://purl.obolibrary.org/obo/hasExactSynonym",
+        "http://purl.obolibrary.org/obo/hasSynonym",
+        "http://www.w3.org/1999/02/22-rdf-syntax-ns#type",
+        "http://www.w3.org/2000/01/rdf-schema#comment",
+        "http://www.w3.org/2000/01/rdf-schema#domain",
+        "http://www.w3.org/2000/01/rdf-schema#label",
+        "http://www.w3.org/2000/01/rdf-schema#range",
+        "http://www.w3.org/2000/01/rdf-schema#subClassOf",
+        "http://www.w3.org/2000/01/rdf-schema#subPropertyOf",
+        "http://www.w3.org/2002/07/owl#equivalentClass",
+        "http://www.w3.org/2002/07/owl#equivalentProperty",
+        "http://www.w3.org/2002/07/owl#inverseOf",
+        "http://www.w3.org/2002/07/owl#sameAs",
+        "http://www.w3.org/2004/02/skos/core#altLabel",
+        "http://www.w3.org/2004/02/skos/core#definition",
+        "http://www.w3.org/2004/02/skos/core#exactMatch",
+        "http://www.w3.org/2004/02/skos/core#prefLabel"
+      ],
+      "predicate_roles": {}
+    },
+    "tier_config_sha256": "34f65847c146167e7356959bfc6fe5717a43a4be05c9993fcc01a898aa12776d",
+    "encoder": {
+      "batch_size": 32,
+      "normalize_embeddings": true,
+      "pad_to_multiple_of": 64,
+      "max_seq_length": 512,
+      "query_prefix": null,
+      "doc_prefix": null,
+      "similarity": "cosine (dot product of unit-normalised embeddings)",
+      "embedding_cache": "per pair, keyed by (role, text)"
+    },
+    "threshold_procedure": "tuned on the validation population only, grid 0.10-0.99 step 0.01, ties to the lower median; one top-ranked prediction per source",
+    "smoke_max_sources": null,
+    "status": "completed",
+    "source": {
+      "n_entities": 24182,
+      "n_sampling_invoked": 5938,
+      "n_empty_text": 0,
+      "n_no_eligible_items": 0,
+      "n_oversized_items": 14,
+      "n_model_truncated": 0,
+      "n_truncated_tokens": 0,
+      "n_selected_items": 90757,
+      "tokens": {
+        "mean": 36.251343974857335,
+        "median": 37.0,
+        "p90": 45.0,
+        "max": 48,
+        "total": 876630
+      },
+      "model_input_tokens_total": 876630,
+      "eligible_items": {
+        "mean": 4.088991812091638,
+        "median": 4.0,
+        "p90": 5.0,
+        "max": 14,
+        "total": 98880
+      },
+      "n_items_before_filter": 98880,
+      "n_filtered_items": 0,
+      "n_covered_items": 98880,
+      "n_tiered_items": 98880,
+      "n_skipped_items": 8123,
+      "vocabulary_item_coverage": 1.0,
+      "predicate_coverage_mean": 1.0,
+      "budget": {
+        "n_over_budget": 0,
+        "utilisation_mean": 0.7552363328095278,
+        "utilisation_sampled_mean": 0.8237025653980016
+      },
+      "role_removal": {}
+    },
+    "candidate": {
+      "n_entities": 50103,
+      "n_sampling_invoked": 40740,
+      "n_empty_text": 0,
+      "n_no_eligible_items": 0,
+      "n_oversized_items": 119,
+      "n_model_truncated": 0,
+      "n_truncated_tokens": 0,
+      "n_selected_items": 221845,
+      "tokens": {
+        "mean": 42.315110871604496,
+        "median": 43.0,
+        "p90": 47.0,
+        "max": 48,
+        "total": 2120114
+      },
+      "model_input_tokens_total": 2120114,
+      "eligible_items": {
+        "mean": 6.11458395704848,
+        "median": 6.0,
+        "p90": 8.0,
+        "max": 25,
+        "total": 306359
+      },
+      "n_items_before_filter": 306359,
+      "n_filtered_items": 0,
+      "n_covered_items": 150044,
+      "n_tiered_items": 150044,
+      "n_skipped_items": 84514,
+      "vocabulary_item_coverage": 0.4897652753795384,
+      "predicate_coverage_mean": 1.0,
+      "budget": {
+        "n_over_budget": 0,
+        "utilisation_mean": 0.8815648098250937,
+        "utilisation_sampled_mean": 0.8805238504336442
+      },
+      "role_removal": {}
+    },
+    "selection_sha256": "8ab07b4458d97ba6c202071ee869ca315f4af6fa6414100e06e19a7939bb8015",
+    "runtime": {
+      "source": {
+        "selection_seconds": 3.0570143340155482,
+        "n_texts_encoded": 0,
+        "encode_seconds": 2.50060111284256e-07
+      },
+      "candidate": {
+        "selection_seconds": 19.506701125064865,
+        "n_texts_encoded": 37983,
+        "encode_seconds": 335.3750134999864
+      }
+    }
+  },
+  "hf_revision": "d4aa6901d3a41ba39fb536a557fa166f842b0e09",
+  "kgsemembed_version": "0.1.0",
+  "python_version": "3.12.14 (main, Aug 12 2026, 13:57:54) [Clang 21.0.0 (clang-2100.1.1.101)]",
+  "run_timestamp": "2026-10-17T08:37:53.458537Z",
+  "versions": {
+    "python": "3.12.14",
+    "torch": "2.11.0",
+    "transformers": "5.5.4",
+    "sentence_transformers": "5.4.0",
+    "numpy": "2.5.3",
+    "scipy": "1.18.1",
+    "rdflib": "7.6.0"
+  },
+  "random_seed": 42,
+  "split_seed": 42,
+  "evaluation_protocol": 2,
+  "git_commit": "92e22f0b80a8848c00fb87b24f6e0c1c5a263198",
+  "git_dirty": false,
+  "serialization": {
+    "population": "test",
+    "selection_order": "deterministic",
+    "render_order": "uri",
+    "logical_conditions": [
+      "D1/B48/C-uri"
+    ],
+    "order_definitions_sha256": "9429a87cfc824b14bc947d822ac2df93585550c8d5bf4564cbdc99d6c9a14769",
+    "item_set_sha256": "dfe7d02b0b3cba6d0c70b289852170e30f6d2292280a7800430b9e58f89303b6",
+    "freeze": {
+      "sha256": "689416298029bf14e1f65eb2a2f85b57f29fe96e75f8f63f8102df9fb0a77749",
+      "chosen": "label",
+      "commit": "2c4f63e14c0bb25a8b8e69bb63b7438fc87d18e3"
+    }
+  }
+}

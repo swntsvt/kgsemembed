@@ -1,0 +1,166 @@
+% Datasets, evaluation protocol and comparability: text for the paper (#138).
+% Citation keys are in artifacts/issue-138/references.bib. Every number is
+% taken from artifacts/issue-138/reference_statistics.md, release_checks.md
+% and artifacts/issue-137/evaluation_protocol.md; the per-benchmark detail
+% behind the last subsection is in benchmark_protocols.md.
+% Requires \usepackage{threeparttable} (already needed by Table 6).
+
+\subsection{Datasets and reference alignments}
+\label{sec:datasets}
+
+We use five datasets (Table~\ref{tab:datasets}), all English. D1 is the
+SNOMED~CT--FMA \emph{Body} equivalence task of Bio-ML~2022~\cite{he2022bioml}.
+Of its 7,256 reference mappings, the unsupervised setting holds out 726 for
+validation and 6,530 for testing; we evaluate on the 6,530 test mappings and
+treat the 726 validation mappings as known pairs (see below). D2 is the OAEI
+Anatomy task, mouse anatomy against the anatomy part of the NCI
+Thesaurus~\cite{bodenreider2005mice,oaei2024anatomy}. D3 comprises the 21
+pairs of the seven OntoFarm conference ontologies used by the OAEI Conference
+track~\cite{zamazal2017ontofarm,oaei2024conference}, with the original
+reference alignment ra1, including both class and property correspondences
+(variant M3). D4 is the memoryalpha--stexpanded test case of the OAEI
+Knowledge Graph track~\cite{hertling2020kgtrack}, whose gold standard is
+partial; we evaluate its schema (class and property) and instance
+correspondences as two separate pairs, D4$_{\mathrm{sc}}$ and
+D4$_{\mathrm{in}}$. D5 is the English DBpedia--Wikidata 15K dataset (V2) of
+the OpenEA benchmark~\cite{sun2020openea}, fold~1, whose entity labels were
+removed by its authors.
+
+All input files are byte-identical to the published releases: D1--D4 to the
+OAEI track repository distributed through MELT~\cite{hertling2019melt}, D3's
+references additionally to the Conference track's ra1 archive (all 21 contain
+the same correspondences and ontology declarations; in one, the MELT copy
+moves a wrapper element that the original misplaces), and D5 to the
+OpenEA v2.0 archive, whose checksum matches the published one. Every
+reference correspondence is an equivalence with confidence 1.0; none was
+filtered, normalised or deduplicated. The D4 schema/instance partition, by the
+source entity's \texttt{rdf:type}, reproduces the track's published sizes
+(13 class, 41 property and 1,725 instance correspondences). Reference
+alignments are not always one-to-one: in D1, 1,477 of the 6,530 mappings
+belong to a source with several targets, and 563 of the 4,605 D1 test
+sources have two or more gold targets.
+
+\begin{table*}[t]
+\scriptsize
+\setlength{\tabcolsep}{4pt}
+\begin{threeparttable}
+\caption{Datasets, reference alignments and evaluation populations. Refs:
+validation/test reference correspondences used here (D1--D4: the reference
+split 20/80 by source entity; D5: OpenEA fold~1). Test src: test sources
+with at least one reference. Targets: entities stage~1 ranks for every
+source. R@20: stage-1 candidate recall@20 on test references, the ceiling of
+every re-ranking result (D3: mean over 21 pairs).}
+\label{tab:datasets}
+\begin{tabular}{llllrrrr}
+\hline
+\textbf{Col} & \textbf{Task} & \textbf{Release} & \textbf{Reference} & \textbf{Refs (val/test)} & \textbf{Test src} & \textbf{Targets} & \textbf{R@20} \\
+\hline
+D1 & SNOMED$\to$FMA, classes & Bio-ML 2022 & unsup.\ test, 6,530 & 1,304 / 5,226 & 4,605 & 64,726 & 0.858 \\
+D2 & MA$\to$NCI, classes & OAEI Anatomy & full, 1,516 & 302 / 1,214 & 1,198 & 3,304 & 0.947 \\
+D3 & 21 pairs, classes+props & OAEI Conference & ra1-M3, 305 & 54 / 251 & 250 & 74--181 & 0.862 \\
+D4$_{\mathrm{sc}}$ & memoryalpha$\to$stexp., schema & OAEI KG v4 & partial, 54 & 10 / 44 & 44 & 1,947 & 0.932 \\
+D4$_{\mathrm{in}}$ & memoryalpha$\to$stexp., instances & OAEI KG v4 & partial, 1,725 & 345 / 1,380 & 1,380 & 39,305 & 0.973 \\
+D5 & DBpedia$\to$Wikidata, instances & OpenEA v2.0 & fold 1, 15,000 & 1,500 / 10,500 & 10,500 & 14,992 & 0.267 \\
+\hline
+\end{tabular}
+\end{threeparttable}
+\end{table*}
+
+\subsection{Evaluation protocol}
+\label{sec:protocol}
+
+Every condition re-ranks the same candidate lists. Stage~1 ranks all target
+entities of the pair's entity type for each source by character 3-gram cosine
+over labels (on D5, over attribute values, since labels are absent) and keeps
+the top 20. A condition verbalises the source and its 20 candidates and
+re-orders them by embedding cosine. As a reference point, we also score the
+unchanged stage-1 order (B0). Because candidates, populations, thresholds and
+metric definitions are identical for every condition and for B0, differences
+between them isolate the effect of re-ranking.
+
+For D1--D4, each reference alignment is split by source entity into 20\%
+validation and 80\% test, with a fixed seed, so that all correspondences of a
+source fall into the same split. D5 uses OpenEA's fold~1 as published (3,000
+train, 1,500 validation, 10,500 test links). No model is trained on any
+reference. Every source is scored in exactly one population: test if it has
+a test reference, otherwise validation if it has a validation reference;
+sources whose only references are known pairs (D5's training links and D1's
+Bio-ML validation mappings) are excluded, and known pairs are removed from
+every candidate list, following Bio-ML's rule that reference mappings outside
+the evaluated set are excluded from system output~\cite{he2022bioml}. Sources
+with no reference are divided between the two populations in proportion to
+their reference sources. Under a complete reference (D1, D2, D3, D5) a
+prediction for such a source is a false positive. Under D4's partial
+reference it is judged only when its target is a gold target, mirroring the
+track's rule that a correspondence is wrong only if it contradicts a gold
+mapping~\cite{hertling2020kgtrack}.
+
+Each source predicts only its top-ranked candidate, kept if its score reaches
+a threshold (the one-mapping-per-source prediction of
+BERTMap~\cite{he2022bertmap}; BERTMap itself is not run). The threshold is
+chosen per pair on the validation population only, as the F1-maximising
+value on a grid from 0.10 to 0.99 in steps of 0.01, and applied unchanged to
+the test population.
+
+\subsection{Metrics}
+\label{sec:metrics}
+
+We report ranking and matching metrics separately. The primary metrics are
+re-ranking MRR and Hits@1; F1 is secondary, because on several columns it
+rests on a threshold tuned on very few validation references (1--5 per D3
+pair, 10 on D4 schema) or, on D1, on how many of 14,255 unmatched test sources
+pass the threshold. \emph{Ranking} metrics need no threshold and are computed within
+the 20 candidates, so they are re-ranking scores, capped by the share of test
+reference sources with a gold target among their candidates (the ceiling row
+of each table). Re-ranking MRR is the mean, over test reference sources, of the
+reciprocal rank of the source's best-ranked gold target; a source whose gold
+targets are all missing from its list, or that has no list, contributes 0.
+Hits@$k$ is the fraction of test reference \emph{sources} with a gold target
+in their top $k$, with the same denominator and the same credit for a source
+with several gold targets. Recall@$k$ is the fraction of test reference
+\emph{correspondences} whose target is in the source's top $k$; since a
+source has one rank-1 candidate, Recall@1 is below Hits@1 wherever a source has
+several gold targets (D1: 563 of 4,605 test sources).
+\emph{Matching} metrics are precision, recall and F1 of the thresholded
+top-1 predictions on the test population; recall is over all test
+references, including those whose source was never ranked (167 on D5).
+Because each source predicts one target, a source with several gold targets
+can recover only one of them. On D1 this rule alone caps recall at 0.881
+(4,605 test sources for 5,226 test references); together with the stage-1
+candidate lists, which miss every gold target of 525 test sources, the cap
+is 0.781. Each column reports one pair, except D3, which reports
+the unweighted mean over its 21 pairs; for F1 we also give the micro average
+(TP, FP and FN pooled over the pairs) and the validation and test reference
+counts behind each value. Statistical tests treat the dataset
+columns as observations, since D3's pairs share ontologies and are not
+independent.
+
+\subsection{Relation to benchmark protocols}
+\label{sec:comparability}
+
+This is a controlled comparison under one re-ranking protocol, not a
+reproduction of any benchmark's evaluation, and our numbers are not directly
+comparable with published system results. The benchmarks evaluate matching
+over the full ontologies or knowledge graphs without reference splits:
+
+\begin{itemize}
+\item \textbf{Bio-ML} computes global matching P/R/F1 on all 6,530 test
+  mappings and local ranking against 100 sampled negatives plus the gold
+  target per mapping~\cite{he2022bioml}.
+\item \textbf{OAEI Anatomy} scores all 1,516 correspondences and reports
+  recall on non-trivial correspondences~\cite{oaei2024anatomy}.
+\item \textbf{OAEI Conference} reports micro-averaged results against the
+  revised reference rar2~\cite{oaei2024conference}.
+\item \textbf{The KG track} matches schema and instances jointly over the
+  whole graphs~\cite{hertling2020kgtrack}.
+\item \textbf{OpenEA} trains supervised models on 20\% of the links and ranks
+  each test source against all test targets, averaged over five
+  folds~\cite{sun2020openea}.
+\end{itemize}
+
+We instead evaluate 80\% of each reference after tuning a threshold on the
+other 20\%, rank within 20 stage-1 candidates (so that the gold target is
+absent for up to 73\% of test references on D5, Table~\ref{tab:datasets}),
+use ra1 rather than rar2 on D3 and macro-average its pairs, and train
+nothing on D5. We therefore compare conditions with each other and with B0
+on identical inputs, and do not rank them against published scores.

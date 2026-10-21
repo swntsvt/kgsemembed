@@ -1,0 +1,43 @@
+\begin{table*}[t]
+\scriptsize
+\setlength{\tabcolsep}{4pt}
+\begin{threeparttable}
+\caption{Mean test Recall@1 per condition per dataset (secondary; fraction of test reference correspondences whose target is ranked first, so a source with $n$ gold targets counts $n$ times and at most one of them can be recovered). D3 values are means over 21 pairs. Ceiling row: the most the metric can reach on the stored top-20 candidate lists. Dashes in dataset columns indicate conditions not run on that dataset. Bold: best result per dataset column. B0: stage-1 character 3-gram cosine order of the same top-20 candidate lists every condition re-ranks, evaluated under the same populations, validation-tuned threshold and metric definitions; it is not an external matching system.}
+\label{tab:ranking_recall_at_1}
+\begin{tabular}{llllrrrrrrr}
+\hline
+\textbf{Cond} & \textbf{Strategy} & \textbf{Model} & \textbf{Grp} & \textbf{D1} & \textbf{D2} & \textbf{D3} & \textbf{D4$_{\mathrm{sc}}$} & \textbf{D4$_{\mathrm{in}}$} & \textbf{D5} & \textbf{Mean\tnote{*}} \\
+\hline
+B0 & n-gram & --- & --- & 0.5398 & 0.7446 & 0.6528 & 0.8636 & 0.8696 & \textbf{0.1544} & 0.7341 \\
+\hline
+C1 & V1 & M1 & A & 0.5752 & 0.7916 & \textbf{0.7010} & 0.8864 & 0.8732 & 0.0099 & 0.7655 \\
+C2 & V2 & M1 & A & 0.5297 & 0.7463 & 0.6805 & 0.8636 & 0.8768 & 0.0114 & 0.7394 \\
+C17 & V1 & M4$^\ddagger$ & A & 0.6093 & 0.7965 & --- & --- & --- & --- & --- \\
+\hline
+C9 & V8 & M2 & B & 0.0455 & 0.1005 & 0.1560 & 0.7727 & 0.2696 & 0.0114 & 0.2689 \\
+C3 & V2+V6 & M2 & B & 0.6142 & 0.7949 & 0.6478 & \textbf{0.9091} & \textbf{0.9261} & 0.0979 & 0.7784 \\
+C10 & V2+V8 & M2 & B & 0.4931 & 0.6260 & 0.5582 & \textbf{0.9091} & 0.8899 & 0.0104 & 0.6953 \\
+C18 & V2+V8 & M1 & B & 0.4948 & 0.6112 & 0.5742 & 0.8864 & 0.8580 & 0.0062 & 0.6849 \\
+\hline
+C20 & V2 & M2 & E & 0.4717 & 0.7109 & 0.6915 & 0.8636 & 0.8848 & 0.0109 & 0.7245 \\
+\hline
+C4 & V3 & M2 & C & \textbf{0.6299} & \textbf{0.8608} & 0.6613 & --- & --- & --- & --- \\
+C5 & V4 & M2 & C & --- & --- & --- & 0.8864 & 0.8949 & 0.1162 & --- \\
+C6 & V2+V7 & M4$^\ddagger$ & C & 0.5978 & 0.7397 & --- & --- & --- & --- & --- \\
+C7 & V6+V3 & M2 & C & --- & --- & 0.6927 & 0.8864 & 0.8906 & --- & --- \\
+C8 & V5 & M2 & C & --- & --- & --- & \textbf{0.9091} & 0.7341 & 0.0271 & --- \\
+C11 & V2+V8 & M4$^\ddagger$ & C & 0.5224 & 0.6952 & --- & --- & --- & --- & --- \\
+C13 & V2+V8 & M5 & C & 0.5543 & 0.7109 & 0.6363 & 0.8864 & 0.8928 & 0.0143 & 0.7361 \\
+C16 & V2+V8+V7 & M4$^\ddagger$ & C & 0.5614 & 0.7208 & --- & --- & --- & --- & --- \\
+\hline
+C14 & V4+V6 & M3 & D & --- & --- & --- & --- & --- & 0.1247 & --- \\
+C15 & V2+V8 & M3 & D & 0.5356 & --- & --- & --- & --- & --- & --- \\
+\hline
+\multicolumn{4}{l}{Recall@20 ceiling} & 0.8578 & 0.9465 & 0.8621 & 0.9318 & 0.9725 & 0.2667 & 0.9141 \\
+\hline
+\end{tabular}
+\begin{tablenotes}
+\item[*] Mean over D1--D4 (D4 schema and instance), shown only for conditions run on all of them; excludes D5 (recall@20 ceiling 26.67\%).
+\end{tablenotes}
+\end{threeparttable}
+\end{table*}

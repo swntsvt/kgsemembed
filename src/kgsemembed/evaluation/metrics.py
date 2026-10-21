@@ -5,6 +5,43 @@ pairs and ranked candidate lists.  The module provides threshold-based
 precision/recall/F1, automatic threshold tuning, Mean Reciprocal Rank,
 Recall@k, and a combined evaluation summary.
 
+Evaluation protocol
+-------------------
+Each source predicts at most one target: its best-ranked candidate, kept when
+its score reaches the decision threshold.  This follows BERTMapLt's prediction
+rule, which emits one mapping per source, and keeps precision from being swamped by
+the lower-ranked candidates of every source.  Ranking metrics are averaged over
+reference sources only: a source without a gold target has no rank to recover,
+while a reference source the candidate stage missed contributes zero.
+
+Metric definitions
+------------------
+The paper's primary metrics are re-ranking MRR and source-level Hits@1; F1
+is secondary.  Every ranking metric is computed within each source's stored
+top-20 stage-1 candidate list, never over all targets.
+
+* **Re-ranking MRR** (``mrr``), unit *source*: mean over test reference
+  sources of ``1 / rank`` of the best-ranked gold target.  A source with
+  several gold targets (1:N) is credited once, with its best one; a source
+  with no gold target among its candidates, or no list, contributes 0.
+* **Hits@k** (``hits_at_k``), unit *source*: fraction of test reference
+  sources with any gold target in the top ``k``.  Same denominator and 1:N
+  rule as MRR, so ``hits_at_1 <= mrr``.
+* **Recall@k** (``recall_at_k``), unit *reference*: fraction of test
+  reference pairs whose target is in its source's top ``k``.  Under 1:N a
+  source with ``n`` gold targets contributes ``n`` references, of which at
+  most one can be at rank 1, so ``recall_at_1 <= hits_at_1`` with equality
+  on 1:1 references.  The two share their numerator at ``k = 1``, which
+  :func:`hits_at_1_from_recall_at_1` uses for results stored before Hits@k.
+* **F1, precision, recall**, unit *reference*: thresholded top-1
+  predictions against all test references; unmatched sources' predictions
+  are false positives.  With one prediction per source, recall cannot exceed
+  ``(sources with a gold target in the list) / references``.
+
+Ceilings: the top-20 lists cap MRR and Hits@k at the fraction of test
+reference sources with a gold target in their list (source-level candidate
+ceiling), and Recall@k at candidate recall@20 (reference-level).
+
 URIs are compared using exact string equality only; no normalisation is
 applied.  The module performs no file I/O and no statistical significance
 testing, and every returned floating-point metric lies within ``[0.0, 1.0]``.
@@ -12,7 +49,7 @@ testing, and every returned floating-point metric lies within ``[0.0, 1.0]``.
 
 from typing import Dict, List, Optional, Tuple
 
-import numpy as np
+EVALUATION_PROTOCOL_VERSION = 2
 
 EntityPair = Tuple[str, str]
 ScoredPair = Tuple[str, str, float]
@@ -91,20 +128,48 @@ def compute_f1_at_threshold(
     }
 
 
+_GRID_START = 0.10
+_GRID_STEP = 0.01
+_GRID_SIZE = 90
+
+
 def _default_thresholds() -> List[float]:
     """
-    Build the default tuning grid from ``0.1`` to ``0.95`` in steps of ``0.05``.
+    Build the default tuning grid from ``0.10`` to ``0.99`` in steps of ``0.01``.
 
-    The values are rounded to two decimals so that ``np.arange`` floating-point
-    noise cannot push the endpoint (``0.95``) outside the intended grid range,
-    which keeps a tuned threshold usable to reproduce its reported metrics.
+    The grid reaches ``0.99`` because top-1 cosine scores of the larger models
+    cluster above ``0.9``; a grid capped at ``0.95`` left the tuned threshold
+    pinned at its upper edge.  Values are rounded to two decimals so a tuned
+    threshold reproduces its reported metrics exactly.
 
     Returns
     -------
     List[float]
-        Candidate thresholds ``[0.1, 0.15, ..., 0.95]``.
+        Candidate thresholds ``[0.10, 0.11, ..., 0.99]``.
     """
-    return [round(float(threshold), 2) for threshold in np.arange(0.1, 1.0, 0.05)]
+    return [round(_GRID_START + _GRID_STEP * step, 2) for step in range(_GRID_SIZE)]
+
+
+def _median_threshold(thresholds: List[float]) -> float:
+    """
+    Return the lower median of thresholds that tie for the best F1.
+
+    Tied thresholds form a plateau when validation references are few, which
+    is the norm on D3.  Taking its middle rather than its lowest end keeps the
+    choice away from the plateau edge, where a test score just beside the
+    validation scores would flip a prediction.
+
+    Parameters
+    ----------
+    thresholds : List[float]
+        Tied thresholds in ascending grid order; must be non-empty.
+
+    Returns
+    -------
+    float
+        The element at position ``(len - 1) // 2``.
+    """
+    return float(thresholds[(len(thresholds) - 1) // 2])
 
 
 def tune_threshold(
@@ -122,8 +187,8 @@ def tune_threshold(
     references : List[EntityPair]
         Ground-truth ``(source, target)`` pairs.
     thresholds : Optional[List[float]]
-        Candidate thresholds to evaluate.  Defaults to the grid
-        ``[0.1, 0.15, ..., 0.95]`` (``np.arange(0.1, 1.0, 0.05)``) when ``None``.
+        Candidate thresholds to evaluate, in ascending order.  Defaults to the
+        grid ``[0.10, 0.11, ..., 0.99]`` when ``None``.
 
     Returns
     -------
@@ -131,28 +196,33 @@ def tune_threshold(
         Mapping with ``best_threshold``, ``best_f1``, ``precision``, and
         ``recall`` for the winning threshold.
 
+    Raises
+    ------
+    ValueError
+        If ``thresholds`` is an empty sequence.
+
     Notes
     -----
     Threshold tuning is appropriate only for validation/development datasets.
     A tuned threshold must never be derived from the test dataset; held-out
     test evaluation must always use a fixed threshold selected independently.
-    When several thresholds achieve the same maximum F1, the first threshold
-    encountered is chosen to keep the result deterministic.
+    When several thresholds achieve the same maximum F1, the lower median of
+    the tied thresholds, in grid order, is chosen to keep the result
+    deterministic and away from the edge of the plateau.
     """
-    if thresholds is None:
-        thresholds = _default_thresholds()
-    best = {"best_threshold": 0.0, "best_f1": -1.0, "precision": 0.0, "recall": 0.0}
-    for threshold in thresholds:
-        result = compute_f1_at_threshold(scored_pairs, references, threshold)
-        if result["f1"] > best["best_f1"]:
-            best = {
-                "best_threshold": float(threshold),
-                "best_f1": result["f1"],
-                "precision": result["precision"],
-                "recall": result["recall"],
-            }
-    best["best_f1"] = max(best["best_f1"], 0.0)
-    return best
+    grid = _default_thresholds() if thresholds is None else list(thresholds)
+    if not grid:
+        raise ValueError("Threshold grid must contain at least one value.")
+    results = [compute_f1_at_threshold(scored_pairs, references, t) for t in grid]
+    best_f1 = max(result["f1"] for result in results)
+    tied = [t for t, result in zip(grid, results) if result["f1"] == best_f1]
+    best = results[grid.index(_median_threshold(tied))]
+    return {
+        "best_threshold": best["threshold"],
+        "best_f1": best["f1"],
+        "precision": best["precision"],
+        "recall": best["recall"],
+    }
 
 
 def _reference_map(references: List[EntityPair]) -> Dict[str, List[str]]:
@@ -232,17 +302,21 @@ def compute_mrr(
     Returns
     -------
     float
-        Arithmetic mean of the reciprocal ranks across all evaluated source
-        entities, in ``[0.0, 1.0]``.  Each source contributes the reciprocal
-        rank of its best-ranked gold target; sources without a reference or
-        with no gold target in the ranked list contribute zero.
+        Arithmetic mean of the reciprocal ranks across every source carrying a
+        reference, in ``[0.0, 1.0]``.  Each reference source contributes the
+        reciprocal rank of its best-ranked gold target, or zero when it has no
+        ranked list or none of its gold targets was ranked.  Ranked sources
+        without a reference are not part of the mean, and ``0.0`` is returned
+        when ``references`` is empty.
     """
     reference_map = _reference_map(references)
-    reciprocal_ranks = [
-        _reciprocal_rank(ranked_list, reference_map) for ranked_list in ranked_lists
-    ]
-    if not reciprocal_ranks:
+    if not reference_map:
         return 0.0
+    ranked_by_source = {ranked[0][0]: ranked for ranked in ranked_lists if ranked}
+    reciprocal_ranks = [
+        _reciprocal_rank(ranked_by_source.get(source, []), reference_map)
+        for source in reference_map
+    ]
     return sum(reciprocal_ranks) / len(reciprocal_ranks)
 
 
@@ -304,21 +378,120 @@ def compute_recall_at_k(
     return recovered / len(references)
 
 
-def _flatten_ranked_lists(ranked_lists: List[RankedList]) -> List[ScoredPair]:
+def count_reference_sources(references: List[EntityPair]) -> int:
     """
-    Flatten per-source ranked lists into a single list of scored pairs.
+    Count the distinct source entities of a reference alignment.
+
+    Parameters
+    ----------
+    references : List[EntityPair]
+        Ground-truth ``(source, target)`` pairs.
+
+    Returns
+    -------
+    int
+        Number of sources carrying at least one gold target; the denominator
+        of MRR and Hits@k.
+    """
+    return len(_reference_map(references))
+
+
+def compute_hits_at_k(
+    ranked_lists: List[RankedList],
+    references: List[EntityPair],
+    k: int,
+) -> float:
+    """
+    Compute the fraction of reference sources with a gold target in the top-k.
+
+    Unlike :func:`compute_recall_at_k`, the unit is the source: a source with
+    several gold targets counts once, as a hit when any of them is ranked
+    within ``k``.
 
     Parameters
     ----------
     ranked_lists : List[RankedList]
         One ranked candidate list per source entity.
+    references : List[EntityPair]
+        Ground-truth ``(source, target)`` pairs.
+    k : int
+        Number of leading candidates considered for each source.
+
+    Returns
+    -------
+    float
+        ``hits / reference sources`` in ``[0.0, 1.0]``, or ``0.0`` when
+        ``references`` is empty.  A reference source without a ranked list is
+        a miss.
+    """
+    reference_map = _reference_map(references)
+    if not reference_map:
+        return 0.0
+    ranked_by_source = _ranked_targets_by_source(ranked_lists)
+    hits = sum(
+        any(target in targets for target in ranked_by_source.get(source, [])[:k])
+        for source, targets in reference_map.items()
+    )
+    return hits / len(reference_map)
+
+
+def hits_at_1_from_recall_at_1(
+    recall_at_1: float, n_references: int, n_reference_sources: int
+) -> float:
+    """
+    Convert reference-level Recall@1 into source-level Hits@1 exactly.
+
+    Each source has one rank-1 candidate, so at most one of its references is
+    recovered at ``k = 1``: the Recall@1 numerator is the number of reference
+    sources whose top candidate is gold, which is the Hits@1 numerator.  Only
+    the denominators differ.  The identity assumes no duplicate reference
+    pairs (none in D1-D5) and does not hold for ``k > 1``.
+
+    Parameters
+    ----------
+    recall_at_1 : float
+        Reference-level Recall@1 over ``n_references`` references.
+    n_references : int
+        Number of test reference pairs (the Recall@1 denominator).
+    n_reference_sources : int
+        Number of distinct test reference sources (the Hits@1 denominator).
+
+    Returns
+    -------
+    float
+        Source-level Hits@1.
+
+    Raises
+    ------
+    ValueError
+        If the counts are inconsistent or Recall@1 is not a whole number of
+        references.
+    """
+    if not 0 < n_reference_sources <= n_references:
+        raise ValueError(
+            f"Need 0 < reference sources ({n_reference_sources}) <= references ({n_references})."
+        )
+    hits = recall_at_1 * n_references
+    if abs(hits - round(hits)) > 1e-6 or round(hits) > n_reference_sources:
+        raise ValueError(f"Recall@1 {recall_at_1!r} is not a valid count of {n_references}.")
+    return round(hits) / n_reference_sources
+
+
+def top_ranked_pairs(ranked_lists: List[RankedList]) -> List[ScoredPair]:
+    """
+    Keep each source's best-ranked candidate as its only prediction.
+
+    Parameters
+    ----------
+    ranked_lists : List[RankedList]
+        One ranked candidate list per source entity, best candidate first.
 
     Returns
     -------
     List[ScoredPair]
-        All scored pairs concatenated across the ranked lists.
+        The first scored pair of every non-empty ranked list.
     """
-    return [pair for ranked_list in ranked_lists for pair in ranked_list]
+    return [ranked_list[0] for ranked_list in ranked_lists if ranked_list]
 
 
 def compute_all_metrics(
@@ -331,8 +504,8 @@ def compute_all_metrics(
 
     When ``threshold`` is ``None`` the threshold is tuned on the supplied data;
     otherwise the supplied threshold is used directly.  Threshold-based metrics
-    operate on the flattened scored pairs, while the ranking metrics operate on
-    the per-source ranked lists.
+    operate on each source's top-ranked candidate (see the module notes), while
+    the ranking metrics operate on the full per-source ranked lists.
 
     Parameters
     ----------
@@ -347,9 +520,12 @@ def compute_all_metrics(
     -------
     Dict[str, float]
         Mapping with ``f1``, ``precision``, ``recall``, ``threshold``, ``mrr``,
-        ``recall_at_1``, ``recall_at_5``, and ``recall_at_10``.
+        the source-level ``hits_at_1``, ``hits_at_5`` and ``hits_at_10``, the
+        reference-level ``recall_at_1``, ``recall_at_5`` and ``recall_at_10``,
+        and the integer counts ``tp``, ``fp``, and ``fn`` behind the threshold
+        metrics.
     """
-    scored_pairs = _flatten_ranked_lists(ranked_lists)
+    scored_pairs = top_ranked_pairs(ranked_lists)
     if threshold is None:
         threshold = tune_threshold(scored_pairs, references)["best_threshold"]
     threshold_metrics = compute_f1_at_threshold(scored_pairs, references, threshold)
@@ -359,7 +535,13 @@ def compute_all_metrics(
         "recall": threshold_metrics["recall"],
         "threshold": threshold_metrics["threshold"],
         "mrr": compute_mrr(ranked_lists, references),
+        "hits_at_1": compute_hits_at_k(ranked_lists, references, 1),
+        "hits_at_5": compute_hits_at_k(ranked_lists, references, 5),
+        "hits_at_10": compute_hits_at_k(ranked_lists, references, 10),
         "recall_at_1": compute_recall_at_k(ranked_lists, references, 1),
         "recall_at_5": compute_recall_at_k(ranked_lists, references, 5),
         "recall_at_10": compute_recall_at_k(ranked_lists, references, 10),
+        "tp": threshold_metrics["tp"],
+        "fp": threshold_metrics["fp"],
+        "fn": threshold_metrics["fn"],
     }

@@ -7,13 +7,18 @@ from kgsemembed.evaluation.aggregator import (
     load_all_results,
 )
 from kgsemembed.evaluation.metrics import (
+    EVALUATION_PROTOCOL_VERSION,
     EntityPair,
     RankedList,
     ScoredPair,
     compute_all_metrics,
     compute_f1_at_threshold,
+    compute_hits_at_k,
     compute_mrr,
     compute_recall_at_k,
+    count_reference_sources,
+    hits_at_1_from_recall_at_1,
+    top_ranked_pairs,
     tune_threshold,
 )
 from kgsemembed.evaluation.stats import (
@@ -25,6 +30,7 @@ from kgsemembed.evaluation.stats import (
 )
 
 __all__ = [
+    "EVALUATION_PROTOCOL_VERSION",
     "EntityPair",
     "ScoredPair",
     "RankedList",
@@ -32,7 +38,11 @@ __all__ = [
     "tune_threshold",
     "compute_mrr",
     "compute_recall_at_k",
+    "compute_hits_at_k",
+    "count_reference_sources",
+    "hits_at_1_from_recall_at_1",
     "compute_all_metrics",
+    "top_ranked_pairs",
     "load_results_for_condition",
     "collect_f1_scores",
     "wilcoxon_comparison",

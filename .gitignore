@@ -225,3 +225,7 @@ data/**
 
 # macOS
 .DS_Store
+
+# Generated paper figures — rebuild with scripts/generate_figure*.py
+figures/
+!artifacts/issue-134/figures/

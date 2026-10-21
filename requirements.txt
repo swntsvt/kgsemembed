@@ -3,7 +3,7 @@ transformers
 torch
 pandas
 numpy
-scipy
+scipy>=1.18
 rdflib==7.6.0
 hydra-core
 omegaconf

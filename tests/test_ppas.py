@@ -1,12 +1,18 @@
 """Tests for Predicate-Priority Adaptive Sampling (PPAS)."""
 
+import importlib
+import inspect
 from unittest.mock import patch
+
+import pytest
 
 from rdflib import Graph, Literal, URIRef
 
 from kgsemembed.verbalisation.base import VerbaliserBase
 from kgsemembed.verbalisation.v3 import TemplateNLVerbaliser
 from kgsemembed.verbalisation.ppas import (
+    PPAS_SAMPLING_COMPONENTS,
+    strategy_uses_ppas,
     CLASS_TIER_LIST,
     INSTANCE_TIER_LIST,
     PREDICATE_TIER_LIST,
@@ -482,3 +488,32 @@ def test_verbaliser_passes_sorted_triples_to_ppas() -> None:
 
     keys = [(str(s), str(p), str(o)) for s, p, o in captured[0]]
     assert keys == sorted(keys)
+
+
+# ---------------------------------------------------------------------------
+# Strategy-level PPAS reachability
+# ---------------------------------------------------------------------------
+@pytest.mark.parametrize("component", ["V1", "V2", "V3", "V4", "V5", "V6", "V7", "V8"])
+def test_sampling_components_are_exactly_the_tier_priority_selectors(component):
+    module = importlib.import_module(f"kgsemembed.verbalisation.{component.lower()}")
+    source = inspect.getsource(module)
+    budgeted = "PPAS_BUDGETS" in source
+    tier_selection = "ppas_sample(" in source or "_TIER_LIST" in source
+    assert (budgeted and tier_selection) is (component in PPAS_SAMPLING_COMPONENTS)
+
+
+@pytest.mark.parametrize(
+    "strategy,model_key,expected",
+    [
+        ("V2+V6", "M2", True),
+        ("V4", "M1", True),
+        ("V6+V3", "M4", True),
+        ("V2+V8", "M2", False),
+        ("V1", "M1", False),
+        ("V5", "M2", False),
+        ("V4+V6", "M3", False),
+        ("V2+V6", "M2_uncapped", False),
+    ],
+)
+def test_strategy_uses_ppas(strategy, model_key, expected):
+    assert strategy_uses_ppas(strategy, model_key) is expected

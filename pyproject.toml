@@ -15,7 +15,7 @@ dependencies = [
   "torch",
   "pandas",
   "numpy",
-  "scipy",
+  "scipy>=1.18",
   "rdflib>=7.6,<8",
   "hydra-core",
   "omegaconf",

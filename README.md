@@ -82,6 +82,85 @@ Main candidate config keys:
 - `candidates.persist`
 - `candidates.output_file`
 
+## Stage-1 n-gram baseline and evaluation protocol (Issue #137)
+
+The stage-1 character n-gram order of the stored top-20 candidate lists (B0)
+is scored under the same populations, validation-tuned threshold and metrics
+as every Phase 2 condition:
+
+```bash
+python -m kgsemembed.pipeline.ngram_baseline --datasets D1 D2 D3 D4 D5 \
+    --data_dir data/ --results_dir data/results_ngram_baseline/
+```
+
+D1 (Bio-ML 2022 `snomed.body-fma.body`, unsupervised setting) needs four
+files in `data/d1_snomed_fma/`: `source.rdf`, `target.rdf`, `reference.rdf`
+(the 6,530 test mappings) and `input.rdf` (the 726 validation mappings,
+loaded as known pairs and never scored). A missing file is reported by:
+
+```bash
+python scripts/download_datasets.py --data_dir data/ --check
+```
+
+The protocol, provenance and B0 comparison are in `artifacts/issue-137/`.
+
+## Datasets, provenance and evaluation protocol (Issue #138)
+
+| Column | Task | Release (input files byte-identical) | Reference used |
+|---|---|---|---|
+| D1 | SNOMED CT → FMA body, classes | Bio-ML 2022 `snomed.body-fma.body` | unsupervised test mappings (6,530 of 7,256); the 726 validation mappings are known pairs |
+| D2 | Mouse anatomy → NCI anatomy, classes | OAEI Anatomy | full reference (1,516) |
+| D3 | 21 Conference pairs, classes and properties | OAEI Conference | ra1-M3 (305), not the track's main rar2 |
+| D4 | memoryalpha → stexpanded, schema and instances | OAEI Knowledge Graph track v4 | partial gold standard (54 schema + 1,725 instance) |
+| D5 | DBpedia → Wikidata 15K (V2), instances | OpenEA v2.0 | fold 1: 3,000 train / 1,500 valid / 10,500 test |
+
+Every result is a **controlled re-ranking of 20 stage-1 candidates per
+source**. The reference is split 20/80 by source (D5: OpenEA fold 1). The
+threshold is tuned on validation, and test metrics are computed within the
+candidate lists. This is not any benchmark's official protocol, so the
+numbers must not be compared head-to-head with published system scores.
+
+Details are in `artifacts/issue-138/`:
+- `benchmark_protocols.md`: per-dataset protocol versus the official one,
+  metric definitions and ceilings;
+- `reference_statistics.md`, `release_checks.md`, `results_inventory.md`:
+  provenance and reference statistics;
+- `paper_methods_section.tex` and `references.bib`: the paper's text.
+
+```bash
+python scripts/reference_statistics.py --data_dir data/
+python scripts/results_inventory.py
+python scripts/release_checks.py --data_dir data/ \
+    --ra1_zip reference-alignment.zip --openea_zip OpenEA_dataset_v2.0.zip
+```
+
+## Primary metrics: re-ranking MRR and Hits@1 (Issue #139)
+
+The paper's primary metrics are **re-ranking MRR** and **source-level
+Hits@1**. F1 is secondary: on D3 its threshold is tuned on 1–5 validation
+references per pair, and on D4 schema on 10.
+
+- MRR and Hits@k count each test reference source once. A source with several
+  gold targets is credited with its best one. Recall@k counts each reference
+  pair, so under 1:N Recall@1 ≤ Hits@1. The two differ only on D1, D2 and
+  one D3 pair.
+- All ranking metrics are computed within the stored top-20 candidates. Every
+  table therefore prints its metric's ceiling: the share of test reference
+  sources with a gold target among their candidates (D1 0.886, D5 0.267).
+- The F1 table also reports micro-averaged D3 F1 and the validation and test
+  reference counts behind every value.
+
+```bash
+python scripts/metric_ceilings.py --data_dir data/ --output_dir artifacts/issue-139/
+python scripts/generate_results_table.py --results_dir data/results/ \
+    --baseline_dir data/results_ngram_baseline/ --metric mrr   # or hits_at_1, f1, recall_at_1
+python scripts/generate_figure1_d3_scatter.py --metric mrr
+python scripts/generate_figure2_model_comparison.py --metric mrr
+```
+
+Definitions are in `src/kgsemembed/evaluation/metrics.py`; counts, ceilings
+and generated tables are in `artifacts/issue-139/`.
+
 ## Usage
 
 Base run:

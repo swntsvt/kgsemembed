@@ -8,6 +8,7 @@ from kgsemembed.verbalisation import (
     EXCLUDED_PREDICATES,
     RelationalSignatureVerbaliser,
 )
+from kgsemembed.verbalisation.v8 import exclusion_family, v8_exclusions_digest
 
 # ---------------------------------------------------------------------------
 # Helpers / fixtures
@@ -135,16 +136,94 @@ def test_excluded_predicates_omitted_from_both_directions() -> None:
     assert _incoming(out) == "Incoming relationships: contains."
 
 
-def test_excluded_predicates_constant_unchanged() -> None:
-    assert EXCLUDED_PREDICATES == [
-        "http://www.w3.org/1999/02/22-rdf-syntax-ns#type",
-        "http://www.w3.org/2000/01/rdf-schema#label",
-        "http://www.w3.org/2000/01/rdf-schema#comment",
-        "http://www.w3.org/2004/02/skos/core#prefLabel",
-        "http://www.w3.org/2004/02/skos/core#altLabel",
-        "http://www.w3.org/2004/02/skos/core#definition",
-        "http://purl.obolibrary.org/obo/IAO_0000115",
-    ]
+_FMA = "http://purl.org/sig/ont/fma/"
+_OBO_IN_OWL = "http://www.geneontology.org/formats/oboInOwl#"
+_OWL = "http://www.w3.org/2002/07/owl#"
+
+_ANNOTATION_EXAMPLES = [
+    (f"{_FMA}synonym", "roles_v1_annotation"),
+    (f"{_FMA}preferred_name", "roles_v1_annotation"),
+    (f"{_FMA}FMAID", "roles_v1_annotation"),
+    (f"{_FMA}definition", "roles_v1_annotation"),
+    (f"{_FMA}non-English_equivalent", "roles_v1_annotation"),
+    (f"{_FMA}homonym_of", "roles_v1_annotation"),
+    (f"{_OBO_IN_OWL}hasRelatedSynonym", "roles_v1_annotation"),
+    (f"{_OBO_IN_OWL}hasDefinition", "roles_v1_annotation"),
+    (f"{_OBO_IN_OWL}hasDbXref", "roles_v1_annotation"),
+    ("http://www.w3.org/2000/01/rdf-schema#seeAlso", "owl_annotation"),
+    (f"{_OWL}annotatedSource", "owl_axiom_annotation"),
+    ("http://www.w3.org/2004/02/skos/core#hiddenLabel", "skos_documentation"),
+    ("http://purl.org/dc/elements/1.1/description", "dublin_core"),
+    ("http://schema.org/description", "schema_org"),
+    ("http://xmlns.com/foaf/0.1/givenName", "foaf"),
+    ("http://dbkwik.webdatacommons.org/ontology/abstract", "dbkwik_page"),
+    ("http://dbkwik.webdatacommons.org/ontology/wikiPageWikiLinkText", "dbkwik_page"),
+]
+
+_RELATION_EXAMPLES = [
+    "http://www.w3.org/2000/01/rdf-schema#subClassOf",
+    "http://www.w3.org/2000/01/rdf-schema#domain",
+    f"{_OWL}disjointWith",
+    f"{_OWL}someValuesFrom",
+    "http://www.w3.org/2004/02/skos/core#broader",
+    "http://purl.org/dc/terms/subject",
+    "http://dbkwik.webdatacommons.org/ontology/wikiPageWikiLink",
+    "http://dbkwik.webdatacommons.org/memory-alpha.wikia.com/property/species",
+    "http://dbpedia.org/ontology/birthDate",
+    "http://www.wikidata.org/entity/P577",
+    f"{_NS}partOf",
+]
+
+
+@pytest.mark.parametrize(("predicate", "family"), _ANNOTATION_EXAMPLES)
+def test_annotation_predicate_of_each_family_excluded(predicate: str, family: str) -> None:
+    g = Graph()
+    entity = _u("Heart")
+    g.add((entity, URIRef(predicate), Literal("text")))
+    g.add((_u("Axiom"), URIRef(predicate), entity))
+    g.add((entity, RDFS.subClassOf, _u("Organ")))
+    out = _v().verbalise(g, entity, "class")
+    assert exclusion_family(predicate) == family
+    assert _outgoing(out) == "Outgoing relationships: sub class of."
+    assert _incoming(out) == "Incoming relationships: none."
+
+
+@pytest.mark.parametrize("predicate", _RELATION_EXAMPLES)
+def test_relation_predicates_kept(predicate: str) -> None:
+    g = Graph()
+    entity = _u("Heart")
+    g.add((entity, URIRef(predicate), _u("Other")))
+    g.add((_u("Other"), URIRef(predicate), entity))
+    out = _v().verbalise(g, entity, "class")
+    assert exclusion_family(predicate) is None
+    assert _outgoing(out) != "Outgoing relationships: none."
+    assert _outgoing(out).split(": ", 1)[1] == _incoming(out).split(": ", 1)[1]
+
+
+def test_d2_annotation_properties_not_listed_as_relationships() -> None:
+    g = Graph()
+    entity = URIRef("http://human.owl#NCI_C12611")
+    g.add((entity, URIRef(f"{_OBO_IN_OWL}hasDefinition"), BNode()))
+    g.add((entity, URIRef(f"{_OBO_IN_OWL}hasRelatedSynonym"), BNode()))
+    g.add((entity, RDFS.subClassOf, URIRef("http://human.owl#NCI_C12219")))
+    out = _v().verbalise(g, entity, "class")
+    assert _outgoing(out) == "Outgoing relationships: sub class of."
+
+
+def test_every_annotation_role_of_roles_v1_excluded() -> None:
+    from kgsemembed.verbalisation.predicate_roles import CORE, DISJOINTNESS, get_role_map
+
+    roles = get_role_map("roles_v1").roles
+    for predicate, role in roles.items():
+        kept = role in (CORE, DISJOINTNESS) and predicate != str(RDF.type) and predicate != str(RDFS.label)
+        assert (predicate not in EXCLUDED_PREDICATES) == kept, predicate
+
+
+def test_v8_exclusions_digest_is_pinned() -> None:
+    """A change to the exclusion families must be deliberate."""
+    assert v8_exclusions_digest() == (
+        "062039673a927c8a02b53bb5e926c5b833def7bf5b23c33331fc8e2dfdac52ac"
+    )
 
 
 # ---------------------------------------------------------------------------

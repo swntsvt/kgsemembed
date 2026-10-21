@@ -14,7 +14,7 @@ from __future__ import annotations
 import logging
 import random
 import xml.etree.ElementTree as ET
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Callable
 from urllib.parse import unquote, urlparse
@@ -34,6 +34,7 @@ _RDF_NS = "http://www.w3.org/1999/02/22-rdf-syntax-ns#"
 _EQUIVALENCE_RELATION = "="
 
 _SPLIT_SEED = 42
+_D1_KNOWN_MAPPINGS = "input.rdf"
 
 _CLASS_TYPES = (OWL.Class, RDFS.Class, SKOS.Concept)
 _PREDICATE_TYPES = (OWL.ObjectProperty, OWL.DatatypeProperty, RDF.Property)
@@ -78,7 +79,10 @@ class AlignmentPair:
     test_refs : list[EntityPair]
         Test reference pairs, used only for final metric computation.
     train_refs : list[EntityPair]
-        Training reference pairs; empty for tracks with no train slice.
+        Known correct pairs outside the validation and test slices: D5's
+        OpenEA training links and D1's Bio-ML validation mappings.  Never
+        trained on; excluded from scoring (see
+        :mod:`kgsemembed.evaluation.population`).  Empty for other tracks.
     source_id : str
         Short identifier of the source ontology, e.g. ``"mouse"``.
     target_id : str
@@ -89,6 +93,12 @@ class AlignmentPair:
         individual entities are always resolved to one of the first three.
     kgstore : object | None
         Optional Phase 3 graph store handle; unused in Phase 2.
+    reference_complete : bool
+        ``True`` when the reference alignment lists every correct match, so a
+        prediction for an unreferenced source is a false positive.  ``False``
+        for the OAEI Knowledge Graph track (D4), whose gold standard is
+        partial: a prediction is judged only when it conflicts with a gold
+        mapping.
     """
 
     dataset_id: str
@@ -103,6 +113,7 @@ class AlignmentPair:
     target_id: str = ""
     entity_type: str = "class"
     kgstore: object | None = None
+    reference_complete: bool = True
 
 
 def _detect_rdflib_format(path: Path) -> str:
@@ -471,6 +482,25 @@ def _split_80_10_10(
     return ordered[:n_train], ordered[n_train : n_train + n_val], ordered[n_train + n_val :]
 
 
+def _shuffled_sources(refs: list[EntityPair]) -> list[str]:
+    """
+    Return the distinct source URIs of *refs* in a seeded shuffled order.
+
+    Parameters
+    ----------
+    refs : list[EntityPair]
+        Reference pairs in any order.
+
+    Returns
+    -------
+    list[str]
+        Each source URI once, sorted then shuffled under the split seed.
+    """
+    sources = sorted({source for source, _ in refs})
+    random.Random(_SPLIT_SEED).shuffle(sources)
+    return sources
+
+
 def _split_val_test_20_80(
     refs: list[EntityPair],
 ) -> tuple[list[EntityPair], list[EntityPair], list[EntityPair]]:
@@ -478,7 +508,9 @@ def _split_val_test_20_80(
     Split references into an empty train slice, 20% validation, 80% test.
 
     Used for D1, D2, D3, and D4: threshold tuning needs only a small validation
-    slice, and no component of Phase 2 trains on reference pairs.
+    slice, and no component of Phase 2 trains on reference pairs.  The split is
+    grouped by source entity, so every reference of a 1:N source lands in the
+    same slice and no source is seen both during tuning and at test time.
 
     Parameters
     ----------
@@ -488,11 +520,15 @@ def _split_val_test_20_80(
     Returns
     -------
     tuple[list[EntityPair], list[EntityPair], list[EntityPair]]
-        Empty train slice, validation, and test slices.
+        Empty train slice, validation, and test slices, each sorted.
     """
-    ordered = _shuffled_by_source(refs)
-    n_val = max(1, int(len(ordered) * 0.2)) if ordered else 0
-    return [], ordered[:n_val], ordered[n_val:]
+    sources = _shuffled_sources(refs)
+    n_val = max(1, int(len(sources) * 0.2)) if sources else 0
+    val_sources = set(sources[:n_val])
+    ordered = _sorted_by_source(refs)
+    val = [pair for pair in ordered if pair[0] in val_sources]
+    test = [pair for pair in ordered if pair[0] not in val_sources]
+    return [], val, test
 
 
 # ---------------------------------------------------------------------------
@@ -657,12 +693,63 @@ def load_pair_from_dir(
 
 
 def _load_d1(data_dir: Path) -> list[AlignmentPair]:
+    """
+    Load D1 with Bio-ML's validation mappings as known pairs.
+
+    ``reference.rdf`` holds only the 6,530 test mappings of Bio-ML's
+    unsupervised setting; its 726 validation mappings ship separately as
+    ``input.rdf``.  They are loaded into ``train_refs`` so that predicting one
+    is neither a true nor a false positive: Bio-ML excludes reference mappings
+    outside the evaluated set from the system output (He et al., 2022,
+    arXiv:2205.03447, section 3.3).  ``reference.rdf`` alone is split 20/80,
+    exactly as before.
+
+    Parameters
+    ----------
+    data_dir : Path
+        Dataset root directory.
+
+    Returns
+    -------
+    list[AlignmentPair]
+        The single D1 pair.
+    """
     pair_dir = data_dir / "d1_snomed_fma"
-    return [
-        _load_rdf_pair(
-            pair_dir, "d1_snomed_fma", ("snomed", "fma"), "D1", "class", _split_val_test_20_80
-        )
-    ]
+    pair = _load_rdf_pair(
+        pair_dir, "d1_snomed_fma", ("snomed", "fma"), "D1", "class", _split_val_test_20_80
+    )
+    return [replace(pair, train_refs=_known_pairs(pair, pair_dir / _D1_KNOWN_MAPPINGS))]
+
+
+def _known_pairs(pair: AlignmentPair, path: Path) -> list[EntityPair]:
+    """
+    Read known pairs, refusing any that is also a validation or test reference.
+
+    Known pairs are removed from every ranked list before scoring, so one that
+    is also a reference would silently delete a gold target.
+
+    Parameters
+    ----------
+    pair : AlignmentPair
+        Pair whose validation and test references must stay scorable.
+    path : Path
+        EDOAL file of known pairs.
+
+    Returns
+    -------
+    list[EntityPair]
+        The known pairs.
+
+    Raises
+    ------
+    DataError
+        If a known pair is also a validation or test reference.
+    """
+    known = _parse_alignment_refs(path)
+    shared = set(known) & set(pair.val_refs + pair.test_refs)
+    if shared:
+        raise DataError(f"{len(shared)} known pairs in {path} are also references, e.g. {min(shared)}.")
+    return known
 
 
 def _load_d2(data_dir: Path) -> list[AlignmentPair]:
@@ -718,7 +805,7 @@ def _load_d4(data_dir: Path) -> list[AlignmentPair]:
 
     graphs = (source_graph, target_graph)
     ids = ("memoryalpha", "stexpanded")
-    return [
+    pairs = [
         _build_pair(
             "D4_schema", "memoryalpha-stexpanded-schema", graphs, ids, "mixed",
             _split_val_test_20_80(schema_refs),
@@ -728,6 +815,7 @@ def _load_d4(data_dir: Path) -> list[AlignmentPair]:
             _split_val_test_20_80(instance_refs),
         ),
     ]
+    return [replace(pair, reference_complete=False) for pair in pairs]
 
 
 def _load_d5(data_dir: Path) -> list[AlignmentPair]:
@@ -740,7 +828,7 @@ def _load_d5(data_dir: Path) -> list[AlignmentPair]:
     )
     fold_dir = dataset_dir / "721_5fold" / "1"
     splits = (
-        [],
+        load_tsv_alignment(fold_dir / "train_links"),
         load_tsv_alignment(fold_dir / "valid_links"),
         load_tsv_alignment(fold_dir / "test_links"),
     )

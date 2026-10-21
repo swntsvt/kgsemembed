@@ -1,6 +1,8 @@
 """Tests for the Phase 2 experiment condition registry."""
 
 import pytest
+from rdflib import Graph, Literal, URIRef
+from rdflib.namespace import OWL, RDF, RDFS
 
 from kgsemembed.embeddings.models import MODEL_REGISTRY
 from kgsemembed.pipeline import (
@@ -10,8 +12,18 @@ from kgsemembed.pipeline import (
     get_conditions_for_dataset,
     get_conditions_for_group,
 )
-from kgsemembed.pipeline.conditions import _validate_registry
-from kgsemembed.verbalisation.registry import VALID_STRATEGY_NAMES
+from kgsemembed.pipeline.conditions import (
+    RETIRED_CONDITION_IDS,
+    SANITY_CHECK_GROUP,
+    _validate_registry,
+)
+from kgsemembed.verbalisation import (
+    AnnotationVerbaliser,
+    CombinedVerbaliser,
+    RelationalSignatureVerbaliser,
+    VerbaliserBase,
+)
+from kgsemembed.verbalisation.registry import VALID_STRATEGY_NAMES, build_verbaliser
 
 _NON_PPAS_IDS = {"C14", "C15", "C19"}
 
@@ -24,7 +36,6 @@ _CANONICAL_MATRIX = [
     ("C3", "V2+V6", "M2", _ALL, True, "B"),
     ("C9", "V8", "M2", _ALL, True, "B"),
     ("C10", "V2+V8", "M2", _ALL, True, "B"),
-    ("C12", "V8", "M2", ["D3", "D4"], True, "B"),
     ("C18", "V2+V8", "M1", _ALL, True, "B"),
     ("C4", "V3", "M2", ["D1", "D2", "D3"], True, "C"),
     ("C5", "V4", "M2", ["D4", "D5"], True, "C"),
@@ -36,7 +47,8 @@ _CANONICAL_MATRIX = [
     ("C16", "V2+V8+V7", "M4", ["D1", "D2"], True, "C"),
     ("C14", "V4+V6", "M3", ["D5"], False, "D"),
     ("C15", "V2+V8", "M3", ["D1"], False, "D"),
-    ("C19", "V2+V8", "M2_uncapped", ["D1"], False, "D"),
+    ("C19", "V2+V8", "M2_uncapped", ["D1"], False, "S"),
+    ("C20", "V2", "M2", _ALL, True, "E"),
 ]
 
 
@@ -152,6 +164,69 @@ def test_c19_verbalises_identically_to_c10():
     )
 
 
+def _v8_ablation_graph() -> tuple[Graph, dict[str, URIRef]]:
+    ex = "http://example.org/"
+    graph = Graph()
+    heart, organ, part_of, aorta = (
+        URIRef(f"{ex}{name}") for name in ("Heart", "Organ", "partOf", "aorta1")
+    )
+    graph.add((heart, RDF.type, OWL.Class))
+    graph.add((heart, RDFS.label, Literal("Heart", lang="en")))
+    graph.add((heart, RDFS.comment, Literal("A muscular organ.")))
+    graph.add((heart, RDFS.subClassOf, organ))
+    graph.add((part_of, RDF.type, OWL.ObjectProperty))
+    graph.add((part_of, RDFS.label, Literal("part of")))
+    graph.add((part_of, RDFS.domain, heart))
+    graph.add((part_of, RDFS.range, organ))
+    graph.add((aorta, RDFS.label, Literal("Aorta")))
+    graph.add((aorta, part_of, heart))
+    return graph, {"class": heart, "predicate": part_of, "instance": aorta}
+
+
+def _condition_verbaliser(condition_id: str) -> VerbaliserBase:
+    condition = get_condition(condition_id)
+    return build_verbaliser(condition.strategy_name, condition.model_key)
+
+
+def test_c20_differs_from_c10_only_in_strategy() -> None:
+    c20, c10 = get_condition("C20"), get_condition("C10")
+    assert (c20.strategy_name, c10.strategy_name) == ("V2", "V2+V8")
+    for field in ("model_key", "datasets", "apply_ppas"):
+        assert getattr(c20, field) == getattr(c10, field)
+
+
+def test_c20_is_the_sole_member_of_its_own_ablation_group() -> None:
+    assert get_condition("C20").ablation_group == "E"
+    assert [c.condition_id for c in get_conditions_for_group("E")] == ["C20"]
+
+
+def test_c20_builds_the_bare_annotation_verbaliser() -> None:
+    assert type(_condition_verbaliser("C20")) is AnnotationVerbaliser
+
+
+def test_c10_builds_annotation_then_relational_signature() -> None:
+    verbaliser = _condition_verbaliser("C10")
+    assert isinstance(verbaliser, CombinedVerbaliser)
+    assert [type(s) for s in verbaliser.strategies] == [
+        AnnotationVerbaliser,
+        RelationalSignatureVerbaliser,
+    ]
+
+
+@pytest.mark.parametrize("entity_type", ["class", "predicate", "instance"])
+def test_c10_text_extends_c20_text_with_v8(entity_type: str) -> None:
+    """
+    C20 and C10 must differ only by V8, so the C10 text is the C20 text with
+    the V8 signature appended and nothing of the annotation text replaced.
+    """
+    graph, entities = _v8_ablation_graph()
+    entity = entities[entity_type]
+    v2_text = _condition_verbaliser("C20").verbalise(graph, entity, entity_type)
+    v8_text = RelationalSignatureVerbaliser().verbalise(graph, entity, entity_type)
+    combined = _condition_verbaliser("C10").verbalise(graph, entity, entity_type)
+    assert combined == f"{v2_text}\n{v8_text}"
+
+
 def test_get_condition_unknown_raises_key_error():
     with pytest.raises(KeyError):
         get_condition("C999")
@@ -179,16 +254,40 @@ def test_get_conditions_for_dataset_unknown_returns_empty():
     assert get_conditions_for_dataset("D99") == []
 
 
-def test_get_conditions_for_group_d_holds_every_non_ppas_condition():
+def test_get_conditions_for_group_d_holds_the_unbudgeted_model_conditions():
     ids = [c.condition_id for c in get_conditions_for_group("D")]
-    assert ids == ["C14", "C15", "C19"]
+    assert ids == ["C14", "C15"]
+
+
+def test_c19_is_the_only_sanity_check_condition():
+    ids = [c.condition_id for c in get_conditions_for_group(SANITY_CHECK_GROUP)]
+    assert ids == ["C19"]
+
+
+def test_c12_is_retired_and_unregistered():
+    assert "C12" in RETIRED_CONDITION_IDS
+    with pytest.raises(KeyError):
+        get_condition("C12")
+
+
+def test_validate_registry_rejects_a_reused_retired_identifier():
+    conditions = [c for c in EXPERIMENT_CONDITIONS if c.condition_id != "C1"]
+    conditions.append(_make_condition(condition_id="C12"))
+    with pytest.raises(ValueError, match="Retired"):
+        _validate_registry(conditions)
+
+
+def test_descriptions_name_the_registered_model():
+    for condition in EXPERIMENT_CONDITIONS:
+        assert "GTE" not in condition.description
+        assert "Label-only" not in condition.description
 
 
 @pytest.mark.parametrize(
     "group, expected_ids",
     [
         ("A", ["C1", "C2", "C17"]),
-        ("B", ["C3", "C9", "C10", "C12", "C18"]),
+        ("B", ["C3", "C9", "C10", "C18"]),
         ("C", ["C4", "C5", "C6", "C7", "C8", "C11", "C13", "C16"]),
     ],
 )

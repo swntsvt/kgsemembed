@@ -14,6 +14,7 @@ from kgsemembed.embeddings import (
     load_sentence_transformer,
 )
 from kgsemembed.embeddings import models
+from kgsemembed.utils.errors import ConfigurationError
 from kgsemembed.verbalisation.ppas import PPAS_BUDGETS
 
 EXPECTED_KEYS = {"M1", "M2", "M2_uncapped", "M3", "M4", "M5"}
@@ -188,7 +189,9 @@ def test_model_constructed_only_when_factory_called(
     assert fake.call_count == 0
     model, _ = load_sentence_transformer("M1")
     fake.assert_called_once_with(
-        "sentence-transformers/all-MiniLM-L6-v2", device="cpu"
+        "sentence-transformers/all-MiniLM-L6-v2",
+        device="cpu",
+        revision=MODEL_REGISTRY["M1"].revision,
     )
     assert model is fake.return_value
 
@@ -220,7 +223,9 @@ def test_factory_selects_mps_over_cuda(
     fake = MagicMock(name="SentenceTransformer")
     monkeypatch.setattr(models, "SentenceTransformer", fake)
     load_sentence_transformer("M2")
-    fake.assert_called_once_with("BAAI/bge-large-en-v1.5", device="mps")
+    fake.assert_called_once_with(
+        "BAAI/bge-large-en-v1.5", device="mps", revision=MODEL_REGISTRY["M2"].revision
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -263,6 +268,7 @@ def test_loader_returns_model_and_metadata_tuple(
         "model_id": "sentence-transformers/all-MiniLM-L6-v2",
         "device": "cpu",
         "hf_revision": "abc123",
+        "hf_revision_pinned": MODEL_REGISTRY["M1"].revision,
     }
 
 
@@ -270,7 +276,9 @@ def test_metadata_holds_exactly_the_expected_keys(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _, model_info = _load_with_model(monkeypatch, _model_with_commit_hash("abc123"))
-    assert set(model_info) == {"model_key", "model_id", "device", "hf_revision"}
+    assert set(model_info) == {
+        "model_key", "model_id", "device", "hf_revision", "hf_revision_pinned"
+    }
 
 
 def test_metadata_records_selected_device(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -283,6 +291,57 @@ def test_metadata_records_selected_device(monkeypatch: pytest.MonkeyPatch) -> No
     assert model_info["device"] == "mps"
     assert model_info["model_key"] == "M2"
     assert model_info["model_id"] == "BAAI/bge-large-en-v1.5"
+
+
+# The revision every stored C1-C20 and ablation result records (#141).
+EXPECTED_REVISIONS = {
+    "M1": "1110a243fdf4706b3f48f1d95db1a4f5529b4d41",
+    "M2": "d4aa6901d3a41ba39fb536a557fa166f842b0e09",
+    "M2_uncapped": "d4aa6901d3a41ba39fb536a557fa166f842b0e09",
+    "M3": "5617a9f61b028005a4858fdac845db406aefb181",
+    "M4": "167aab527b238a50ca65224e6319215d2ff4fc9f",
+    "M5": "7817065102fd9e1b031fe874e910c01f40b2f001",
+}
+
+
+@pytest.mark.parametrize("key", sorted(EXPECTED_KEYS))
+def test_every_model_pins_the_revision_of_the_stored_results(key: str) -> None:
+    assert MODEL_REGISTRY[key].revision == EXPECTED_REVISIONS[key]
+
+
+def test_loader_refuses_a_commit_other_than_the_pinned_one(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    with pytest.raises(ConfigurationError, match="pinned"):
+        _load_with_model(monkeypatch, _model_with_commit_hash("0" * 40))
+
+
+def test_loader_accepts_the_pinned_commit(monkeypatch: pytest.MonkeyPatch) -> None:
+    pinned = MODEL_REGISTRY["M1"].revision
+    _, model_info = _load_with_model(monkeypatch, _model_with_commit_hash(pinned))
+    assert model_info["hf_revision"] == model_info["hf_revision_pinned"] == pinned
+
+
+def test_require_device_accepts_mps() -> None:
+    assert models.require_device({"device": "mps"}) == {
+        "device": "mps", "device_override": False
+    }
+
+
+def test_require_device_refuses_another_device_by_default() -> None:
+    with pytest.raises(ConfigurationError, match="allow_device"):
+        models.require_device({"device": "cpu"})
+
+
+def test_require_device_records_an_explicit_override() -> None:
+    assert models.require_device({"device": "cpu"}, allowed_device="cpu") == {
+        "device": "cpu", "device_override": True
+    }
+
+
+def test_require_device_override_names_one_device_only() -> None:
+    with pytest.raises(ConfigurationError):
+        models.require_device({"device": "cuda"}, allowed_device="cpu")
 
 
 def test_revision_prefers_commit_hash() -> None:
@@ -331,4 +390,33 @@ def test_registry_budgets_match_ppas_budgets() -> None:
 def test_load_sentence_transformer_returns_instance() -> None:
     model, model_info = load_sentence_transformer("M1")
     assert isinstance(model, SentenceTransformer)
-    assert set(model_info) == {"model_key", "model_id", "device", "hf_revision"}
+    assert set(model_info) == {
+        "model_key", "model_id", "device", "hf_revision", "hf_revision_pinned"
+    }
+    assert model_info["hf_revision"] == MODEL_REGISTRY["M1"].revision
+
+
+def test_factory_buckets_sequence_padding(monkeypatch: pytest.MonkeyPatch) -> None:
+    _patch_cpu_and_mock_transformer(monkeypatch)
+    model, _ = load_sentence_transformer("M1")
+    assert model[0].processing_kwargs == {
+        "text": {"pad_to_multiple_of": models.PAD_TO_MULTIPLE_OF}
+    }
+
+
+def test_only_m5_needs_bidirectional_attention() -> None:
+    flagged = {key for key, config in MODEL_REGISTRY.items() if config.bidirectional_attention}
+    assert flagged == {"M5"}
+
+
+@pytest.mark.parametrize("key,expected", [("M1", 0), ("M5", 1)])
+def test_factory_enables_bidirectional_attention_only_when_flagged(
+    monkeypatch: pytest.MonkeyPatch, key: str, expected: int
+) -> None:
+    _patch_cpu_and_mock_transformer(monkeypatch)
+    enable = MagicMock(name="enable_bidirectional_attention")
+    monkeypatch.setattr(models, "enable_bidirectional_attention", enable)
+    model, _ = load_sentence_transformer(key)
+    assert enable.call_count == expected
+    if expected:
+        enable.assert_called_once_with(model)

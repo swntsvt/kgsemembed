@@ -7,6 +7,11 @@ validates the registry against the registered verbalisation strategies and
 embedding models but never loads a model, performs verbalisation, or executes an
 experiment.  Invalid definitions fail fast at import time rather than surfacing
 during a run.
+
+C12 (V8/M2 on D3 and D4) was retired in #142: it repeated C9 on a subset of
+its datasets with identical results.  Its identifier is never reused, so the
+registry runs C1-C11 and C13-C20.  C19 sits in the sanity-check group ``"S"``:
+it must reproduce C10 and is reported as a check, not as a result.
 """
 
 from collections import Counter
@@ -17,6 +22,8 @@ from kgsemembed.embeddings.models import MODEL_REGISTRY
 from kgsemembed.verbalisation.registry import VALID_STRATEGY_NAMES
 
 _EXPECTED_CONDITION_COUNT = 19
+RETIRED_CONDITION_IDS = frozenset({"C12"})
+SANITY_CHECK_GROUP = "S"
 _NON_PPAS_CONDITIONS = frozenset({"C14", "C15", "C19"})
 
 
@@ -36,7 +43,9 @@ class ExperimentCondition:
     datasets : List[str]
         Dataset identifiers this condition is evaluated on.
     apply_ppas : bool
-        Whether Predicate-Priority Adaptive Sampling is applied.
+        Declared PPAS intent, recorded in every result as metadata only.  It is
+        never passed to the verbaliser: whether PPAS can sample depends on the
+        strategy and the model's budget alone (``ppas_effective`` in results).
     description : str
         Human-readable summary of the condition's purpose.
     ablation_group : str
@@ -59,7 +68,7 @@ EXPERIMENT_CONDITIONS: List[ExperimentCondition] = [
         model_key="M1",
         datasets=["D1", "D2", "D3", "D4", "D5"],
         apply_ppas=True,
-        description="Label-only lower bound on MiniLM.",
+        description="Label and synonym lower bound (V1) on MiniLM.",
         ablation_group="A",
     ),
     ExperimentCondition(
@@ -77,7 +86,7 @@ EXPERIMENT_CONDITIONS: List[ExperimentCondition] = [
         model_key="M4",
         datasets=["D1", "D2"],
         apply_ppas=True,
-        description="Label-only lower bound on BioLORD.",
+        description="Label and synonym lower bound (V1) on BioLORD.",
         ablation_group="A",
     ),
     ExperimentCondition(
@@ -86,7 +95,7 @@ EXPERIMENT_CONDITIONS: List[ExperimentCondition] = [
         model_key="M2",
         datasets=["D1", "D2", "D3", "D4", "D5"],
         apply_ppas=True,
-        description="Annotation with schema-aware context on BGE (V8 ablation control).",
+        description="Annotation with schema-aware context on BGE.",
         ablation_group="B",
     ),
     ExperimentCondition(
@@ -105,15 +114,6 @@ EXPERIMENT_CONDITIONS: List[ExperimentCondition] = [
         datasets=["D1", "D2", "D3", "D4", "D5"],
         apply_ppas=True,
         description="Annotation with relational signature on BGE.",
-        ablation_group="B",
-    ),
-    ExperimentCondition(
-        condition_id="C12",
-        strategy_name="V8",
-        model_key="M2",
-        datasets=["D3", "D4"],
-        apply_ppas=True,
-        description="Relational-signature only on BGE over a dataset subset.",
         ablation_group="B",
     ),
     ExperimentCondition(
@@ -203,7 +203,7 @@ EXPERIMENT_CONDITIONS: List[ExperimentCondition] = [
         model_key="M3",
         datasets=["D5"],
         apply_ppas=False,
-        description="Structured key-value and schema-aware verbalisation on GTE without PPAS.",
+        description="Structured key-value and schema-aware verbalisation on BGE-M3 (no token budget).",
         ablation_group="D",
     ),
     ExperimentCondition(
@@ -212,22 +212,32 @@ EXPERIMENT_CONDITIONS: List[ExperimentCondition] = [
         model_key="M3",
         datasets=["D1"],
         apply_ppas=False,
-        description="Annotation with relational signature on GTE without PPAS.",
+        description="Annotation with relational signature on BGE-M3 (no token budget).",
         ablation_group="D",
     ),
-    # Note: V2+V8 does not invoke PPAS under any model (V2 and V8 are
-    # annotation/relational verbalisers with no budget logic). C19 isolates the
-    # model effect of M2 with ppas_budget=None and should reproduce C10 metrics.
-    # A genuine PPAS ablation for V2+V8 is not possible without redesigning the
-    # strategy.
     ExperimentCondition(
         condition_id="C19",
         strategy_name="V2+V8",
         model_key="M2_uncapped",
         datasets=["D1"],
         apply_ppas=False,
-        description="PPAS ablation: V2+V8 on bge-large without token budget cap",
-        ablation_group="D",
+        description=(
+            "Sanity check: V2+V8 on BGE without a token budget; V2+V8 never "
+            "consults a budget, so it must reproduce C10."
+        ),
+        ablation_group=SANITY_CHECK_GROUP,
+    ),
+    ExperimentCondition(
+        condition_id="C20",
+        strategy_name="V2",
+        model_key="M2",
+        datasets=["D1", "D2", "D3", "D4", "D5"],
+        apply_ppas=True,
+        description=(
+            "Annotation-only baseline on BGE, used as the controlled baseline "
+            "for measuring the incremental contribution of V8."
+        ),
+        ablation_group="E",
     ),
 ]
 
@@ -263,8 +273,15 @@ def _validate_references(condition: ExperimentCondition) -> None:
         )
 
 
+def _validate_retired(conditions: List[ExperimentCondition]) -> None:
+    """Raise if a retired condition identifier is registered again."""
+    reused = sorted(c.condition_id for c in conditions if c.condition_id in RETIRED_CONDITION_IDS)
+    if reused:
+        raise ValueError(f"Retired condition identifiers must not be reused: {reused}.")
+
+
 def _validate_ppas(condition: ExperimentCondition) -> None:
-    """Raise if a condition's PPAS setting does not match the invariant."""
+    """Raise if a condition's declared ``apply_ppas`` metadata is inconsistent."""
     expected = condition.condition_id not in _NON_PPAS_CONDITIONS
     if condition.apply_ppas is not expected:
         raise ValueError(
@@ -278,6 +295,7 @@ def _validate_registry(conditions: List[ExperimentCondition]) -> None:
     """Validate every registry invariant, raising on the first violation."""
     _validate_count(conditions)
     _validate_unique_ids(conditions)
+    _validate_retired(conditions)
     for condition in conditions:
         _validate_references(condition)
         _validate_ppas(condition)
