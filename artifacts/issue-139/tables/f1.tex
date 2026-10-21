@@ -2,7 +2,7 @@
 \scriptsize
 \setlength{\tabcolsep}{4pt}
 \begin{threeparttable}
-\caption{Mean test F1 per condition per dataset (secondary matching metric: thresholded top-1 predictions, threshold tuned on validation). D3 values are means over 21 pairs; D3$_{\mu}$ pools TP, FP and FN over them. Below the conditions: the F1 recall ceiling of the top-20 lists with one prediction per source, and the validation and test reference counts (D3: range over pairs; D3$_{\mu}$: total), on which F1's threshold and value rest. Dashes in dataset columns indicate conditions not run on that dataset. Bold: best result per dataset column. $\dagger$: M2\_uncapped (same weights as M2, \texttt{ppas\_budget=None}); C19 is identical to C10 by design. C20 (V2, M2) is the controlled baseline for C10 (V2+V8, M2): the two differ only by the V8 component, and C20 forms its own group (E), placed after group B so it sits beside C10. $\ddagger$: M4 (BioLORD) evaluated on D1 and D2 only. B0: stage-1 character 3-gram cosine order of the same top-20 candidate lists every condition re-ranks, evaluated under the same populations, validation-tuned threshold and metric definitions; it is not an external matching system.}
+\caption{Mean test F1 per condition per dataset (secondary matching metric: thresholded top-1 predictions, threshold tuned on validation). D3 values are means over 21 pairs; D3$_{\mu}$ pools TP, FP and FN over them. Below the conditions: the F1 recall ceiling of the top-20 lists with one prediction per source, and the validation and test reference counts (D3: range over pairs; D3$_{\mu}$: total), on which F1's threshold and value rest. Dashes in dataset columns indicate conditions not run on that dataset. Bold: best result per dataset column. C20 (V2, M2) is the controlled baseline for C10 (V2+V8, M2): the two differ only by the V8 component, and C20 forms its own group (E), placed after group B so it sits beside C10. $\ddagger$: M4 (BioLORD) evaluated on D1 and D2 only. B0: stage-1 character 3-gram cosine order of the same top-20 candidate lists every condition re-ranks, evaluated under the same populations, validation-tuned threshold and metric definitions; it is not an external matching system.}
 \label{tab:matching_f1}
 \begin{tabular}{llllrrrrrrrr}
 \hline
@@ -14,11 +14,10 @@ C1 & V1 & M1 & A & 0.3245 & 0.7042 & \textbf{0.5473} & \textbf{0.4949} & 0.8444 
 C2 & V2 & M1 & A & 0.2936 & 0.6757 & 0.4681 & 0.4070 & 0.8132 & 0.7362 & 0.0110 & 0.5974 \\
 C17 & V1 & M4$^\ddagger$ & A & \textbf{0.4515} & 0.7082 & --- & --- & --- & --- & --- & --- \\
 \hline
-C9 & V8 & M2 & B & 0.0224 & 0.0605 & 0.0487 & 0.0386 & 0.6111 & 0.0692 & 0.0098 & 0.1624 \\
-C12 & V8 & M2 & B & --- & --- & 0.0487 & 0.0386 & 0.6111 & 0.0692 & --- & --- \\
+C9 & V8 & M2 & B & 0.0228 & 0.0711 & 0.0487 & 0.0386 & 0.6111 & 0.0668 & 0.0106 & 0.1641 \\
 C3 & V2+V6 & M2 & B & 0.3869 & 0.7181 & 0.3011 & 0.2639 & 0.9048 & 0.7901 & 0.0988 & 0.6202 \\
-C10 & V2+V8 & M2 & B & 0.3541 & 0.5678 & 0.2466 & 0.2118 & \textbf{0.9176} & 0.7891 & 0.0135 & 0.5751 \\
-C18 & V2+V8 & M1 & B & 0.2166 & 0.5951 & 0.2874 & 0.2611 & 0.8941 & 0.7204 & 0.0069 & 0.5427 \\
+C10 & V2+V8 & M2 & B & 0.2842 & 0.5756 & 0.2466 & 0.2118 & \textbf{0.9176} & 0.7946 & 0.0105 & 0.5637 \\
+C18 & V2+V8 & M1 & B & 0.2604 & 0.5949 & 0.2874 & 0.2611 & 0.8941 & 0.7252 & 0.0060 & 0.5524 \\
 \hline
 C20 & V2 & M2 & E & 0.2760 & 0.6629 & 0.4838 & 0.4353 & 0.8471 & 0.8036 & 0.0095 & 0.6147 \\
 \hline
@@ -27,13 +26,12 @@ C5 & V4 & M2 & C & --- & --- & --- & --- & 0.8810 & 0.7277 & 0.1172 & --- \\
 C6 & V2+V7 & M4$^\ddagger$ & C & 0.4413 & 0.6165 & --- & --- & --- & --- & --- & --- \\
 C7 & V6+V3 & M2 & C & --- & --- & 0.3344 & 0.2819 & 0.9157 & 0.7230 & --- & --- \\
 C8 & V5 & M2 & C & --- & --- & --- & --- & 0.9157 & 0.3834 & 0.0262 & --- \\
-C11 & V2+V8 & M4$^\ddagger$ & C & 0.3892 & 0.6233 & --- & --- & --- & --- & --- & --- \\
-C13 & V2+V8 & M5 & C & 0.4463 & 0.6551 & 0.3430 & 0.3372 & 0.8090 & 0.7963 & 0.0178 & 0.6099 \\
-C16 & V2+V8+V7 & M4$^\ddagger$ & C & 0.4397 & 0.6314 & --- & --- & --- & --- & --- & --- \\
+C11 & V2+V8 & M4$^\ddagger$ & C & 0.3631 & 0.6279 & --- & --- & --- & --- & --- & --- \\
+C13 & V2+V8 & M5 & C & 0.4021 & 0.6722 & 0.3430 & 0.3372 & 0.8090 & 0.7961 & 0.0139 & 0.6045 \\
+C16 & V2+V8+V7 & M4$^\ddagger$ & C & 0.4015 & 0.6264 & --- & --- & --- & --- & --- & --- \\
 \hline
 C14 & V4+V6 & M3 & D & --- & --- & --- & --- & --- & --- & 0.1262 & --- \\
-C15 & V2+V8 & M3 & D & 0.3844 & --- & --- & --- & --- & --- & --- & --- \\
-C19 & V2+V8 & M2$^\dagger$ & D & 0.3541 & --- & --- & --- & --- & --- & --- & --- \\
+C15 & V2+V8 & M3 & D & 0.3591 & --- & --- & --- & --- & --- & --- & --- \\
 \hline
 \multicolumn{4}{l}{Recall ceiling} & 0.7807 & 0.9374 & 0.8585 & 0.8526 & 0.9318 & 0.9725 & 0.2667 & 0.8962 \\
 \multicolumn{4}{l}{Validation refs} & 1,304 & 302 & 1--5 & 54 & 10 & 345 & 1,500 & --- \\

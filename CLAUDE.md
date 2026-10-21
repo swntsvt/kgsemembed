@@ -19,7 +19,7 @@ Phase 2 datasets: D1 (SNOMED-FMA Body), D2 (Anatomy MA-NCI), D3 (Conference,
 21 pairs), D4 (memoryalpha-stexpanded, schema and instance), D5
 (DBpedia-Wikidata 15K EN, OpenEA). Five datasets total.
 
-**Current focus**: Issue #140 — per-dataset paired tests (bootstrap intervals, randomisation p-values, Holm within group × column × metric) on MRR and Hits@1 (F1 secondary) from new per-source sidecars; Wilcoxon kept as a cross-dataset consistency summary on MRR; `report.md` leads with MRR. Next: one C1–C20 re-run (sidecars, Hits@k, device and pinned revisions), then #141's tag and archive. Previously #141 — pinned model revisions, device check and recording (`--allow_device`), and `requirements-lock.txt`. Previously #142 — retire C12 (duplicate of C9; IDs not renumbered), move C19 to a sanity-check group and section, correct stale condition descriptions and PPAS labels, and average the report's summary table over dataset columns. Next: #140 (per-source sidecars and per-dataset tests), then one C1–C20 re-run. Previously #145 — V8 excludes annotation predicates (FMA, oboInOwl, OWL axiom annotations, DBkWik page text, description/name vocabularies) instead of listing them as relationships; text inventory, per-predicate classification and V8 re-runs (`artifacts/issue-145/`). Previously #139 — re-ranking MRR and source-level Hits@1 as the paper's primary metrics (F1 secondary), one definition of each metric's unit, ceiling and 1:N handling, and tables that show the top-20 ceiling, D3 micro F1 and F1's reference counts (`artifacts/issue-139/`). Previously #138 — dataset and reference-alignment provenance, each dataset's protocol against its benchmark's official one, and the paper's datasets/protocol text (`artifacts/issue-138/`); #137 — stage-1 n-gram ranking baseline (B0) and the written evaluation protocol (`artifacts/issue-137/`); #136 — V1/V2 read the synonym and definition predicates D1/D2 actually use; #134 — text-serialization-order experiment on D1 and D2 (effect of item order with the selected set held fixed; order frozen on D2 validation before any test evaluation); #128, #130 and #131 merged (Phase 2)
+**Current focus**: Issue #141's release — the C1–C20 and B0 re-run at c6931db (sidecars, Hits@k, device, pinned revisions; every metric equal to the stored one), regenerated tables, tag `v0.2.0-phase2-results` and its data archive (see "Release (#141)"). Next: #149. Previously #140 — per-dataset paired tests (bootstrap intervals, randomisation p-values, Holm within group × column × metric) on MRR and Hits@1 (F1 secondary) from new per-source sidecars; Wilcoxon kept as a cross-dataset consistency summary on MRR; `report.md` leads with MRR. Previously #141 — pinned model revisions, device check and recording (`--allow_device`), and `requirements-lock.txt`. Previously #142 — retire C12 (duplicate of C9; IDs not renumbered), move C19 to a sanity-check group and section, correct stale condition descriptions and PPAS labels, and average the report's summary table over dataset columns. Previously #145 — V8 excludes annotation predicates (FMA, oboInOwl, OWL axiom annotations, DBkWik page text, description/name vocabularies) instead of listing them as relationships; text inventory, per-predicate classification and V8 re-runs (`artifacts/issue-145/`). Previously #139 — re-ranking MRR and source-level Hits@1 as the paper's primary metrics (F1 secondary), one definition of each metric's unit, ceiling and 1:N handling, and tables that show the top-20 ceiling, D3 micro F1 and F1's reference counts (`artifacts/issue-139/`). Previously #138 — dataset and reference-alignment provenance, each dataset's protocol against its benchmark's official one, and the paper's datasets/protocol text (`artifacts/issue-138/`); #137 — stage-1 n-gram ranking baseline (B0) and the written evaluation protocol (`artifacts/issue-137/`); #136 — V1/V2 read the synonym and definition predicates D1/D2 actually use; #134 — text-serialization-order experiment on D1 and D2 (effect of item order with the selected set held fixed; order frozen on D2 validation before any test evaluation); #128, #130 and #131 merged (Phase 2)
 
 ## Git Workflow
 
@@ -83,6 +83,12 @@ Merge `develop` → `main` only at stable milestones. Tag the merge commit:
 git tag -a v0.x.0-<milestone> -m "Phase 2 verbalisation baseline"
 git push origin --tags
 ```
+
+`main` was squash-merged from `develop` once (#107), so the histories diverged
+although main's tree equals develop commit `6cf0c3d`. The #141 release joined
+them: a `release/*` branch from `develop` merges `origin/main` with `-s ours`
+(develop's tree, main as a parent), and its PR into `main` is merged with a
+merge commit, never squashed, so the next milestone merges cleanly.
 
 ## Development Commands
 
@@ -1068,6 +1074,58 @@ python scripts/v8_fix_report.py --old_dir data/results/ --new_dir data/results_i
 - **Reporting**: "controlled comparison under a re-ranking protocol", never
   benchmark results. No published score in our tables. Ranking and matching
   metrics are reported separately.
+
+## Release (#141)
+
+- **Tag** `v0.2.0-phase2-results` (annotated, on `main`); `pyproject.toml`
+  still says `0.1.0`, which every stored result records as
+  `kgsemembed_version`, so it was not bumped.
+- **Re-run**: all 19 conditions (271 results) and B0 (26) were re-run once
+  at c6931db from a clean tree on MPS with the pinned revisions
+  (`data/results_issue140/`, `data/results_ngram_baseline_issue140/`). Every
+  metric and TP/FP/FN equals the stored result; every sidecar reproduces its
+  MRR, Hits@1 and F1 to 2e-16. They replaced the stored files; the replaced
+  files and the previous `report.md` are in `data/results_pre140/` (B0 under
+  `ngram_baseline/`).
+- **Archive**: GitHub release asset
+  `kgsemembed-v0.2.0-phase2-results-data.tar.gz` (+ `.sha256`): `data/results/`
+  (C1–C20 results, sidecars, `report.md`), `data/results_ngram_baseline/`
+  (B0), `data/candidates/`, and `data/release/` (`README.md`,
+  `MANIFEST.sha256` of every file, `requirements-lock.txt`). Everything in it is
+  URIs, scores and metrics; no dataset text. Not archived: the datasets
+  (download them from their releases, see "Datasets"), the ablation trees
+  (#122–#134; their diagnostics and local examples hold entity text), and
+  superseded trees (`results_pre*`, `results_issue*`, `results_retired/`).
+- **Environment**: `requirements-lock.txt` is the macOS arm64, Python 3.12.14
+  environment; the archive's outputs need no model or dataset to rebuild.
+- **Checked** (fresh clone, new venv from the lock, archive extracted, no
+  datasets): `report.md` and the four tables regenerate byte-identically;
+  the suite passes except the 6 `tests/test_dataset_loader.py` tests that
+  read `data/`.
+
+```bash
+# Build the archive (from a checkout at the tag, with the stored data)
+mkdir -p data/release && cp requirements-lock.txt data/release/
+find data/results data/results_ngram_baseline data/candidates data/release/requirements-lock.txt \
+    -type f ! -name .gitkeep | sort | xargs shasum -a 256 > data/release/MANIFEST.sha256
+COPYFILE_DISABLE=1 tar --no-mac-metadata -czf kgsemembed-v0.2.0-phase2-results-data.tar.gz --exclude .gitkeep \
+    data/results data/results_ngram_baseline data/candidates data/release
+shasum -a 256 kgsemembed-v0.2.0-phase2-results-data.tar.gz > kgsemembed-v0.2.0-phase2-results-data.tar.gz.sha256
+
+# Reproduce report.md and the paper tables from a fresh clone
+git clone --branch v0.2.0-phase2-results https://github.com/swntsvt/kgsemembed.git && cd kgsemembed
+python3.12 -m venv venv
+venv/bin/pip install -r requirements-lock.txt && venv/bin/pip install -e . --no-deps
+gh release download v0.2.0-phase2-results
+shasum -a 256 -c kgsemembed-v0.2.0-phase2-results-data.tar.gz.sha256
+tar -xzf kgsemembed-v0.2.0-phase2-results-data.tar.gz && shasum -a 256 -c data/release/MANIFEST.sha256
+venv/bin/python scripts/generate_report.py --results_dir data/results/ --output report.md
+cmp report.md data/results/report.md
+for m in mrr hits_at_1 f1 recall_at_1; do
+  venv/bin/python scripts/generate_results_table.py --results_dir data/results/ \
+      --baseline_dir data/results_ngram_baseline/ --metric $m | cmp - artifacts/issue-139/tables/$m.tex
+done
+```
 
 ## Datasets
 
