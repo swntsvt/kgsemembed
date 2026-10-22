@@ -47,8 +47,10 @@ pinned revisions) are downloaded from the Hugging Face Hub on first use.
 
 ## Data
 
-The datasets are not redistributed here. Download each one from its release
-into `data/`:
+The datasets are not redistributed: the tracked artefacts and the release
+archive hold only URIs, scores and metrics. Download each dataset from its
+release, under its own terms, into `data/`. D1 requires a SNOMED CT licence.
+Reference counts below are from `artifacts/issue-138/reference_statistics.md`.
 
 | ID | Task | Release (input files byte-identical) | Reference used |
 |---|---|---|---|
@@ -65,10 +67,6 @@ venv/bin/python scripts/download_datasets.py --data_dir data/ --check
 
 `artifacts/issue-138/` records provenance: checksums against each release,
 reference statistics, and each benchmark's protocol compared with ours.
-
-The datasets are not redistributed (the artefacts and release archive hold
-only URIs, scores and metrics); obtain them from their releases under their
-own terms. D1 requires a SNOMED CT licence.
 
 ## Running
 
@@ -119,11 +117,18 @@ venv/bin/python -m kgsemembed.pipeline.run_experiment \
 ```
 
 Existing result files are skipped unless `--force_recompute` is passed.
+`--results_dir` defaults to `data/results/`, the stored release tree, so
+always pass a separate directory unless you mean to add to or replace the
+stored results.
+
 **Long-running:** omitting `--conditions` and `--datasets` runs all 19
 conditions on every dataset each one covers (271 results). That took about
-20 hours on the M4 Pro, most of it on D4 instances. Run it in `tmux`, and
-never point it at `data/results/` unless you mean to replace the stored
-results.
+20 hours on the M4 Pro, most of it on D4 instances. Run it in `tmux`:
+
+```bash
+venv/bin/python -m kgsemembed.pipeline.run_experiment \
+    --data_dir data/ --results_dir data/results_rerun/
+```
 
 The stage-1 baseline B0 needs no model (~5 min) and refuses `data/results/`:
 
@@ -182,7 +187,8 @@ shasum -a 256 -c kgsemembed-v0.2.0-phase2-results-data.tar.gz.sha256
 tar -xzf kgsemembed-v0.2.0-phase2-results-data.tar.gz && shasum -a 256 -c data/release/MANIFEST.sha256
 ```
 
-Then, from that checkout or this one with the stored data:
+Then, in that checkout (#141 verified the report and tables this way from a
+fresh clone):
 
 ```bash
 # Results report (a few minutes; per-dataset paired tests from the sidecars)
@@ -195,19 +201,25 @@ for m in mrr hits_at_1 f1 recall_at_1; do
       --baseline_dir data/results_ngram_baseline/ --metric $m | cmp - artifacts/issue-139/tables/$m.tex
 done
 
-# Figures 1 and 2 (into figures/, gitignored) and the paired intervals behind
-# their claims (~1.5 min); figure_claims.py rewrites tracked files, checked below
+# Figures 1 and 2 (into figures/, gitignored)
 venv/bin/python scripts/generate_figure1_d3_scatter.py \
     --results_dir data/results/ --output_dir figures/ --metric mrr
 venv/bin/python scripts/generate_figure2_model_comparison.py \
     --results_dir data/results/ --output_dir figures/ --metric mrr
+```
+
+Two later outputs are not in the tag: the paired intervals behind the
+figures' claims (`figure_claims.py`, #149) and the B0 comparison regenerated
+after #142/#145 (the tag's `baseline_comparison.md` predates both). They need
+a checkout of `develop` (until the next release), with the same archive
+extracted into it. Both scripts rewrite tracked files, so the last step
+checks that they regenerate unchanged:
+
+```bash
+git checkout develop
 venv/bin/python scripts/figure_claims.py --results_dir data/results/ \
-    --output_dir artifacts/issue-149/
-
-# B0 against C1–C20 (rewrites a tracked file, checked below)
+    --output_dir artifacts/issue-149/                       # ~1.5 min
 venv/bin/python scripts/generate_baseline_comparison.py
-
-# Both tracked outputs must regenerate unchanged
 git diff --exit-code artifacts/issue-149/figure_claims.md artifacts/issue-149/figure_claims.json \
     artifacts/issue-137/baseline_comparison.md
 ```
@@ -227,7 +239,7 @@ scripts/          CLI scripts: candidates, reports, tables, figures, inventories
 artifacts/        tracked, URI-only outputs and paper text, one folder per issue
 tests/            pytest suite
 configs/          legacy Hydra config groups (see below)
-data/, figures/   local only (gitignored)
+data/, figures/   local only (gitignored), except the data/sample/ test fixture
 ```
 
 ### Legacy Hydra scaffold

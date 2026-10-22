@@ -25,8 +25,10 @@ Phase 2 datasets: D1 (SNOMED-FMA Body), D2 (Anatomy MA-NCI), D3 (Conference,
 
 ### Branch Strategy
 - `main` — stable snapshots only; tagged at paper milestones (so far
-  `v0.2.0-phase2-results`, #141). The annotated `results/issue-*` tags mark
-  the feature-branch commits stored results were produced at (#138).
+  `v0.2.0-phase2-results`, #141). Every stored C1–C20 and B0 result comes
+  from `c6931db` (the #141 re-run; on `develop` and in the release tag). The
+  annotated `results/issue-*` tags (#138) mark the feature-branch commits
+  of the results that re-run replaced (kept in `data/results_pre*`).
 - `develop` — integration branch; all feature/fix branches merge here via PR
 - `feature/issue-n` — new capability tied to Issue n
 - `fix/issue-n` — bug fix tied to Issue n
@@ -207,6 +209,10 @@ python scripts/generate_figure2_model_comparison.py \
 python scripts/figure_claims.py --results_dir data/results/ \
     --output_dir artifacts/issue-149/
 
+# Padded vs unpadded embedding drift (#143; loads each model, one per
+# process; M3 needs --n 32) into artifacts/issue-143/padding_drift.{json,md}
+python scripts/padding_drift.py --model M2 --n 256
+
 # Check dataset presence
 python scripts/download_datasets.py --data_dir data/ --check
 
@@ -378,7 +384,8 @@ kgsemembed/                      # repo root
 │       └── runtime.example.yaml # tracked template; a local copy runtime.yaml is
 │                                #   gitignored — DO NOT MODIFY it if present
 ├── tests/                       # pytest suite (slow tests need --runslow)
-├── data/                        # datasets, candidates, results — gitignored, local only
+├── data/                        # datasets, candidates, results — gitignored, local
+│                                #   only, except the tracked data/sample/ test fixture
 │   ├── candidates/              # generated candidate files
 │   ├── results/                 # C1–C20 JSON — data/results/<condition>/<dataset>/
 │   ├── results_ngram_baseline/  # B0
@@ -1013,7 +1020,8 @@ python scripts/v8_fix_report.py --old_dir data/results/ --new_dir data/results_i
   reference target, so those counts depend on each method's ranking.
 - **Results (6d1878a; 26/26 pairs clean; 294/294 C-results matched then,
   271/271 after #142/#145; one pair per column, descriptive; D1 re-run at
-  65b0d33 after the known-pair fix)**:
+  65b0d33 after the known-pair fix; all re-run at c6931db in #141 with
+  every metric equal)**:
   B0 MRR D1 0.7055, D2 0.8175, D3 0.7200,
   D4_schema 0.8879, D4_instance 0.9049, D5 0.1808; F1 0.3062 / 0.6626 /
   0.5140 / 0.8090 / 0.8802 / 0.1730. Best MRR gain over B0: D1 +0.074 and
@@ -1115,10 +1123,12 @@ python scripts/v8_fix_report.py --old_dir data/results/ --new_dir data/results_i
   - Here: 80% of each reference after tuning on 20%, ranked within 20
     stage-1 candidates, D3 macro-averaged with per-pair thresholds (1–5
     validation references each), D5 fold 1 without training.
-- **Result provenance**: all 320 stored results (C1–C20, B0) come from clean
-  trees under protocol 2 with current digests, and none is flagged. Their five
-  source commits are on feature branches only (squash merges), so each
-  carries an annotated `results/issue-*` tag on origin.
+- **Result provenance**: at #138, all 320 stored results (C1–C20 with C12,
+  and B0) came from clean trees under protocol 2 with current digests, and
+  none was flagged. Their five source commits are on feature branches only
+  (squash merges), so each carries an annotated `results/issue-*` tag on
+  origin. Since #141 the 297 stored results (271 C, 26 B0) all come from
+  `c6931db` on `develop` (`results_inventory.md`, regenerated in #143).
 - **Reporting**: "controlled comparison under a re-ranking protocol", never
   benchmark results. No published score in our tables. Ranking and matching
   metrics are reported separately.
@@ -1490,18 +1500,20 @@ bge-large) and torch.mps.empty_cache() does not release it, so a corpus
 whose batches take hundreds of padded lengths (C3/D4_instance) exhausts
 device memory mid-encode. load_sentence_transformer() therefore pads
 every batch to a multiple of PAD_TO_MULTIPLE_OF (64) tokens via
-bucket_sequence_padding(). Padded positions are masked, so embeddings
-change only by float rounding, not by a bounded amount. Measured in #143
-(MPS; padded vs unpadded, normalised embeddings, each model's batch size
-through EmbeddingEncoder; D4_instance V2+V6 source texts, the 256 longest
-plus 256 random, which reach each model's token limit): max absolute
-difference M1 1.2e-7, M2 2.0e-7, M4 9.0e-5, M5 2.2e-6; 99th percentile
-1.1e-7 to 1.8e-7 for all four. M4's maximum is a single-text outlier.
-M3 (uncapped) on 64 texts (median 5,184 tokens, max 8,192): 3.9e-7; a
-512-text unpadded M3 run exhausts MPS memory, which is the problem padding
-solves. Synthetic short texts gave at most 3.1e-6 (M3). The 7.2e-7 /
-1.7e-6 figures from #120 were not recorded. Stored results were all
-produced with padding on, so no compared pair differs by it.
+bucket_sequence_padding(). Padded positions are masked, yet padding is
+not exactly neutral. `scripts/padding_drift.py` (#143;
+`artifacts/issue-143/padding_drift.{md,json}`) encodes D4_instance V2+V6
+source texts (the 256 longest plus 256 random, reaching each model's token
+limit; M3 32 + 32, as an unpadded M3 run of 512 exhausts MPS memory) padded
+and unpadded through EmbeddingEncoder. Max absolute difference of the
+normalised embeddings: M1 1.2e-7, M2 3.1e-7, M3 3.9e-7, M5 3.0e-7, but M4
+9.0e-5 (2 of 512 texts above 1e-6; p99 1.8e-7). The M4 outliers are short
+texts (36 and 39 tokens), and two padded M4 runs are bitwise identical, so
+the effect is deterministic, not run-to-run noise or long-batch rounding;
+its mechanism in BioLORD (MPNet) is not established. Repeated runs move the
+other models' maxima by up to ~2e-6 (M5), so read them as < ~2e-6. The
+7.2e-7 / 1.7e-6 figures from #120 were not recorded. Every stored result
+was produced with padding on, so no compared pair differs by it.
 
 V2+V8 does not invoke PPAS under any model. V2 (AnnotationVerbaliser)
 and V8 (RelationalSignatureVerbaliser) have no budget logic.
