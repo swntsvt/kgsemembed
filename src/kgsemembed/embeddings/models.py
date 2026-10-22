@@ -295,7 +295,8 @@ def bucket_sequence_padding(model: SentenceTransformer) -> None:
     padded lengths (D4 instances under a 420-token budget) exhausts device
     memory.  Bucketing the length bounds the number of shapes.  Padded
     positions are masked, so embeddings change only by float32 rounding
-    (observed maximum absolute difference 1.7e-6 on bge-large).
+    (maximum absolute difference of normalised embeddings 3.1e-6 across
+    M1-M5, on bge-m3; 3.0e-7 on bge-large).
 
     Parameters
     ----------
