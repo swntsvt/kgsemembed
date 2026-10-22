@@ -1016,13 +1016,17 @@ python scripts/v8_fix_report.py --old_dir data/results/ --new_dir data/results_i
   B0 MRR D1 0.7055, D2 0.8175, D3 0.7200,
   D4_schema 0.8879, D4_instance 0.9049, D5 0.1808; F1 0.3062 / 0.6626 /
   0.5140 / 0.8090 / 0.8802 / 0.1730. Best MRR gain over B0: D1 +0.074 and
-  D2 +0.085 (C4), D3 +0.043 (C1), D4 +0.033 / +0.039 (C3). Only about half
-  the conditions beat B0 on D1/D2 MRR. Better ranking need not mean better
-  F1: on D3, 6 of 11 beat B0 on MRR but 1 of 11 on F1; on D4_instance 7 of
-  12 on MRR but none on F1 (B0 0.8802 is the column's best F1, C20 0.8036
-  next). Every D5 condition is below B0 on every
-  metric (best C14 MRR −0.026); label/annotation-only conditions score MRR
-  0.035–0.055, near the 0.048 a random order of the same lists would get.
+  D2 +0.085 (C4), D3 +0.043 (C1), D4_schema +0.033 (C3, C8 and C10 tie),
+  D4_instance +0.039 (C3). Counts below are from `baseline_comparison.md` as
+  regenerated in #143 (271 C-results, after #142 retired C12 and #145
+  re-ran V8). Only about half the conditions beat B0 on D1/D2 MRR (D1 7 of
+  15, D2 6 of 13). Better ranking need not mean better F1: on D3, 6 of 10
+  beat B0 on MRR but 1 of 10 on F1; on D4_instance 8 of 11 on MRR but none
+  on F1 (B0 0.8802 is the column's best F1, C20 0.8036 next). Every D5
+  condition is below B0 on every metric (best C14 MRR −0.026);
+  label/annotation-only conditions (C1, C2, C20) score MRR 0.042 and the
+  V8 ones 0.034–0.049, near the 0.048 a random order of the same lists
+  would get.
 - **Provenance** (`dataset_provenance.py`): every D1–D4 file is
   byte-identical to the OAEI MELT release (D1 = Bio-ML 2022
   `bio-ml-equiv-unsupervised/2022/snomed.body-fma.body`; SNOMED CT
