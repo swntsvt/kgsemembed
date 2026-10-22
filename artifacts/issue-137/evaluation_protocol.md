@@ -37,7 +37,7 @@ construction:
 - threshold selection;
 - metric definitions and denominators.
 
-`baseline_comparison.md` checks this for every stored result: 294 of 294
+`baseline_comparison.md` checks this for every stored result: 271 of 271
 C-results match B0 on candidates, population block and protocol version.
 
 A condition's difference from B0 is therefore what embedding re-ranking adds
@@ -176,20 +176,26 @@ and a false negative to F1.
   the report. The Section 4.3 entity-type table instead weights D3 by
   `n_refs`.
 - Mean* in the main table averages D1–D4 (both D4 columns) and leaves out D5.
-- Significance tests (`evaluation/stats.py`) treat dataset columns, not pairs,
-  as observations. The 21 D3 pairs share seven ontologies, so they are not
-  independent.
+- Since #140 the primary tests are per-dataset paired tests over test
+  reference sources (`evaluation/paired_tests.py`; D3 pairs are strata). The
+  cross-dataset Wilcoxon summary (`evaluation/stats.py`) treats dataset
+  columns, not pairs, as observations: the 21 D3 pairs share seven
+  ontologies, so they are not independent.
 - B0 is not part of the C1–C20 ablation groups or their Wilcoxon families. Its
   comparisons are descriptive: one pair per column, no intervals.
 
 ## 5. Results against B0
 
-The full tables are in `baseline_comparison.md`. The main table (`--metric
-f1`) and its ranking companions (`--metric mrr`, `--metric recall_at_1`) carry
-B0 as their first row (`scripts/generate_results_table.py --baseline_dir`).
+The full tables are in `baseline_comparison.md`. Since #139 the main table
+is `--metric mrr`, with `--metric hits_at_1` as the other primary table and
+`--metric f1` and `--metric recall_at_1` as secondary ones; each carries B0
+as its first row (`scripts/generate_results_table.py --baseline_dir`).
 
-D1 numbers are from the re-run after the D1 known-pair fix (section 3; all
-15 D1 conditions and B0 at commit 65b0d33, clean tree). D2–D5 are unaffected.
+D1 numbers were first produced by the re-run after the D1 known-pair fix
+(section 3; all 15 D1 conditions and B0 at commit 65b0d33, clean tree);
+D2–D5 were unaffected by the fix.
+Every stored C1–C20 and B0 result was re-run at c6931db in #141 with every
+metric unchanged, so that is the commit the stored files now record.
 
 B0 per column:
 
@@ -203,29 +209,30 @@ B0 per column:
 The effect of re-ranking depends on the dataset. Descriptively, on one pair
 per column:
 
-Number of conditions above / below / equal to B0, per metric:
+Number of conditions above / below / equal to B0, per metric (as regenerated
+in #143: 271 C-results, after #142 retired C12 and #145 re-ran V8):
 
 | Metric | D1 | D2 | D3 | D4_schema | D4_instance | D5 |
 |---|---|---|---|---|---|---|
-| MRR | 7 / 8 / 0 | 6 / 7 / 0 | 6 / 5 / 0 | 10 / 2 / 0 | 7 / 5 / 0 | 0 / 11 / 0 |
-| Recall@1 | 8 / 7 / 0 | 5 / 8 / 0 | 5 / 6 / 0 | 8 / 2 / 2 | 8 / 4 / 0 | 0 / 11 / 0 |
-| F1 | 11 / 4 / 0 | 6 / 7 / 0 | 1 / 10 / 0 | 9 / 2 / 1 | 0 / 12 / 0 | 0 / 11 / 0 |
+| MRR | 7 / 8 / 0 | 6 / 7 / 0 | 6 / 4 / 0 | 10 / 1 / 0 | 8 / 3 / 0 | 0 / 11 / 0 |
+| Recall@1 | 7 / 8 / 0 | 5 / 8 / 0 | 5 / 5 / 0 | 8 / 1 / 2 | 8 / 3 / 0 | 0 / 11 / 0 |
+| F1 | 9 / 6 / 0 | 7 / 6 / 0 | 1 / 9 / 0 | 9 / 1 / 1 | 0 / 11 / 0 | 0 / 11 / 0 |
 
 - **Ranking improves on D1, D2 and D4, but not uniformly.** The best
   condition's MRR gain over B0 is:
   - D1: +0.074 (C4, V3/M2);
   - D2: +0.085 (C4);
-  - D4_schema: +0.033 (C3, V2+V6/M2);
+  - D4_schema: +0.033 (C3, V2+V6/M2; C8 and C10 tie);
   - D4_instance: +0.039 (C3).
 
   Only about half the conditions beat B0 on D1 and D2 MRR. Conditions without
-  lexical text collapse: C9/C12 (V8 only) lose 0.44–0.59 MRR on D1–D3.
+  lexical text collapse: C9 (V8 only) loses 0.44–0.57 MRR on D1–D3.
 - **Better ranking does not always give better matching F1.**
-  - On D3, 6 of 11 conditions beat B0 on MRR, but only 1 of 11 on F1 (C1,
+  - On D3, 6 of 10 conditions beat B0 on MRR, but only 1 of 10 on F1 (C1,
     +0.033).
-  - On D4_instance, 7 of 12 beat it on MRR, and none on F1. The best F1 is
+  - On D4_instance, 8 of 11 beat it on MRR, and none on F1. The best F1 is
     C20's 0.8036 against B0's 0.8802.
-  - On D1, by contrast, 11 of 15 beat B0 on F1 while 7 do on MRR.
+  - On D1, by contrast, 9 of 15 beat B0 on F1 while 7 do on MRR.
 
   F1 depends on the top-1 score clearing a threshold tuned on validation. How
   well that threshold separates correct from incorrect top-1 predictions
@@ -247,7 +254,7 @@ and 167 sources are unreachable. Every embedding condition then orders those
   The other conditions that read attribute text are next: C5 (V4/M2) −0.030
   and C3 (V2+V6/M2) −0.045.
 - Conditions whose text is labels, annotations or relational signatures (C1,
-  C2, C9, C10, C13, C18, C20) score MRR 0.035–0.055. That is about what a
+  C2, C9, C10, C13, C18, C20) score MRR 0.034–0.049. That is about what a
   random order of the same lists would score: 2,800 of 10,500 test references
   have their gold target in the list, and a uniformly random position scores
   H₂₀/20 ≈ 0.180 on average, giving 0.048.
@@ -306,7 +313,7 @@ only from Mean*, as before.
 python -m kgsemembed.pipeline.ngram_baseline --datasets D1 D2 D3 D4 D5 \
     --data_dir data/ --results_dir data/results_ngram_baseline/
 python scripts/generate_results_table.py --results_dir data/results/ \
-    --baseline_dir data/results_ngram_baseline/ --metric f1   # also mrr, recall_at_1
+    --baseline_dir data/results_ngram_baseline/ --metric mrr  # also hits_at_1, f1, recall_at_1
 python scripts/generate_baseline_comparison.py
 python scripts/dataset_provenance.py --data_dir data/ \
     --release_cache ~/oaei_track_cache/oaei.webdatacommons.org
