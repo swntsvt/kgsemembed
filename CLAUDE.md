@@ -436,7 +436,8 @@ kgsemembed/                      # repo root
 - **Key dependencies**: `rdflib` (pinned `==7.6.0` in `requirements.txt`,
   `>=7.6,<8` in `pyproject.toml`), `scipy` (`>=1.18`; see below),
   `sentence-transformers`, `torch`, `transformers`, `pandas`, `numpy`,
-  `orjson`, `tqdm`, `matplotlib` and `seaborn` (figure and report scripts),
+  `orjson`, `tqdm`, `matplotlib` (figure and report scripts), `seaborn`
+  (listed in requirements but imported nowhere),
   plus `hydra-core` and `omegaconf` for the legacy scaffold above; `pytest`
   is in `requirements.txt` and the `dev` extra. Installed on the development machine: scipy 1.18.1, numpy 2.5.3,
   torch 2.11.0, transformers 5.5.4, sentence-transformers 5.4.0.
@@ -1502,18 +1503,22 @@ device memory mid-encode. load_sentence_transformer() therefore pads
 every batch to a multiple of PAD_TO_MULTIPLE_OF (64) tokens via
 bucket_sequence_padding(). Padded positions are masked, yet padding is
 not exactly neutral. `scripts/padding_drift.py` (#143;
-`artifacts/issue-143/padding_drift.{md,json}`) encodes D4_instance V2+V6
-source texts (the 256 longest plus 256 random, reaching each model's token
-limit; M3 32 + 32, as an unpadded M3 run of 512 exhausts MPS memory) padded
-and unpadded through EmbeddingEncoder. Max absolute difference of the
-normalised embeddings: M1 1.2e-7, M2 3.1e-7, M3 3.9e-7, M5 3.0e-7, but M4
+`artifacts/issue-143/padding_drift.{md,json}`, MPS only) encodes D4_instance
+V2+V6 source texts as the pipeline encodes sources (`role="source"`, so M5
+carries its prefix; EmbeddingEncoder's reduced batch for long texts), padded
+and unpadded: the 256 longest plus 256 random, reaching each model's token
+limit; M3 32 + 32, as an unpadded M3 run of 512 exhausts MPS memory. M3
+runs at an effective batch of 1, so its row measures only the pad-to-64
+tokens, not mixed-length batches. Max absolute difference of the
+normalised embeddings: M1 1.2e-7, M2 3.1e-7, M3 3.9e-7, M5 1.0e-7, but M4
 9.0e-5 (2 of 512 texts above 1e-6; p99 1.8e-7). The M4 outliers are short
-texts (36 and 39 tokens), and two padded M4 runs are bitwise identical, so
-the effect is deterministic, not run-to-run noise or long-batch rounding;
-its mechanism in BioLORD (MPNet) is not established. Repeated runs move the
-other models' maxima by up to ~2e-6 (M5), so read them as < ~2e-6. The
-7.2e-7 / 1.7e-6 figures from #120 were not recorded. Every stored result
-was produced with padding on, so no compared pair differs by it.
+texts (36 and 39 tokens), and padded encodes are bitwise reproducible, so
+the effect is deterministic, not noise or long-batch rounding; its
+mechanism in BioLORD (MPNet) is not established. Re-runs reproduce every
+row exactly; an earlier ad-hoc sample (different tie-breaking, M5 without
+its prefix) reached 2.2e-6 on M5, so these maxima are sample-dependent.
+The 7.2e-7 / 1.7e-6 figures from #120 were not recorded. Every stored
+result was produced with padding on, so no compared pair differs by it.
 
 V2+V8 does not invoke PPAS under any model. V2 (AnnotationVerbaliser)
 and V8 (RelationalSignatureVerbaliser) have no budget logic.

@@ -73,7 +73,8 @@ reference statistics, and each benchmark's protocol compared with ours.
 ### Tests
 
 ```bash
-venv/bin/pytest tests/ -x -q          # ~4 min; 6 loader tests need data/
+venv/bin/pytest tests/ -q             # ~4 min; without data/ the 6 tests in
+                                      # test_dataset_loader.py fail, the rest pass
 venv/bin/pytest tests/ -q --runslow   # also slow model tests (downloads models)
 ```
 
@@ -208,12 +209,15 @@ venv/bin/python scripts/generate_figure2_model_comparison.py \
     --results_dir data/results/ --output_dir figures/ --metric mrr
 ```
 
-Two later outputs are not in the tag: the paired intervals behind the
+Two generated outputs postdate the tag: the paired intervals behind the
 figures' claims (`figure_claims.py`, #149) and the B0 comparison regenerated
-after #142/#145 (the tag's `baseline_comparison.md` predates both). They need
-a checkout of `develop` (until the next release), with the same archive
-extracted into it. Both scripts rewrite tracked files, so the last step
-checks that they regenerate unchanged:
+after #142/#145 (#143; the tag's `baseline_comparison.md` predates both).
+Reproducing them needs a checkout of `develop` that includes #143 (until the
+next release), with the same archive extracted into it. Both scripts rewrite
+tracked files, so the last step checks that they regenerate unchanged. The
+hand-written protocol notes and the results inventory in
+`artifacts/issue-137/` and `artifacts/issue-138/` were also corrected in
+#143, so read them on `develop` rather than at the tag.
 
 ```bash
 git checkout develop
@@ -252,7 +256,7 @@ stays because tests import it. Its optional machine-specific settings (local
 paths, device) go in a gitignored copy of the tracked template:
 
 ```bash
-cp configs/local/runtime.example.yaml configs/local/runtime.yaml
+cp -n configs/local/runtime.example.yaml configs/local/runtime.yaml   # never overwrites
 ```
 
 ## Citation

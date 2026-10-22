@@ -176,20 +176,26 @@ and a false negative to F1.
   the report. The Section 4.3 entity-type table instead weights D3 by
   `n_refs`.
 - Mean* in the main table averages D1–D4 (both D4 columns) and leaves out D5.
-- Significance tests (`evaluation/stats.py`) treat dataset columns, not pairs,
-  as observations. The 21 D3 pairs share seven ontologies, so they are not
-  independent.
+- Since #140 the primary tests are per-dataset paired tests over test
+  reference sources (`evaluation/paired_tests.py`; D3 pairs are strata). The
+  cross-dataset Wilcoxon summary (`evaluation/stats.py`) treats dataset
+  columns, not pairs, as observations: the 21 D3 pairs share seven
+  ontologies, so they are not independent.
 - B0 is not part of the C1–C20 ablation groups or their Wilcoxon families. Its
   comparisons are descriptive: one pair per column, no intervals.
 
 ## 5. Results against B0
 
-The full tables are in `baseline_comparison.md`. The main table (`--metric
-f1`) and its ranking companions (`--metric mrr`, `--metric recall_at_1`) carry
-B0 as their first row (`scripts/generate_results_table.py --baseline_dir`).
+The full tables are in `baseline_comparison.md`. Since #139 the main table
+is `--metric mrr`, with `--metric hits_at_1` as the other primary table and
+`--metric f1` and `--metric recall_at_1` as secondary ones; each carries B0
+as its first row (`scripts/generate_results_table.py --baseline_dir`).
 
-D1 numbers are from the re-run after the D1 known-pair fix (section 3; all
-15 D1 conditions and B0 at commit 65b0d33, clean tree). D2–D5 are unaffected.
+D1 numbers were first produced by the re-run after the D1 known-pair fix
+(section 3; all 15 D1 conditions and B0 at commit 65b0d33, clean tree);
+D2–D5 were unaffected by the fix.
+Every stored C1–C20 and B0 result was re-run at c6931db in #141 with every
+metric unchanged, so that is the commit the stored files now record.
 
 B0 per column:
 
@@ -307,7 +313,7 @@ only from Mean*, as before.
 python -m kgsemembed.pipeline.ngram_baseline --datasets D1 D2 D3 D4 D5 \
     --data_dir data/ --results_dir data/results_ngram_baseline/
 python scripts/generate_results_table.py --results_dir data/results/ \
-    --baseline_dir data/results_ngram_baseline/ --metric f1   # also mrr, recall_at_1
+    --baseline_dir data/results_ngram_baseline/ --metric mrr  # also hits_at_1, f1, recall_at_1
 python scripts/generate_baseline_comparison.py
 python scripts/dataset_provenance.py --data_dir data/ \
     --release_cache ~/oaei_track_cache/oaei.webdatacommons.org

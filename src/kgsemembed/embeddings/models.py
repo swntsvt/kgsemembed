@@ -294,9 +294,10 @@ def bucket_sequence_padding(model: SentenceTransformer) -> None:
     not release, so encoding a corpus whose batches take hundreds of distinct
     padded lengths (D4 instances under a 420-token budget) exhausts device
     memory.  Bucketing the length bounds the number of shapes.  Padded
-    positions are masked, but the result is not exactly neutral: padded and
-    unpadded normalised embeddings differ by at most ~3e-7 on M1, M2, M3
-    and M5, and by up to 9.0e-5 on BioLORD (M4) for a few short texts
+    positions are masked, but the result is not exactly neutral: on the
+    recorded D4 sample, padded and unpadded normalised embeddings differ by
+    at most 3.9e-7 on M1, M2, M3 and M5 (2.2e-6 on an earlier M5 sample), and
+    by up to 9.0e-5 on BioLORD (M4) for a few short texts
     (``scripts/padding_drift.py``; ``artifacts/issue-143/padding_drift.md``).
 
     Parameters
