@@ -4,7 +4,11 @@ Plots one metric on D1 and D2 for each of the five embedding models with the
 V2+V8 strategy held constant (C18, C10, C15, C11, C13), alongside the C17
 reference bar (V1 on BioLORD): re-ranking MRR by default, the paper's primary
 metric, or ``--metric hits_at_1`` / ``--metric f1``.  Holding the strategy
-fixed isolates the model's contribution on the two biomedical datasets.
+fixed isolates the model's contribution on the two biomedical datasets.  The
+figure's claims rest on the paired intervals of ``scripts/figure_claims.py``
+(#149, ``artifacts/issue-149/``), not on the bar heights: under MRR, M5 leads
+the V2+V8 models on D1 and ties M4 on D2, and C17 is above every V2+V8 bar on
+both datasets.
 
 Each result file's ``strategy`` and ``model_key`` are checked against the bar
 it is plotted under, so a bar can never carry the wrong label.  A missing

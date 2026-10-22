@@ -2,9 +2,16 @@
 
 Plots a per-pair metric of C3 (V2+V6 / M2) against C10 (V2+V8 / M2) over
 the 21 Conference pairs: re-ranking MRR by default, the paper's primary
-metric, or ``--metric hits_at_1`` / ``--metric f1``.  Pairs involving CMT or EDAS, the annotation-sparse
-ontologies, are highlighted to show that V8's advantage over V6 concentrates
-on them.  Points above the diagonal are pairs where C10 wins.
+metric, or ``--metric hits_at_1`` / ``--metric f1``.  Points above the
+diagonal are pairs where C10 is ahead.  Pairs involving CMT or EDAS are
+highlighted: an earlier F1 reading held that V8's advantage over V6
+concentrated on them as "annotation-sparse" ontologies.  Neither part holds
+(#149): CMT and EDAS are not the sparsest Conference ontologies (EKAW is), and
+under MRR C3 is ahead on D3 overall, with no pair whose interval favours C10.
+What the paired intervals do show (``scripts/figure_claims.py``,
+``artifacts/issue-149/``) is that C3's lead sits on the other pairs: on the
+CMT/EDAS pairs the two are indistinguishable.  The callouts name the three
+pairs where C10 is ahead on MRR, all CMT/EDAS pairs.
 
 Writes ``fig1_d3_scatter.pdf`` (and a ``.png`` preview) to the output
 directory for MRR, ``fig1_d3_scatter_{metric}.pdf`` otherwise, and prints a
@@ -57,9 +64,9 @@ SPARSE_PAIRS = frozenset({
     "edas-iasted", "edas-sigkdd",
 })
 _LABEL_OFFSETS = {
-    "cmt-edas": (-0.03, 0.05),
-    "cmt-iasted": (0.06, 0.10),
-    "cmt-ekaw": (0.03, 0.05),
+    "edas-sigkdd": (-0.23, 0.035),
+    "cmt-edas": (-0.25, 0.05),
+    "edas-ekaw": (-0.23, -0.025),
 }
 _ANNOTATION_STYLE = {
     "fontsize": 7,
@@ -142,7 +149,7 @@ def _axis_limit(scores: PairScores) -> float:
 
 
 def _plot_points(ax: Axes, scores: PairScores) -> None:
-    """Scatter the pairs, coloured by annotation sparsity, over the diagonal."""
+    """Scatter the pairs, CMT/EDAS pairs coloured apart, over the diagonal."""
     x_vals, y_vals = zip(*scores.values())
     colours = [_SPARSE_COLOUR if p in SPARSE_PAIRS else _RICH_COLOUR for p in scores]
     ax.scatter(x_vals, y_vals, c=colours, s=52, zorder=3,
@@ -153,12 +160,13 @@ def _plot_points(ax: Axes, scores: PairScores) -> None:
 
 
 def _annotate_pairs(ax: Axes, scores: PairScores) -> None:
-    """Label the pairs named in the paper with an offset arrow callout."""
+    """Label the pairs named in the figure text, offsets scaled to the axis limit."""
+    lim = _axis_limit(scores)
     for pair, (dx, dy) in _LABEL_OFFSETS.items():
         if pair not in scores:
             continue
         x, y = scores[pair]
-        ax.annotate(pair, xy=(x, y), xytext=(x + dx, y + dy), **_ANNOTATION_STYLE)
+        ax.annotate(pair, xy=(x, y), xytext=(x + dx * lim, y + dy * lim), **_ANNOTATION_STYLE)
 
 
 def _style_axes(ax: Axes, lim: float, metric: str) -> None:
@@ -173,16 +181,16 @@ def _style_axes(ax: Axes, lim: float, metric: str) -> None:
 
 
 def _add_legend_and_regions(ax: Axes, lim: float) -> None:
-    """Add the sparsity legend and the 'wins' labels either side of the diagonal."""
+    """Add the pair-group legend and the 'ahead' labels either side of the diagonal."""
     handles = [
-        mpatches.Patch(color=_SPARSE_COLOUR, label="CMT or EDAS pair (annotation-sparse)"),
+        mpatches.Patch(color=_SPARSE_COLOUR, label="CMT or EDAS pair"),
         mpatches.Patch(color=_RICH_COLOUR, label="Other Conference pair"),
     ]
     ax.legend(handles=handles, fontsize=7, loc="lower right", framealpha=0.9)
     region_style = {"fontsize": 7.5, "color": "#888888", "ha": "center",
                     "style": "italic", "rotation": 45}
-    ax.text(lim * 0.22, lim * 0.78, "C10 wins", **region_style)
-    ax.text(lim * 0.78, lim * 0.22, "C3 wins", **region_style)
+    ax.text(lim * 0.22, lim * 0.78, "C10 ahead", **region_style)
+    ax.text(lim * 0.78, lim * 0.22, "C3 ahead", **region_style)
 
 
 def build_figure(scores: PairScores, metric: str = _PRIMARY_METRIC) -> Figure:
@@ -263,8 +271,8 @@ def summary_lines(scores: PairScores, metric: str = _PRIMARY_METRIC) -> List[str
     Returns
     -------
     List[str]
-        Table lines, sparse pairs starred, followed by overall and sparse-pair
-        win counts out of the number of pairs plotted.
+        Table lines, CMT/EDAS pairs starred, followed by overall and CMT/EDAS
+        win counts (point estimates) out of the number of pairs plotted.
     """
     name = _METRIC_LABELS[metric]
     lines = [f"{'Pair':<35} {'C3 ' + name:>7} {'C10 ' + name:>7} {'Winner'}", "-" * 58]
@@ -277,7 +285,7 @@ def summary_lines(scores: PairScores, metric: str = _PRIMARY_METRIC) -> List[str
     sparse_c10 = sum(winners[pair] == "C10" for pair in sparse)
     lines.append(f"\nC10 wins: {count('C10')}/{len(scores)}, "
                  f"C3 wins: {count('C3')}/{len(scores)}")
-    lines.append(f"C10 wins on sparse pairs: {sparse_c10}/{len(sparse)}")
+    lines.append(f"C10 wins on CMT/EDAS pairs: {sparse_c10}/{len(sparse)}")
     return lines
 
 

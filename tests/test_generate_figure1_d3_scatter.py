@@ -71,7 +71,7 @@ def test_pair_scores_raises_without_shared_pairs(tmp_path: Path) -> None:
 def test_summary_counts_wins_out_of_pairs_plotted(results_dir: Path) -> None:
     lines = summary_lines(pair_scores(results_dir, "f1"), "f1")
     assert lines[-2] == "\nC10 wins: 1/3, C3 wins: 1/3"
-    assert lines[-1] == "C10 wins on sparse pairs: 1/1"
+    assert lines[-1] == "C10 wins on CMT/EDAS pairs: 1/1"
 
 
 def test_summary_stars_sparse_pairs_and_reports_ties(results_dir: Path) -> None:
