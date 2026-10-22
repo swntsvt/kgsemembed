@@ -19,7 +19,7 @@ Phase 2 datasets: D1 (SNOMED-FMA Body), D2 (Anatomy MA-NCI), D3 (Conference,
 21 pairs), D4 (memoryalpha-stexpanded, schema and instance), D5
 (DBpedia-Wikidata 15K EN, OpenEA). Five datasets total.
 
-**Current focus**: Issue #141's release — the C1–C20 and B0 re-run at c6931db (sidecars, Hits@k, device, pinned revisions; every metric equal to the stored one), regenerated tables, tag `v0.2.0-phase2-results` and its data archive (see "Release (#141)"). Next: #149. Previously #140 — per-dataset paired tests (bootstrap intervals, randomisation p-values, Holm within group × column × metric) on MRR and Hits@1 (F1 secondary) from new per-source sidecars; Wilcoxon kept as a cross-dataset consistency summary on MRR; `report.md` leads with MRR. Previously #141 — pinned model revisions, device check and recording (`--allow_device`), and `requirements-lock.txt`. Previously #142 — retire C12 (duplicate of C9; IDs not renumbered), move C19 to a sanity-check group and section, correct stale condition descriptions and PPAS labels, and average the report's summary table over dataset columns. Previously #145 — V8 excludes annotation predicates (FMA, oboInOwl, OWL axiom annotations, DBkWik page text, description/name vocabularies) instead of listing them as relationships; text inventory, per-predicate classification and V8 re-runs (`artifacts/issue-145/`). Previously #139 — re-ranking MRR and source-level Hits@1 as the paper's primary metrics (F1 secondary), one definition of each metric's unit, ceiling and 1:N handling, and tables that show the top-20 ceiling, D3 micro F1 and F1's reference counts (`artifacts/issue-139/`). Previously #138 — dataset and reference-alignment provenance, each dataset's protocol against its benchmark's official one, and the paper's datasets/protocol text (`artifacts/issue-138/`); #137 — stage-1 n-gram ranking baseline (B0) and the written evaluation protocol (`artifacts/issue-137/`); #136 — V1/V2 read the synonym and definition predicates D1/D2 actually use; #134 — text-serialization-order experiment on D1 and D2 (effect of item order with the selected set held fixed; order frozen on D2 validation before any test evaluation); #128, #130 and #131 merged (Phase 2)
+**Current focus**: Issue #149 — Figure 1 and Figure 2 claims judged against #140 paired intervals under MRR (`scripts/figure_claims.py`, `artifacts/issue-149/`): Figure 1 kept with its claim reframed (no V8 advantage on D3; C3's lead sits on the non-CMT/EDAS pairs; CMT/EDAS are not the sparsest ontologies), Figure 2 kept with its claim restated (M5 leads on D1, ties M4 on D2; C17 above every V2+V8 model). Previously #141's release — the C1–C20 and B0 re-run at c6931db (sidecars, Hits@k, device, pinned revisions; every metric equal to the stored one), regenerated tables, tag `v0.2.0-phase2-results` and its data archive (see "Release (#141)"). Previously #140 — per-dataset paired tests (bootstrap intervals, randomisation p-values, Holm within group × column × metric) on MRR and Hits@1 (F1 secondary) from new per-source sidecars; Wilcoxon kept as a cross-dataset consistency summary on MRR; `report.md` leads with MRR. Previously #141 — pinned model revisions, device check and recording (`--allow_device`), and `requirements-lock.txt`. Previously #142 — retire C12 (duplicate of C9; IDs not renumbered), move C19 to a sanity-check group and section, correct stale condition descriptions and PPAS labels, and average the report's summary table over dataset columns. Previously #145 — V8 excludes annotation predicates (FMA, oboInOwl, OWL axiom annotations, DBkWik page text, description/name vocabularies) instead of listing them as relationships; text inventory, per-predicate classification and V8 re-runs (`artifacts/issue-145/`). Previously #139 — re-ranking MRR and source-level Hits@1 as the paper's primary metrics (F1 secondary), one definition of each metric's unit, ceiling and 1:N handling, and tables that show the top-20 ceiling, D3 micro F1 and F1's reference counts (`artifacts/issue-139/`). Previously #138 — dataset and reference-alignment provenance, each dataset's protocol against its benchmark's official one, and the paper's datasets/protocol text (`artifacts/issue-138/`); #137 — stage-1 n-gram ranking baseline (B0) and the written evaluation protocol (`artifacts/issue-137/`); #136 — V1/V2 read the synonym and definition predicates D1/D2 actually use; #134 — text-serialization-order experiment on D1 and D2 (effect of item order with the selected set held fixed; order frozen on D2 validation before any test evaluation); #128, #130 and #131 merged (Phase 2)
 
 ## Git Workflow
 
@@ -182,17 +182,28 @@ python scripts/release_checks.py --data_dir data/ \
 python scripts/generate_entity_type_table.py --results_dir data/results/
 
 # Plot Figure 1: D3 per-pair MRR (default; --metric hits_at_1 / f1), C3 vs
-# C10, CMT/EDAS pairs highlighted. Writes figures/fig1_d3_scatter.pdf (+ .png;
-# other metrics get a _{metric} suffix) and prints win counts.
+# C10, CMT/EDAS pairs highlighted (not "annotation-sparse": EKAW is sparser).
+# Writes figures/fig1_d3_scatter.pdf (+ .png; other metrics get a _{metric}
+# suffix) and prints win counts. Its claim (#149): C3 leads on D3, and the
+# lead sits on the non-CMT/EDAS pairs; under MRR and Hits@1 no pair's
+# interval favours V8 (under F1, cmt-edas does).
 python scripts/generate_figure1_d3_scatter.py \
     --results_dir data/results/ --output_dir figures/ --metric mrr
 
 # Plot Figure 2: D1/D2 MRR (default; --metric hits_at_1 / f1) per model with
 # V2+V8 held constant, plus the C17 (V1/M4) reference bar. C15 has no D2 run,
 # so that bar is drawn as n/a. Writes figures/fig2_model_comparison.pdf
-# (+ .png; other metrics suffixed) and prints the values.
+# (+ .png; other metrics suffixed) and prints the values. Its claim (#149):
+# with V2+V8 fixed, M5 leads on D1 and ties M4 on D2, and no V2+V8 model
+# reaches C17 (V1/M4).
 python scripts/generate_figure2_model_comparison.py \
     --results_dir data/results/ --output_dir figures/ --metric mrr
+
+# Paired intervals behind both figures' claims (#149; #140 settings, from the
+# sidecars, ~1.5 min): artifacts/issue-149/figure_claims.{md,json}. The
+# figures' paper text is artifacts/issue-149/paper_figures_section.tex.
+python scripts/figure_claims.py --results_dir data/results/ \
+    --output_dir artifacts/issue-149/
 
 # Check dataset presence
 python scripts/download_datasets.py --data_dir data/ --check

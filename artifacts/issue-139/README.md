@@ -37,6 +37,10 @@ cmt-conference (1 of 12).
 
 ## Effect on the paper's figures (descriptive)
 
+> Superseded by `artifacts/issue-149/` (#149): the values below predate the
+> #145 V8 re-runs, and both figures' claims are now judged against #140
+> paired intervals.
+
 With the primary metric, the story behind both figures shifts:
 
 - **Figure 1** (D3, C3 vs C10): under MRR, C10 wins 3 of 21 pairs (3 of 11

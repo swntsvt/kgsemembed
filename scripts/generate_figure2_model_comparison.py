@@ -4,7 +4,11 @@ Plots one metric on D1 and D2 for each of the five embedding models with the
 V2+V8 strategy held constant (C18, C10, C15, C11, C13), alongside the C17
 reference bar (V1 on BioLORD): re-ranking MRR by default, the paper's primary
 metric, or ``--metric hits_at_1`` / ``--metric f1``.  Holding the strategy
-fixed isolates the model's contribution on the two biomedical datasets.
+fixed isolates the model's contribution on the two biomedical datasets.  The
+figure's claims rest on the paired intervals of ``scripts/figure_claims.py``
+(#149, ``artifacts/issue-149/``), not on the bar heights: under MRR, M5 leads
+the V2+V8 models on D1 and ties M4 on D2, and C17 is above every V2+V8 bar on
+both datasets.
 
 Each result file's ``strategy`` and ``model_key`` are checked against the bar
 it is plotted under, so a bar can never carry the wrong label.  A missing
@@ -26,13 +30,17 @@ from __future__ import annotations
 import argparse
 import json
 import random
-from dataclasses import dataclass
+import sys
 from pathlib import Path
 from typing import Dict, List, Optional
 
 import matplotlib
 
 matplotlib.use("Agg")
+
+_REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
 
 import matplotlib.patches as mpatches  # noqa: E402
 import matplotlib.pyplot as plt  # noqa: E402
@@ -45,59 +53,22 @@ from kgsemembed.evaluation.reference_counts import (  # noqa: E402
     load_reference_counts,
     result_metric,
 )
-
-
-@dataclass(frozen=True)
-class BarSpec:
-    """One model group on the x-axis and the condition that supplies it."""
-
-    label: str
-    condition_id: str
-    strategy: str
-    model_key: str
-    colour: str
-
-
-@dataclass(frozen=True)
-class DatasetSpec:
-    """One bar within each model group."""
-
-    dataset_id: str
-    pair_name: str
-    label: str
-    alpha: float
-
+from scripts.figure_specs import (  # noqa: E402
+    BARS,
+    CONSTANT_STRATEGY,
+    DATASETS,
+    BarSpec,
+    DatasetSpec,
+    check_condition,
+)
 
 ModelScores = Dict[str, List[Optional[float]]]
 
 _OUTPUT_STEM = "fig2_model_comparison"
 _PRIMARY_METRIC = "mrr"
 _METRIC_LABELS = {"mrr": "MRR", "hits_at_1": "Hits@1", "f1": "F1"}
-_CONSTANT_STRATEGY = "V2+V8"
-BARS = (
-    BarSpec("M1\n(MiniLM)", "C18", _CONSTANT_STRATEGY, "M1", "#7fb3d3"),
-    BarSpec("M2\n(bge-large)", "C10", _CONSTANT_STRATEGY, "M2", "#5b7fa6"),
-    BarSpec("M3\n(bge-m3)", "C15", _CONSTANT_STRATEGY, "M3", "#3a5f8a"),
-    BarSpec("M4\n(BioLORD)", "C11", _CONSTANT_STRATEGY, "M4", "#e07b54"),
-    BarSpec("M5\n(stella)", "C13", _CONSTANT_STRATEGY, "M5", "#9b59b6"),
-    BarSpec("M4 V1\n(BioLORD,\nC17 ref)", "C17", "V1", "M4", "#c0392b"),
-)
-DATASETS = (
-    DatasetSpec("D1", "d1_snomed_fma", "D1 (SNOMED-FMA)", 0.45),
-    DatasetSpec("D2", "d2_anatomy", "D2 (Anatomy MA-NCI)", 1.0),
-)
 _BAR_WIDTH = 0.35
 _MISSING_LABEL = "n/a"
-
-
-def _check_condition(result: dict, bar: BarSpec) -> None:
-    """Raise if a result file was produced by a different strategy or model."""
-    found = (result["strategy"], result["model_key"])
-    if found != (bar.strategy, bar.model_key):
-        raise ValueError(
-            f"{bar.condition_id} result has strategy/model {found}, "
-            f"expected {(bar.strategy, bar.model_key)}"
-        )
 
 
 def _counts_for(metric: str) -> Optional[dict]:
@@ -139,7 +110,7 @@ def load_score(
     if not path.exists():
         return None
     result = json.loads(path.read_text())
-    _check_condition(result, bar)
+    check_condition(result, bar)
     return result_metric(result, metric, _counts_for(metric))
 
 
@@ -206,7 +177,7 @@ def _add_reference_divider(ax: Axes, y_top: float) -> None:
     ax.text(divider_x, y_top * 0.98, "V1 ref", ha="center", va="top",
             fontsize=6.5, color="#888888",
             bbox={"facecolor": "white", "edgecolor": "none", "pad": 1})
-    ax.text((len(BARS) - 2) / 2, -0.17, f"Strategy: {_CONSTANT_STRATEGY} (constant)",
+    ax.text((len(BARS) - 2) / 2, -0.17, f"Strategy: {CONSTANT_STRATEGY} (constant)",
             ha="center", transform=ax.get_xaxis_transform(),
             fontsize=7.5, color="#444444", style="italic")
 
