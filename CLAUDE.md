@@ -19,7 +19,7 @@ Phase 2 datasets: D1 (SNOMED-FMA Body), D2 (Anatomy MA-NCI), D3 (Conference,
 21 pairs), D4 (memoryalpha-stexpanded, schema and instance), D5
 (DBpedia-Wikidata 15K EN, OpenEA). Five datasets total.
 
-**Current focus**: Issue #143 — CLAUDE.md corrected against the code and stored results (#134 test results, tags, dependencies, directory structure, padding drift) and README.md rewritten around the Phase 2 pipeline (install, data, run, reproduce; legacy Hydra scaffold as a short note). Previously #149 — Figure 1 and Figure 2 claims judged against #140 paired intervals under MRR (`scripts/figure_claims.py`, `artifacts/issue-149/`): Figure 1 kept with its claim reframed (no V8 advantage on D3; C3's lead sits on the non-CMT/EDAS pairs; CMT/EDAS are not the sparsest ontologies), Figure 2 kept with its claim restated (M5 leads on D1, ties M4 on D2; C17 above every V2+V8 model). Previously #141's release — the C1–C20 and B0 re-run at c6931db (sidecars, Hits@k, device, pinned revisions; every metric equal to the stored one), regenerated tables, tag `v0.2.0-phase2-results` and its data archive (see "Release (#141)"). Previously #140 — per-dataset paired tests (bootstrap intervals, randomisation p-values, Holm within group × column × metric) on MRR and Hits@1 (F1 secondary) from new per-source sidecars; Wilcoxon kept as a cross-dataset consistency summary on MRR; `report.md` leads with MRR. Previously #141 — pinned model revisions, device check and recording (`--allow_device`), and `requirements-lock.txt`. Previously #142 — retire C12 (duplicate of C9; IDs not renumbered), move C19 to a sanity-check group and section, correct stale condition descriptions and PPAS labels, and average the report's summary table over dataset columns. Previously #145 — V8 excludes annotation predicates (FMA, oboInOwl, OWL axiom annotations, DBkWik page text, description/name vocabularies) instead of listing them as relationships; text inventory, per-predicate classification and V8 re-runs (`artifacts/issue-145/`). Previously #139 — re-ranking MRR and source-level Hits@1 as the paper's primary metrics (F1 secondary), one definition of each metric's unit, ceiling and 1:N handling, and tables that show the top-20 ceiling, D3 micro F1 and F1's reference counts (`artifacts/issue-139/`). Previously #138 — dataset and reference-alignment provenance, each dataset's protocol against its benchmark's official one, and the paper's datasets/protocol text (`artifacts/issue-138/`); #137 — stage-1 n-gram ranking baseline (B0) and the written evaluation protocol (`artifacts/issue-137/`); #136 — V1/V2 read the synonym and definition predicates D1/D2 actually use; #134 — text-serialization-order experiment on D1 and D2 (effect of item order with the selected set held fixed; order frozen on D2 validation before any test evaluation); #128, #130 and #131 merged (Phase 2)
+**Current focus**: Issue #143 — CLAUDE.md corrected against the code and stored results (#134 test results, tags, dependencies, directory structure, padding drift) and README.md rewritten around the Phase 2 pipeline (install, data, run, reproduce; legacy Hydra scaffold as a short note). Previously #149 — Figure 1 and Figure 2 claims judged against #140 paired intervals under MRR (`scripts/figure_claims.py`, `artifacts/issue-149/`): Figure 1 kept with its claim reframed (no V8 advantage on D3; C3's lead sits on the non-CMT/EDAS pairs; CMT/EDAS are not the sparsest ontologies), Figure 2 kept with its claim restated (M5 leads on D1, ties M4 on D2; C17 above every V2+V8 model). Previously #141's release — the C1–C20 and B0 re-run at c6931db (sidecars, Hits@k, device, pinned revisions; every metric equal to the stored one), regenerated tables, tag `v0.2.0-phase2-results` and its data archive (see "Release (#141)"). Previously #140 — per-dataset paired tests (bootstrap intervals, randomisation p-values, on MRR, Hits@1 and F1, with a Holm decision within group × column on MRR only) from new per-source sidecars; Wilcoxon kept as a cross-dataset consistency summary on MRR; `report.md` leads with MRR. Previously #141 — pinned model revisions, device check and recording (`--allow_device`), and `requirements-lock.txt`. Previously #142 — retire C12 (duplicate of C9; IDs not renumbered), move C19 to a sanity-check group and section, correct stale condition descriptions and PPAS labels, and average the report's summary table over dataset columns. Previously #145 — V8 excludes annotation predicates (FMA, oboInOwl, OWL axiom annotations, DBkWik page text, description/name vocabularies) instead of listing them as relationships; text inventory, per-predicate classification and V8 re-runs (`artifacts/issue-145/`). Previously #139 — re-ranking MRR and source-level Hits@1 as the paper's primary metrics (F1 secondary), one definition of each metric's unit, ceiling and 1:N handling, and tables that show the top-20 ceiling, D3 micro F1 and F1's reference counts (`artifacts/issue-139/`). Previously #138 — dataset and reference-alignment provenance, each dataset's protocol against its benchmark's official one, and the paper's datasets/protocol text (`artifacts/issue-138/`); #137 — stage-1 n-gram ranking baseline (B0) and the written evaluation protocol (`artifacts/issue-137/`); #136 — V1/V2 read the synonym and definition predicates D1/D2 actually use; #134 — text-serialization-order experiment on D1 and D2 (effect of item order with the selected set held fixed; order frozen on D2 validation before any test evaluation); #128, #130 and #131 merged (Phase 2)
 
 ## Git Workflow
 
@@ -972,7 +972,7 @@ python scripts/annotation_fix_report.py --old_dir data/results/ \
   (byte-identical); the replaced files and the previous `report.md` are kept
   in `data/results_pre145/`. In the regenerated report, group B's C9 vs C10
   goes from 24/0/2, p 0.0312 to 23/0/3, p 0.0625 (still not significant
-  under alpha/4). `artifacts/issue-138/results_inventory.md` is regenerated:
+  under alpha/4, nor under alpha/3 once #142 retired C12). `artifacts/issue-138/results_inventory.md` is regenerated:
   every V8 result now carries the current exclusion digest and nothing is
   flagged.
 
@@ -1011,8 +1011,9 @@ python scripts/v8_fix_report.py --old_dir data/results/ --new_dir data/results_i
   pair. On D4 (partial reference) the ranked-source counts are left out of
   the check: an unmatched source is judgeable only when its top target is a
   reference target, so those counts depend on each method's ranking.
-- **Results (6d1878a; 26/26 pairs clean; 294/294 C-results matched; one pair
-  per column, descriptive; D1 re-run at 65b0d33 after the known-pair fix)**:
+- **Results (6d1878a; 26/26 pairs clean; 294/294 C-results matched then,
+  271/271 after #142/#145; one pair per column, descriptive; D1 re-run at
+  65b0d33 after the known-pair fix)**:
   B0 MRR D1 0.7055, D2 0.8175, D3 0.7200,
   D4_schema 0.8879, D4_instance 0.9049, D5 0.1808; F1 0.3062 / 0.6626 /
   0.5140 / 0.8090 / 0.8802 / 0.1730. Best MRR gain over B0: D1 +0.074 and
@@ -1489,10 +1490,18 @@ bge-large) and torch.mps.empty_cache() does not release it, so a corpus
 whose batches take hundreds of padded lengths (C3/D4_instance) exhausts
 device memory mid-encode. load_sentence_transformer() therefore pads
 every batch to a multiple of PAD_TO_MULTIPLE_OF (64) tokens via
-bucket_sequence_padding(). Padded positions are masked: normalised
-embeddings move by at most 3.1e-6 (M3; M1 1.2e-7, M2 3.0e-7, M4 1.9e-7,
-M5 4.3e-7), measured in #143 on MPS over 96 texts of 2-380 words at batch
-size 8. The earlier 7.2e-7 / 1.7e-6 figures (#120) were not recorded.
+bucket_sequence_padding(). Padded positions are masked, so embeddings
+change only by float rounding, not by a bounded amount. Measured in #143
+(MPS; padded vs unpadded, normalised embeddings, each model's batch size
+through EmbeddingEncoder; D4_instance V2+V6 source texts, the 256 longest
+plus 256 random, which reach each model's token limit): max absolute
+difference M1 1.2e-7, M2 2.0e-7, M4 9.0e-5, M5 2.2e-6; 99th percentile
+1.1e-7 to 1.8e-7 for all four. M4's maximum is a single-text outlier.
+M3 (uncapped) on 64 texts (median 5,184 tokens, max 8,192): 3.9e-7; a
+512-text unpadded M3 run exhausts MPS memory, which is the problem padding
+solves. Synthetic short texts gave at most 3.1e-6 (M3). The 7.2e-7 /
+1.7e-6 figures from #120 were not recorded. Stored results were all
+produced with padding on, so no compared pair differs by it.
 
 V2+V8 does not invoke PPAS under any model. V2 (AnnotationVerbaliser)
 and V8 (RelationalSignatureVerbaliser) have no budget logic.

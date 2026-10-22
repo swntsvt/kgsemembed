@@ -38,9 +38,11 @@ venv/bin/pip install -r requirements-lock.txt && venv/bin/pip install -e . --no-
 ```
 
 **Hardware.** The stored results were produced on an Apple M4 Pro (64 GB) with
-the PyTorch MPS backend. The runners refuse any device other than MPS unless
-it is named explicitly with `--allow_device cpu` or `--allow_device cuda`, which
-is recorded in each result as `device_override`. The model weights (M1–M5,
+the PyTorch MPS backend. `run_experiment` and `ppas_ablation` refuse any
+device other than MPS unless it is named explicitly with `--allow_device cpu`
+or `--allow_device cuda`, which is recorded in each result as
+`device_override`. The #134 serialization runner and the #131 diagnostics
+script require MPS and have no override. The model weights (M1–M5,
 pinned revisions) are downloaded from the Hugging Face Hub on first use.
 
 ## Data
@@ -194,7 +196,7 @@ for m in mrr hits_at_1 f1 recall_at_1; do
 done
 
 # Figures 1 and 2 (into figures/, gitignored) and the paired intervals behind
-# their claims (~1.5 min)
+# their claims (~1.5 min); figure_claims.py rewrites tracked files, checked below
 venv/bin/python scripts/generate_figure1_d3_scatter.py \
     --results_dir data/results/ --output_dir figures/ --metric mrr
 venv/bin/python scripts/generate_figure2_model_comparison.py \
@@ -202,8 +204,12 @@ venv/bin/python scripts/generate_figure2_model_comparison.py \
 venv/bin/python scripts/figure_claims.py --results_dir data/results/ \
     --output_dir artifacts/issue-149/
 
-# B0 against C1–C20
+# B0 against C1–C20 (rewrites a tracked file, checked below)
 venv/bin/python scripts/generate_baseline_comparison.py
+
+# Both tracked outputs must regenerate unchanged
+git diff --exit-code artifacts/issue-149/figure_claims.md artifacts/issue-149/figure_claims.json \
+    artifacts/issue-137/baseline_comparison.md
 ```
 
 `artifacts/issue-139/metric_ceilings.json` (the ceilings and reference counts
@@ -230,7 +236,12 @@ data/, figures/   local only (gitignored)
 come from the project's first issues (#4–#6). They are not the Phase 2
 pipeline: `python -m kgsemembed.pipeline.run_experiment` uses the argparse
 interface above and rejects Hydra overrides such as `model=...`. The scaffold
-stays because tests import it.
+stays because tests import it. Its optional machine-specific settings (local
+paths, device) go in a gitignored copy of the tracked template:
+
+```bash
+cp configs/local/runtime.example.yaml configs/local/runtime.yaml
+```
 
 ## Citation
 
@@ -238,7 +249,7 @@ No paper has been published yet. To cite the software:
 
 ```bibtex
 @software{sawant_kgsemembed_2026,
-  author  = {Sawant, Savita},
+  author  = {Sawant, Savita Kiran},
   title   = {kgsemembed: Verbalisation and Dense Embeddings for Knowledge Graph Alignment},
   year    = {2026},
   version = {v0.2.0-phase2-results},
