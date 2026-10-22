@@ -25,7 +25,9 @@ Phase 2 datasets: D1 (SNOMED-FMA Body), D2 (Anatomy MA-NCI), D3 (Conference,
 
 ### Branch Strategy
 - `main` — stable snapshots only; tagged at paper milestones (so far
-  `v0.2.0-phase2-results`, #141). Every stored C1–C20 and B0 result comes
+  `v0.2.0-phase2-results`, #141, with the release data archive; and
+  `v0.2.1-phase2-docs`, #159, documentation and figure claims only, no
+  archive since no result changed). Every stored C1–C20 and B0 result comes
   from `c6931db` (the #141 re-run; on `develop` and in the release tag). The
   annotated `results/issue-*` tags (#138) mark the feature-branch commits
   of the results that re-run replaced (kept in `data/results_pre*`).
