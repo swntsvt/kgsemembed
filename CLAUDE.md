@@ -19,12 +19,16 @@ Phase 2 datasets: D1 (SNOMED-FMA Body), D2 (Anatomy MA-NCI), D3 (Conference,
 21 pairs), D4 (memoryalpha-stexpanded, schema and instance), D5
 (DBpedia-Wikidata 15K EN, OpenEA). Five datasets total.
 
-**Current focus**: Issue #141's release — the C1–C20 and B0 re-run at c6931db (sidecars, Hits@k, device, pinned revisions; every metric equal to the stored one), regenerated tables, tag `v0.2.0-phase2-results` and its data archive (see "Release (#141)"). Next: #149. Previously #140 — per-dataset paired tests (bootstrap intervals, randomisation p-values, Holm within group × column × metric) on MRR and Hits@1 (F1 secondary) from new per-source sidecars; Wilcoxon kept as a cross-dataset consistency summary on MRR; `report.md` leads with MRR. Previously #141 — pinned model revisions, device check and recording (`--allow_device`), and `requirements-lock.txt`. Previously #142 — retire C12 (duplicate of C9; IDs not renumbered), move C19 to a sanity-check group and section, correct stale condition descriptions and PPAS labels, and average the report's summary table over dataset columns. Previously #145 — V8 excludes annotation predicates (FMA, oboInOwl, OWL axiom annotations, DBkWik page text, description/name vocabularies) instead of listing them as relationships; text inventory, per-predicate classification and V8 re-runs (`artifacts/issue-145/`). Previously #139 — re-ranking MRR and source-level Hits@1 as the paper's primary metrics (F1 secondary), one definition of each metric's unit, ceiling and 1:N handling, and tables that show the top-20 ceiling, D3 micro F1 and F1's reference counts (`artifacts/issue-139/`). Previously #138 — dataset and reference-alignment provenance, each dataset's protocol against its benchmark's official one, and the paper's datasets/protocol text (`artifacts/issue-138/`); #137 — stage-1 n-gram ranking baseline (B0) and the written evaluation protocol (`artifacts/issue-137/`); #136 — V1/V2 read the synonym and definition predicates D1/D2 actually use; #134 — text-serialization-order experiment on D1 and D2 (effect of item order with the selected set held fixed; order frozen on D2 validation before any test evaluation); #128, #130 and #131 merged (Phase 2)
+**Current focus**: Issue #143 — CLAUDE.md corrected against the code and stored results (#134 test results, tags, dependencies, directory structure, padding drift) and README.md rewritten around the Phase 2 pipeline (install, data, run, reproduce; legacy Hydra scaffold as a short note). Previously #149 — Figure 1 and Figure 2 claims judged against #140 paired intervals under MRR (`scripts/figure_claims.py`, `artifacts/issue-149/`): Figure 1 kept with its claim reframed (no V8 advantage on D3; C3's lead sits on the non-CMT/EDAS pairs; CMT/EDAS are not the sparsest ontologies), Figure 2 kept with its claim restated (M5 leads on D1, ties M4 on D2; C17 above every V2+V8 model). Previously #141's release — the C1–C20 and B0 re-run at c6931db (sidecars, Hits@k, device, pinned revisions; every metric equal to the stored one), regenerated tables, tag `v0.2.0-phase2-results` and its data archive (see "Release (#141)"). Previously #140 — per-dataset paired tests (bootstrap intervals, randomisation p-values, on MRR, Hits@1 and F1, with a Holm decision within group × column on MRR only) from new per-source sidecars; Wilcoxon kept as a cross-dataset consistency summary on MRR; `report.md` leads with MRR. Previously #141 — pinned model revisions, device check and recording (`--allow_device`), and `requirements-lock.txt`. Previously #142 — retire C12 (duplicate of C9; IDs not renumbered), move C19 to a sanity-check group and section, correct stale condition descriptions and PPAS labels, and average the report's summary table over dataset columns. Previously #145 — V8 excludes annotation predicates (FMA, oboInOwl, OWL axiom annotations, DBkWik page text, description/name vocabularies) instead of listing them as relationships; text inventory, per-predicate classification and V8 re-runs (`artifacts/issue-145/`). Previously #139 — re-ranking MRR and source-level Hits@1 as the paper's primary metrics (F1 secondary), one definition of each metric's unit, ceiling and 1:N handling, and tables that show the top-20 ceiling, D3 micro F1 and F1's reference counts (`artifacts/issue-139/`). Previously #138 — dataset and reference-alignment provenance, each dataset's protocol against its benchmark's official one, and the paper's datasets/protocol text (`artifacts/issue-138/`); #137 — stage-1 n-gram ranking baseline (B0) and the written evaluation protocol (`artifacts/issue-137/`); #136 — V1/V2 read the synonym and definition predicates D1/D2 actually use; #134 — text-serialization-order experiment on D1 and D2 (effect of item order with the selected set held fixed; order frozen on D2 validation before any test evaluation); #128, #130 and #131 merged (Phase 2)
 
 ## Git Workflow
 
 ### Branch Strategy
-- `main` — stable snapshots only; tagged at paper milestones (e.g. `v0.2.0-phase2-baseline`)
+- `main` — stable snapshots only; tagged at paper milestones (so far
+  `v0.2.0-phase2-results`, #141). Every stored C1–C20 and B0 result comes
+  from `c6931db` (the #141 re-run; on `develop` and in the release tag). The
+  annotated `results/issue-*` tags (#138) mark the feature-branch commits
+  of the results that re-run replaced (kept in `data/results_pre*`).
 - `develop` — integration branch; all feature/fix branches merge here via PR
 - `feature/issue-n` — new capability tied to Issue n
 - `fix/issue-n` — bug fix tied to Issue n
@@ -80,7 +84,7 @@ reaches `main` at the next milestone merge.
 ### Merging to Main
 Merge `develop` → `main` only at stable milestones. Tag the merge commit:
 ```bash
-git tag -a v0.x.0-<milestone> -m "Phase 2 verbalisation baseline"
+git tag -a v0.x.0-<milestone> -m "<milestone description>"
 git push origin --tags
 ```
 
@@ -182,17 +186,32 @@ python scripts/release_checks.py --data_dir data/ \
 python scripts/generate_entity_type_table.py --results_dir data/results/
 
 # Plot Figure 1: D3 per-pair MRR (default; --metric hits_at_1 / f1), C3 vs
-# C10, CMT/EDAS pairs highlighted. Writes figures/fig1_d3_scatter.pdf (+ .png;
-# other metrics get a _{metric} suffix) and prints win counts.
+# C10, CMT/EDAS pairs highlighted (not "annotation-sparse": EKAW is sparser).
+# Writes figures/fig1_d3_scatter.pdf (+ .png; other metrics get a _{metric}
+# suffix) and prints win counts. Its claim (#149): C3 leads on D3, and the
+# lead sits on the non-CMT/EDAS pairs; under MRR and Hits@1 no pair's
+# interval favours V8 (under F1, cmt-edas does).
 python scripts/generate_figure1_d3_scatter.py \
     --results_dir data/results/ --output_dir figures/ --metric mrr
 
 # Plot Figure 2: D1/D2 MRR (default; --metric hits_at_1 / f1) per model with
 # V2+V8 held constant, plus the C17 (V1/M4) reference bar. C15 has no D2 run,
 # so that bar is drawn as n/a. Writes figures/fig2_model_comparison.pdf
-# (+ .png; other metrics suffixed) and prints the values.
+# (+ .png; other metrics suffixed) and prints the values. Its claim (#149):
+# with V2+V8 fixed, M5 leads on D1 and ties M4 on D2, and no V2+V8 model
+# reaches C17 (V1/M4).
 python scripts/generate_figure2_model_comparison.py \
     --results_dir data/results/ --output_dir figures/ --metric mrr
+
+# Paired intervals behind both figures' claims (#149; #140 settings, from the
+# sidecars, ~1.5 min): artifacts/issue-149/figure_claims.{md,json}. The
+# figures' paper text is artifacts/issue-149/paper_figures_section.tex.
+python scripts/figure_claims.py --results_dir data/results/ \
+    --output_dir artifacts/issue-149/
+
+# Padded vs unpadded embedding drift (#143; loads each model, one per
+# process; M3 needs --n 32) into artifacts/issue-143/padding_drift.{json,md}
+python scripts/padding_drift.py --model M2 --n 256
 
 # Check dataset presence
 python scripts/download_datasets.py --data_dir data/ --check
@@ -309,7 +328,7 @@ Always run `venv/bin/pytest tests/ -x -q` after changes to any module under
 - Fixed random seed: `np.random.seed(42)` and `random.seed(42)` at the top of
   each evaluation script's `main()` entry point.
 - Results written to `data/results/{condition_id}/{dataset_id}/{pair_name}_results.json`.
-- New modules go under `kgsemembed/` following the existing package structure.
+- New modules go under `src/kgsemembed/` following the existing package structure.
 
 ### NumPy Docstring Example
 ```python
@@ -345,21 +364,32 @@ Data Loading → Candidate Generation → Embedding & Verbalisation → Evaluati
 ```
 kgsemembed/                      # repo root
 ├── src/kgsemembed/              # main source package
-│   ├── pipeline/                # experiment runner (run_experiment.py), conditions.py
+│   ├── pipeline/                # runners and registries
+│   │   ├── run_experiment.py    #   C1–C20 runner (argparse cli_main; legacy Hydra main)
+│   │   ├── conditions.py        #   C1–C20 registry
+│   │   ├── ngram_baseline.py    #   B0 stage-1 order (#137)
+│   │   ├── ablation_conditions.py, ppas_ablation.py           # #122/#128/#131
+│   │   └── serialization_conditions.py, serialization_order.py # #134
 │   ├── datasets/                # KG dataset loading — RDF/XML and OpenEA triple files
 │   ├── candidates/              # candidate pair generation — char n-gram, cosine, jaccard
-│   ├── embeddings/              # model registry (models.py) and encoder (encoder.py)
-│   ├── verbalisation/           # entity-to-text strategies V1–V8, PPAS (Phase 2 active)
-│   ├── evaluation/              # matching performance metrics, threshold tuning
+│   ├── embeddings/              # model registry (models.py), encoder, M5 attention fix
+│   ├── verbalisation/           # V1–V8, PPAS, selection, predicate roles, serialization
+│   ├── evaluation/              # metrics, populations, thresholds, stats, paired tests
 │   └── utils/                   # logging and custom error types
-├── scripts/                     # generate_candidates, generate_report, download_datasets
+├── scripts/                     # ~30 CLI scripts: candidates, report, tables, figures,
+│                                #   inventories, provenance, ablation reports (see above)
+├── artifacts/issue-*/           # tracked, URI-only outputs and paper text per issue
 ├── configs/                     # legacy Hydra YAML groups — see Configuration below
 │   └── local/
-│       └── runtime.yaml         # ⚠️ machine-specific — gitignored, DO NOT MODIFY
-├── tests/                       # pytest suite
-├── data/                        # OAEI KG datasets (do not regenerate or overwrite)
+│       └── runtime.example.yaml # tracked template; a local copy runtime.yaml is
+│                                #   gitignored — DO NOT MODIFY it if present
+├── tests/                       # pytest suite (slow tests need --runslow)
+├── data/                        # datasets, candidates, results — gitignored, local
+│                                #   only, except the tracked data/sample/ test fixture
 │   ├── candidates/              # generated candidate files
-│   └── results/                 # output JSON — data/results/<condition>/<dataset>/
+│   ├── results/                 # C1–C20 JSON — data/results/<condition>/<dataset>/
+│   ├── results_ngram_baseline/  # B0
+│   └── results_*/               # ablation trees and superseded runs (see sections below)
 ├── figures/                     # generated paper figures — gitignored, rebuilt by scripts
 ├── logs/                        # experiment execution logs
 └── venv/                        # ⚠️ virtual environment — DO NOT MODIFY
@@ -406,8 +436,10 @@ kgsemembed/                      # repo root
 - **Key dependencies**: `rdflib` (pinned `==7.6.0` in `requirements.txt`,
   `>=7.6,<8` in `pyproject.toml`), `scipy` (`>=1.18`; see below),
   `sentence-transformers`, `torch`, `transformers`, `pandas`, `numpy`,
-  `orjson`, `tqdm`, plus `hydra-core` and `omegaconf` for the legacy scaffold
-  above. Installed on the development machine: scipy 1.18.1, numpy 2.5.3,
+  `orjson`, `tqdm`, `matplotlib` (figure and report scripts), `seaborn`
+  (listed in requirements but imported nowhere),
+  plus `hydra-core` and `omegaconf` for the legacy scaffold above; `pytest`
+  is in `requirements.txt` and the `dev` extra. Installed on the development machine: scipy 1.18.1, numpy 2.5.3,
   torch 2.11.0, transformers 5.5.4, sentence-transformers 5.4.0.
 - **scipy floor**: scipy 1.15.3 wheels fail to `dlopen` on macOS 26+ (Darwin
   27), aborting every import of `kgsemembed.candidates` with a
@@ -739,8 +771,11 @@ Seven conditions vary one dimension at a time on D1 at 48 tokens
   `report --stage test` refuses to run unless `diagnostics/rank_gate.json`
   passed and the SHA-256 of every report input still matches it.
 - **Primary contrasts** (test report only): frozen − uri on D1/S/A0 and
-  D2/S/A0, MRR and Recall@1, 95% and Bonferroni 97.5% intervals (family:
-  the two datasets of one metric, same 2,000 replicates). Examples:
+  D2/S/A0, MRR and source-level Hit@1 (the freeze record's "Recall@1": each
+  test reference source counted once at its best gold rank, i.e. Hits@1 of
+  #139, not the run JSONs' `recall_at_1`), 95% and Bonferroni 97.5%
+  intervals (family: the two datasets of one metric, same 2,000
+  replicates). Examples:
   5 largest gains and losses of frozen over uri per dataset (ties by URI),
   `examples/<stage>_examples.csv` (URI-only); readable text via
   `examples-local` into the gitignored results directory.
@@ -748,6 +783,20 @@ Seven conditions vary one dimension at a time on D1 at 48 tokens
   JSON, per-source outcomes, conditions map, diagnostics, provenance,
   manifest, reports, figures). Readable entity text stays local; dataset
   labels go into public material only once redistribution is confirmed.
+- **Results (test stage, 57/57 runs at 92e22f0 from a clean tree; rank gate
+  passed for all 13 reproduction targets at 6977bb4; `report_test.md`;
+  per-pair bootstrap, one model, no generalisation claim)**: frozen `label`
+  − `uri` on A0, MRR D1 0.4525 → 0.6437 (+0.191 [0.183, 0.200]), D2 0.7356
+  → 0.7752 (+0.040 [0.030, 0.050]); source-level Hit@1 D1 0.335 → 0.541
+  (+0.206), D2 0.669 → 0.725 (+0.056); every Bonferroni 97.5% interval
+  excludes 0. With the item set fixed, every non-`uri` order beats `uri` on
+  every row except A-core `core` (≡ `uri`); the best order is not `label`
+  everywhere (D1 A0 `role` +0.235, D2 A0 `core` +0.056). Order shrinks the
+  representation effects of #131: D1 C+syn − A-core −0.249 under `uri`,
+  −0.065 under `label`; C+id −0.056 → +0.004 [−0.002, 0.011]; D1 A-core −
+  A0 +0.272 → +0.116. D2 C+def − A-core stays between −0.099 (`core`)
+  and −0.129 (`uri`) under every order, so the definition loss is not a position effect. These D1 numbers
+  predate #137's known pairs (see the note above).
 
 ### Validation of the eligibility effect (#128 follow-up)
 
@@ -762,7 +811,9 @@ Seven conditions vary one dimension at a time on D1 at 48 tokens
   `http://www.geneontology.org/formats/oboInOwl#`). So covered keeps SNOMED's
   SKOS synonyms (D1 sources) but drops FMA synonyms (D1 candidates) and NCI/MA
   `hasRelatedSynonym`/`hasDefinition` (D2). `base` is deliberately unchanged
-  so P1–P4 keep their #128 definitions.
+  so P1–P4 keep their #128 definitions. V1/V2 had the same namespace gap
+  (no FMA or oboInOwl synonyms/definitions) until #136 fixed them; see
+  "V1/V2 annotation predicates (#136)".
 - **`base_v2`** (#130): `base` with exactly its two wrong synonym URIs remapped
   (`BASE_V2_CORRECTIONS`: `obo:hasExactSynonym` → `oboInOwl:hasExactSynonym`,
   `obo:hasSynonym` → `oboInOwl:hasSynonym`); no other scope added. `base`,
@@ -929,7 +980,7 @@ python scripts/annotation_fix_report.py --old_dir data/results/ \
   (byte-identical); the replaced files and the previous `report.md` are kept
   in `data/results_pre145/`. In the regenerated report, group B's C9 vs C10
   goes from 24/0/2, p 0.0312 to 23/0/3, p 0.0625 (still not significant
-  under alpha/4). `artifacts/issue-138/results_inventory.md` is regenerated:
+  under alpha/4, nor under alpha/3 once #142 retired C12). `artifacts/issue-138/results_inventory.md` is regenerated:
   every V8 result now carries the current exclusion digest and nothing is
   flagged.
 
@@ -968,18 +1019,24 @@ python scripts/v8_fix_report.py --old_dir data/results/ --new_dir data/results_i
   pair. On D4 (partial reference) the ranked-source counts are left out of
   the check: an unmatched source is judgeable only when its top target is a
   reference target, so those counts depend on each method's ranking.
-- **Results (6d1878a; 26/26 pairs clean; 294/294 C-results matched; one pair
-  per column, descriptive; D1 re-run at 65b0d33 after the known-pair fix)**:
+- **Results (6d1878a; 26/26 pairs clean; 294/294 C-results matched then,
+  271/271 after #142/#145; one pair per column, descriptive; D1 re-run at
+  65b0d33 after the known-pair fix; all re-run at c6931db in #141 with
+  every metric equal)**:
   B0 MRR D1 0.7055, D2 0.8175, D3 0.7200,
   D4_schema 0.8879, D4_instance 0.9049, D5 0.1808; F1 0.3062 / 0.6626 /
   0.5140 / 0.8090 / 0.8802 / 0.1730. Best MRR gain over B0: D1 +0.074 and
-  D2 +0.085 (C4), D3 +0.043 (C1), D4 +0.033 / +0.039 (C3). Only about half
-  the conditions beat B0 on D1/D2 MRR. Better ranking need not mean better
-  F1: on D3, 6 of 11 beat B0 on MRR but 1 of 11 on F1; on D4_instance 7 of
-  12 on MRR but none on F1 (B0 0.8802 is the column's best F1, C20 0.8036
-  next). Every D5 condition is below B0 on every
-  metric (best C14 MRR −0.026); label/annotation-only conditions score MRR
-  0.035–0.055, near the 0.048 a random order of the same lists would get.
+  D2 +0.085 (C4), D3 +0.043 (C1), D4_schema +0.033 (C3, C8 and C10 tie),
+  D4_instance +0.039 (C3). Counts below are from `baseline_comparison.md` as
+  regenerated in #143 (271 C-results, after #142 retired C12 and #145
+  re-ran V8). Only about half the conditions beat B0 on D1/D2 MRR (D1 7 of
+  15, D2 6 of 13). Better ranking need not mean better F1: on D3, 6 of 10
+  beat B0 on MRR but 1 of 10 on F1; on D4_instance 8 of 11 on MRR but none
+  on F1 (B0 0.8802 is the column's best F1, C20 0.8036 next). Every D5
+  condition is below B0 on every metric (best C14 MRR −0.026);
+  label/annotation-only conditions (C1, C2, C20) score MRR 0.042 and the
+  V8 ones 0.034–0.049, near the 0.048 a random order of the same lists
+  would get.
 - **Provenance** (`dataset_provenance.py`): every D1–D4 file is
   byte-identical to the OAEI MELT release (D1 = Bio-ML 2022
   `bio-ml-equiv-unsupervised/2022/snomed.body-fma.body`; SNOMED CT
@@ -1067,10 +1124,12 @@ python scripts/v8_fix_report.py --old_dir data/results/ --new_dir data/results_i
   - Here: 80% of each reference after tuning on 20%, ranked within 20
     stage-1 candidates, D3 macro-averaged with per-pair thresholds (1–5
     validation references each), D5 fold 1 without training.
-- **Result provenance**: all 320 stored results (C1–C20, B0) come from clean
-  trees under protocol 2 with current digests, and none is flagged. Their five
-  source commits are on feature branches only (squash merges), so each
-  carries an annotated `results/issue-*` tag on origin.
+- **Result provenance**: at #138, all 320 stored results (C1–C20 with C12,
+  and B0) came from clean trees under protocol 2 with current digests, and
+  none was flagged. Their five source commits are on feature branches only
+  (squash merges), so each carries an annotated `results/issue-*` tag on
+  origin. Since #141 the 297 stored results (271 C, 26 B0) all come from
+  `c6931db` on `develop` (`results_inventory.md`, regenerated in #143).
 - **Reporting**: "controlled comparison under a re-ranking protocol", never
   benchmark results. No published score in our tables. Ranking and matching
   metrics are reported separately.
@@ -1239,7 +1298,7 @@ with version 2 and are rejected by `evaluation/stats.py`.
 F1 rests on a threshold tuned on very few validation references on several
 columns (1–5 per D3 pair, 10 on D4_schema, where one TP moves F1 by ~0.02),
 and on D1 it hinges on how many of the 14,255 unmatched test sources pass the
-threshold (FP 1,809–10,273 across conditions; C4 has the best D1 MRR, 0.779,
+threshold (FP 1,792–11,355 across conditions since #145; C4 has the best D1 MRR, 0.779,
 but F1 0.322). So it is reported, with its reference counts, but never as
 the headline. The
 definitions live in the `metrics.py` module docstring; in short:
@@ -1442,8 +1501,24 @@ bge-large) and torch.mps.empty_cache() does not release it, so a corpus
 whose batches take hundreds of padded lengths (C3/D4_instance) exhausts
 device memory mid-encode. load_sentence_transformer() therefore pads
 every batch to a multiple of PAD_TO_MULTIPLE_OF (64) tokens via
-bucket_sequence_padding(). Padded positions are masked: embeddings move
-by at most 7.2e-7 across M1-M5.
+bucket_sequence_padding(). Padded positions are masked, yet padding is
+not exactly neutral. `scripts/padding_drift.py` (#143;
+`artifacts/issue-143/padding_drift.{md,json}`, MPS only) encodes D4_instance
+V2+V6 source texts as the pipeline encodes sources (`role="source"`, so M5
+carries its prefix; EmbeddingEncoder's reduced batch for long texts), padded
+and unpadded: the 256 longest plus 256 random, reaching each model's token
+limit; M3 32 + 32, as an unpadded M3 run of 512 exhausts MPS memory. M3
+runs at an effective batch of 1, so its row measures only the pad-to-64
+tokens, not mixed-length batches. Max absolute difference of the
+normalised embeddings: M1 1.2e-7, M2 3.1e-7, M3 3.9e-7, M5 1.0e-7, but M4
+9.0e-5 (2 of 512 texts above 1e-6; p99 1.8e-7). The M4 outliers are short
+texts (36 and 39 tokens), and padded encodes are bitwise reproducible, so
+the effect is deterministic, not noise or long-batch rounding; its
+mechanism in BioLORD (MPNet) is not established. Re-runs reproduce every
+row exactly; an earlier ad-hoc sample (different tie-breaking, M5 without
+its prefix) reached 2.2e-6 on M5, so these maxima are sample-dependent.
+The 7.2e-7 / 1.7e-6 figures from #120 were not recorded. Every stored
+result was produced with padding on, so no compared pair differs by it.
 
 V2+V8 does not invoke PPAS under any model. V2 (AnnotationVerbaliser)
 and V8 (RelationalSignatureVerbaliser) have no budget logic.

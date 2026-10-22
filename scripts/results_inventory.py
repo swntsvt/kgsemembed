@@ -442,13 +442,14 @@ def _preamble(records: Sequence[ResultRecord], current: str) -> List[str]:
         f"- Current evaluation protocol: {EVALUATION_PROTOCOL_VERSION}. "
         f"Current annotation-predicate digest: `{current[:12]}…`.",
         "- **Annotation digest** matters only where V1 or V2 text is read on D1 or D2; elsewhere the",
-        "  #136 change left the text byte-identical, so `absent` is expected.",
+        "  #136 change left the text byte-identical, so `absent` there (e.g. B0) is expected.",
         f"- **V8 exclusion digest** (`{v8_exclusions_digest()[:12]}…`) matters only where V8 text is read on",
         "  D1, D2, D4_instance or D5; on D3 and D4_schema #145 left the text byte-identical.",
         f"- **n_train_refs** must be {_D1_KNOWN_PAIRS} on D1 (#137 known pairs); D5 records its training links.",
         "- **On develop** tests `origin/develop` (the local `develop` only when the clone has no",
         "  remote-tracking copy). **Local refs** are read from this clone, so they can differ on",
-        "  another machine. Squash merges mean no result commit is an ancestor of `develop`; a",
+        "  another machine. A result commit made on a feature branch is not an ancestor of",
+        "  `develop` after a squash merge (only a commit made on `develop` itself is); such a",
         "  commit with no ref may still be reachable on GitHub through `refs/pull/<n>/head`.",
         "",
     ]
