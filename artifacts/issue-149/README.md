@@ -37,14 +37,30 @@ python scripts/generate_figure2_model_comparison.py --results_dir data/results/ 
 - **Caveats**: exploratory; the cause is not established (the sparsity
   explanation is not supported); each ontology is in six pairs, so the
   pair-level interval is optimistic; 3–20 test reference sources per pair.
-- **Hits@1** agrees (difference +0.143 [+0.036, +0.251]). **F1** differs:
-  overall −0.054 [−0.111, +0.005] and the group difference +0.097
-  [−0.020, +0.212] both include 0; cmt-edas is the one pair whose F1
-  interval favours C10.
+- **Hits@1** agrees on the subgroups (difference +0.143 [+0.036, +0.251]),
+  not pair for pair: C10 is ahead on four CMT/EDAS pairs (edas-iasted as
+  well as MRR's three), none with an interval excluding 0.
+- **F1** is weaker: the group difference +0.097 [−0.020, +0.212] includes
+  0. The overall difference −0.054 has a bootstrap interval
+  [−0.111, +0.005] that just includes 0 but a randomisation p of 0.049; the
+  two disagree at the margin, so no conclusion is drawn. C10 is ahead on
+  eight pairs of both kinds; cmt-edas is the one whose F1 interval favours
+  C10.
 - **Script changes**: the docstring no longer asserts the finding; the
-  legend says "CMT or EDAS pair" (no "annotation-sparse"); callouts name the
-  three pairs where C10 is ahead (offsets scale with the axis, so the
-  Hits@1/F1 variants stay in frame); "wins" regions read "ahead".
+  legend says "CMT or EDAS pair" (no "annotation-sparse"); callouts name
+  every pair where C10 is ahead on the metric plotted (3 under MRR, 4 under
+  Hits@1, 8 under F1), stacked so no two labels share a row; "wins" regions
+  read "ahead". The figures' pairs and bars live in `scripts/figure_specs.py`,
+  so `figure_claims.py` loads no plotting code and refuses a Figure 2 result
+  whose strategy or model is not its bar's, as the figure does. A comparison
+  whose sidecars cannot be paired, or a Figure 1 subgroup with no pair, is
+  recorded as not tested with its reason, as in #140; an error while
+  computing intervals still stops the run. If any Figure 2 MRR comparison of
+  a dataset is not tested, no Holm p-value is given for that dataset
+  ("family incomplete"), since adjusting over fewer comparisons would lower
+  the rest. The family is every bar expected on the dataset (C15 is the one
+  bar not run on D2), so a missing result withholds Holm instead of
+  shrinking the family; only the result file each bar plots is checked.
 
 ## Figure 2 (D1/D2, V2+V8 per model, plus C17 V1/M4): keep, claim restated
 

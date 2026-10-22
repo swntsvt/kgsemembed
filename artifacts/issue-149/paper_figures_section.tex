@@ -18,16 +18,21 @@ interval of [$0.028$, $0.176$] when test sources are resampled within pairs
 and [$0.023$, $0.182$] when whole pairs are resampled within each group.
 C10 is ahead on three pairs (cmt-edas, edas-ekaw, edas-sigkdd), but no
 pair's own interval favours it, while four favour C3 (conference-sigkdd,
-confof-ekaw, ekaw-sigkdd and confof-edas). Hits@1 shows the same pattern
-(group difference $0.143$ [$0.036$, $0.251$]). F1 does not: its overall
-difference ($-0.054$ [$-0.111$, $0.005$]) and its group difference
-($0.097$ [$-0.020$, $0.212$]) both include zero.
+confof-ekaw, ekaw-sigkdd and confof-edas). Hits@1 shows the same group
+difference ($0.143$ [$0.036$, $0.251$]), although under Hits@1 C10 is ahead
+on four pairs (edas-iasted as well), again none with an interval that
+favours it. F1 is weaker. Its group difference ($0.097$ [$-0.020$, $0.212$])
+includes zero. For its overall difference ($-0.054$) the bootstrap interval
+[$-0.111$, $0.005$] just includes zero while the randomisation test gives
+$p=0.049$; the two disagree at the margin, and we draw no conclusion from it.
 
 We do not attribute the group difference to annotation sparsity. The
 CMT/EDAS grouping comes from an earlier hypothesis that V8 compensates for
-sparsely annotated ontologies, but by annotation density EKAW, not CMT or
-EDAS, is the sparsest of the seven ontologies, and all but ConfOf are
-similarly sparse. The grouping was fixed before these results, yet the
+sparsely annotated ontologies, but by annotation density (the mean number
+of seven annotation predicates present per entity) EKAW (0.019), not CMT
+(0.064) or EDAS (0.083), is the sparsest of the seven ontologies; IASTED,
+SIGKDD and Conference lie between 0.090 and 0.114, and only ConfOf (0.627)
+is markedly denser. The grouping was fixed before these results, yet the
 comparison remains exploratory: each ontology appears in six pairs, so the
 pairs are not independent and the pair-level interval is optimistic, and
 each pair has only 3--20 test reference sources.

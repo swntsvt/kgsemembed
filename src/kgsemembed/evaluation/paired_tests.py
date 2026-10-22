@@ -66,7 +66,7 @@ CEILING_KEYS = {"mrr": "ranking_ceiling", "hits_at_1": "ranking_ceiling", "f1": 
 _RESULT_SUFFIX = "_results.json"
 _RANKING_WIDTH = 2
 _F1_WIDTH = 3
-_UNTESTABLE = (DataError, ValueError, KeyError, OSError, TypeError, AttributeError)
+UNTESTABLE = (DataError, ValueError, KeyError, OSError, TypeError, AttributeError)
 _CHUNK = 100
 _TOLERANCE = 1e-12
 
@@ -343,8 +343,24 @@ def _replicate_chunks(n_replicates: int) -> Iterator[int]:
         yield min(_CHUNK, n_replicates - start)
 
 
-def _bootstrap_deltas(pairs: List[PairArrays], metric: str, settings: TestSettings) -> np.ndarray:
-    """Resample units within each pair and return the column delta of every replicate."""
+def bootstrap_deltas(pairs: List[PairArrays], metric: str, settings: TestSettings) -> np.ndarray:
+    """
+    Resample units within each pair and return the column delta of every replicate.
+
+    Parameters
+    ----------
+    pairs : List[PairArrays]
+        Aligned unit arrays of every pair of the column.
+    metric : str
+        One of :data:`METRICS`.
+    settings : TestSettings
+        Replicates and seed (one generator, seeded once).
+
+    Returns
+    -------
+    np.ndarray
+        ``settings.n_replicates`` values of the mean over pairs of B − A.
+    """
     rng = np.random.default_rng(settings.seed)
     deltas = []
     for size in _replicate_chunks(settings.n_replicates):
@@ -374,8 +390,41 @@ def _randomisation_deltas(pairs: List[PairArrays], metric: str, settings: TestSe
     return np.concatenate(deltas)
 
 
-def _observed(pairs: List[PairArrays], metric: str) -> Tuple[float, float]:
-    """Return the column values of A and B: the mean over pairs of each pair's metric."""
+def percentile_interval(deltas: np.ndarray) -> Tuple[float, float]:
+    """
+    Return the :data:`CONFIDENCE` percentile interval of bootstrap replicates.
+
+    Parameters
+    ----------
+    deltas : np.ndarray
+        Bootstrap replicates of a difference.
+
+    Returns
+    -------
+    Tuple[float, float]
+        Lower and upper percentiles, equal tails.
+    """
+    tail = 100 * (1 - CONFIDENCE) / 2
+    low, high = np.percentile(deltas, [tail, 100 - tail])
+    return float(low), float(high)
+
+
+def observed_values(pairs: List[PairArrays], metric: str) -> Tuple[float, float]:
+    """
+    Return the column values of A and B: the mean over pairs of each pair's metric.
+
+    Parameters
+    ----------
+    pairs : List[PairArrays]
+        Aligned unit arrays of every pair of the column.
+    metric : str
+        One of :data:`METRICS`.
+
+    Returns
+    -------
+    Tuple[float, float]
+        Column value under A and under B.
+    """
     value_a = float(np.mean([statistic(a.sum(axis=0), metric) for a, _ in pairs]))
     value_b = float(np.mean([statistic(b.sum(axis=0), metric) for _, b in pairs]))
     return value_a, value_b
@@ -400,15 +449,14 @@ def paired_test(pairs: List[PairArrays], metric: str, settings: TestSettings) ->
         ``value_a``, ``value_b``, ``delta``, ``ci_low``, ``ci_high``,
         ``p_value``, ``n_units`` and ``n_pairs``.
     """
-    value_a, value_b = _observed(pairs, metric)
+    value_a, value_b = observed_values(pairs, metric)
     delta = value_b - value_a
-    tail = 100 * (1 - CONFIDENCE) / 2
-    low, high = np.percentile(_bootstrap_deltas(pairs, metric, settings), [tail, 100 - tail])
+    low, high = percentile_interval(bootstrap_deltas(pairs, metric, settings))
     null = _randomisation_deltas(pairs, metric, settings)
     extreme = int(np.sum(np.abs(null) >= abs(delta) - _TOLERANCE))
     return {
         "value_a": value_a, "value_b": value_b, "delta": delta,
-        "ci_low": float(low), "ci_high": float(high),
+        "ci_low": low, "ci_high": high,
         "p_value": (1 + extreme) / (settings.n_replicates + 1),
         "n_units": sum(len(a) for a, _ in pairs), "n_pairs": len(pairs),
     }
@@ -480,7 +528,7 @@ class SidecarCache:
         if key not in self._sidecars:
             try:
                 self._sidecars[key] = load_sidecars(self._results_dir, condition_id, dataset_id)
-            except _UNTESTABLE as exc:
+            except UNTESTABLE as exc:
                 self._sidecars[key] = exc
         if isinstance(self._sidecars[key], Exception):
             raise self._sidecars[key]
@@ -537,7 +585,7 @@ def _comparison_rows(context: dict, settings: TestSettings) -> List[dict]:
     keys = {k: context[k] for k in ("group", "condition_a", "condition_b", "dataset_id")}
     try:
         return _tested_rows(context, keys, settings)
-    except _UNTESTABLE as exc:
+    except UNTESTABLE as exc:
         return [{**keys, "metric": m, "tested": False, "reason": str(exc)} for m in METRICS]
 
 

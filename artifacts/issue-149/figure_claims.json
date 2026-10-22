@@ -1,6 +1,7 @@
 {
   "figure1": {
     "mrr": {
+      "tested": true,
       "subgroups": {
         "all": {
           "value_a": 0.7241718104194608,
@@ -321,6 +322,7 @@
       ]
     },
     "hits_at_1": {
+      "tested": true,
       "subgroups": {
         "all": {
           "value_a": 0.6496586955233572,
@@ -641,6 +643,7 @@
       ]
     },
     "f1": {
+      "tested": true,
       "subgroups": {
         "all": {
           "value_a": 0.30107682030571425,
@@ -967,6 +970,7 @@
       "condition_a": "C18",
       "condition_b": "C10",
       "metric": "mrr",
+      "tested": true,
       "value_a": 0.6476724080046216,
       "value_b": 0.6492017108203161,
       "delta": 0.001529302815694522,
@@ -975,6 +979,7 @@
       "p_value": 0.6481351864813518,
       "n_units": 4605,
       "n_pairs": 1,
+      "family_size": 15,
       "p_holm": 0.6481351864813518
     },
     {
@@ -982,6 +987,7 @@
       "condition_a": "C18",
       "condition_b": "C15",
       "metric": "mrr",
+      "tested": true,
       "value_a": 0.6476724080046216,
       "value_b": 0.6947039172336684,
       "delta": 0.047031509229046864,
@@ -990,6 +996,7 @@
       "p_value": 9.999000099990002e-05,
       "n_units": 4605,
       "n_pairs": 1,
+      "family_size": 15,
       "p_holm": 0.0014998500149985003
     },
     {
@@ -997,6 +1004,7 @@
       "condition_a": "C18",
       "condition_b": "C11",
       "metric": "mrr",
+      "tested": true,
       "value_a": 0.6476724080046216,
       "value_b": 0.6871654171198102,
       "delta": 0.039493009115188604,
@@ -1005,6 +1013,7 @@
       "p_value": 9.999000099990002e-05,
       "n_units": 4605,
       "n_pairs": 1,
+      "family_size": 15,
       "p_holm": 0.0014998500149985003
     },
     {
@@ -1012,6 +1021,7 @@
       "condition_a": "C18",
       "condition_b": "C13",
       "metric": "mrr",
+      "tested": true,
       "value_a": 0.6476724080046216,
       "value_b": 0.7131967130390408,
       "delta": 0.0655243050344192,
@@ -1020,6 +1030,7 @@
       "p_value": 9.999000099990002e-05,
       "n_units": 4605,
       "n_pairs": 1,
+      "family_size": 15,
       "p_holm": 0.0014998500149985003
     },
     {
@@ -1027,6 +1038,7 @@
       "condition_a": "C18",
       "condition_b": "C17",
       "metric": "mrr",
+      "tested": true,
       "value_a": 0.6476724080046216,
       "value_b": 0.7578241331374386,
       "delta": 0.11015172513281701,
@@ -1035,6 +1047,7 @@
       "p_value": 9.999000099990002e-05,
       "n_units": 4605,
       "n_pairs": 1,
+      "family_size": 15,
       "p_holm": 0.0014998500149985003
     },
     {
@@ -1042,6 +1055,7 @@
       "condition_a": "C10",
       "condition_b": "C15",
       "metric": "mrr",
+      "tested": true,
       "value_a": 0.6492017108203161,
       "value_b": 0.6947039172336684,
       "delta": 0.04550220641335234,
@@ -1050,6 +1064,7 @@
       "p_value": 9.999000099990002e-05,
       "n_units": 4605,
       "n_pairs": 1,
+      "family_size": 15,
       "p_holm": 0.0014998500149985003
     },
     {
@@ -1057,6 +1072,7 @@
       "condition_a": "C10",
       "condition_b": "C11",
       "metric": "mrr",
+      "tested": true,
       "value_a": 0.6492017108203161,
       "value_b": 0.6871654171198102,
       "delta": 0.03796370629949408,
@@ -1065,6 +1081,7 @@
       "p_value": 9.999000099990002e-05,
       "n_units": 4605,
       "n_pairs": 1,
+      "family_size": 15,
       "p_holm": 0.0014998500149985003
     },
     {
@@ -1072,6 +1089,7 @@
       "condition_a": "C10",
       "condition_b": "C13",
       "metric": "mrr",
+      "tested": true,
       "value_a": 0.6492017108203161,
       "value_b": 0.7131967130390408,
       "delta": 0.06399500221872467,
@@ -1080,6 +1098,7 @@
       "p_value": 9.999000099990002e-05,
       "n_units": 4605,
       "n_pairs": 1,
+      "family_size": 15,
       "p_holm": 0.0014998500149985003
     },
     {
@@ -1087,6 +1106,7 @@
       "condition_a": "C10",
       "condition_b": "C17",
       "metric": "mrr",
+      "tested": true,
       "value_a": 0.6492017108203161,
       "value_b": 0.7578241331374386,
       "delta": 0.10862242231712249,
@@ -1095,6 +1115,7 @@
       "p_value": 9.999000099990002e-05,
       "n_units": 4605,
       "n_pairs": 1,
+      "family_size": 15,
       "p_holm": 0.0014998500149985003
     },
     {
@@ -1102,6 +1123,7 @@
       "condition_a": "C15",
       "condition_b": "C11",
       "metric": "mrr",
+      "tested": true,
       "value_a": 0.6947039172336684,
       "value_b": 0.6871654171198102,
       "delta": -0.00753850011385826,
@@ -1110,6 +1132,7 @@
       "p_value": 0.0395960403959604,
       "n_units": 4605,
       "n_pairs": 1,
+      "family_size": 15,
       "p_holm": 0.0791920807919208
     },
     {
@@ -1117,6 +1140,7 @@
       "condition_a": "C15",
       "condition_b": "C13",
       "metric": "mrr",
+      "tested": true,
       "value_a": 0.6947039172336684,
       "value_b": 0.7131967130390408,
       "delta": 0.01849279580537233,
@@ -1125,6 +1149,7 @@
       "p_value": 9.999000099990002e-05,
       "n_units": 4605,
       "n_pairs": 1,
+      "family_size": 15,
       "p_holm": 0.0014998500149985003
     },
     {
@@ -1132,6 +1157,7 @@
       "condition_a": "C15",
       "condition_b": "C17",
       "metric": "mrr",
+      "tested": true,
       "value_a": 0.6947039172336684,
       "value_b": 0.7578241331374386,
       "delta": 0.06312021590377015,
@@ -1140,6 +1166,7 @@
       "p_value": 9.999000099990002e-05,
       "n_units": 4605,
       "n_pairs": 1,
+      "family_size": 15,
       "p_holm": 0.0014998500149985003
     },
     {
@@ -1147,6 +1174,7 @@
       "condition_a": "C11",
       "condition_b": "C13",
       "metric": "mrr",
+      "tested": true,
       "value_a": 0.6871654171198102,
       "value_b": 0.7131967130390408,
       "delta": 0.02603129591923059,
@@ -1155,6 +1183,7 @@
       "p_value": 9.999000099990002e-05,
       "n_units": 4605,
       "n_pairs": 1,
+      "family_size": 15,
       "p_holm": 0.0014998500149985003
     },
     {
@@ -1162,6 +1191,7 @@
       "condition_a": "C11",
       "condition_b": "C17",
       "metric": "mrr",
+      "tested": true,
       "value_a": 0.6871654171198102,
       "value_b": 0.7578241331374386,
       "delta": 0.07065871601762841,
@@ -1170,6 +1200,7 @@
       "p_value": 9.999000099990002e-05,
       "n_units": 4605,
       "n_pairs": 1,
+      "family_size": 15,
       "p_holm": 0.0014998500149985003
     },
     {
@@ -1177,6 +1208,7 @@
       "condition_a": "C13",
       "condition_b": "C17",
       "metric": "mrr",
+      "tested": true,
       "value_a": 0.7131967130390408,
       "value_b": 0.7578241331374386,
       "delta": 0.04462742009839782,
@@ -1185,6 +1217,7 @@
       "p_value": 9.999000099990002e-05,
       "n_units": 4605,
       "n_pairs": 1,
+      "family_size": 15,
       "p_holm": 0.0014998500149985003
     },
     {
@@ -1192,6 +1225,7 @@
       "condition_a": "C18",
       "condition_b": "C10",
       "metric": "hits_at_1",
+      "tested": true,
       "value_a": 0.5615635179153095,
       "value_b": 0.5596091205211726,
       "delta": -0.001954397394136831,
@@ -1206,6 +1240,7 @@
       "condition_a": "C18",
       "condition_b": "C15",
       "metric": "hits_at_1",
+      "tested": true,
       "value_a": 0.5615635179153095,
       "value_b": 0.6078175895765472,
       "delta": 0.04625407166123774,
@@ -1220,6 +1255,7 @@
       "condition_a": "C18",
       "condition_b": "C11",
       "metric": "hits_at_1",
+      "tested": true,
       "value_a": 0.5615635179153095,
       "value_b": 0.5928338762214984,
       "delta": 0.03127035830618896,
@@ -1234,6 +1270,7 @@
       "condition_a": "C18",
       "condition_b": "C13",
       "metric": "hits_at_1",
+      "tested": true,
       "value_a": 0.5615635179153095,
       "value_b": 0.6290988056460369,
       "delta": 0.06753528773072748,
@@ -1248,6 +1285,7 @@
       "condition_a": "C18",
       "condition_b": "C17",
       "metric": "hits_at_1",
+      "tested": true,
       "value_a": 0.5615635179153095,
       "value_b": 0.6914223669923996,
       "delta": 0.1298588490770901,
@@ -1262,6 +1300,7 @@
       "condition_a": "C10",
       "condition_b": "C15",
       "metric": "hits_at_1",
+      "tested": true,
       "value_a": 0.5596091205211726,
       "value_b": 0.6078175895765472,
       "delta": 0.04820846905537457,
@@ -1276,6 +1315,7 @@
       "condition_a": "C10",
       "condition_b": "C11",
       "metric": "hits_at_1",
+      "tested": true,
       "value_a": 0.5596091205211726,
       "value_b": 0.5928338762214984,
       "delta": 0.03322475570032579,
@@ -1290,6 +1330,7 @@
       "condition_a": "C10",
       "condition_b": "C13",
       "metric": "hits_at_1",
+      "tested": true,
       "value_a": 0.5596091205211726,
       "value_b": 0.6290988056460369,
       "delta": 0.06948968512486431,
@@ -1304,6 +1345,7 @@
       "condition_a": "C10",
       "condition_b": "C17",
       "metric": "hits_at_1",
+      "tested": true,
       "value_a": 0.5596091205211726,
       "value_b": 0.6914223669923996,
       "delta": 0.13181324647122694,
@@ -1318,6 +1360,7 @@
       "condition_a": "C15",
       "condition_b": "C11",
       "metric": "hits_at_1",
+      "tested": true,
       "value_a": 0.6078175895765472,
       "value_b": 0.5928338762214984,
       "delta": -0.014983713355048778,
@@ -1332,6 +1375,7 @@
       "condition_a": "C15",
       "condition_b": "C13",
       "metric": "hits_at_1",
+      "tested": true,
       "value_a": 0.6078175895765472,
       "value_b": 0.6290988056460369,
       "delta": 0.02128121606948974,
@@ -1346,6 +1390,7 @@
       "condition_a": "C15",
       "condition_b": "C17",
       "metric": "hits_at_1",
+      "tested": true,
       "value_a": 0.6078175895765472,
       "value_b": 0.6914223669923996,
       "delta": 0.08360477741585237,
@@ -1360,6 +1405,7 @@
       "condition_a": "C11",
       "condition_b": "C13",
       "metric": "hits_at_1",
+      "tested": true,
       "value_a": 0.5928338762214984,
       "value_b": 0.6290988056460369,
       "delta": 0.03626492942453852,
@@ -1374,6 +1420,7 @@
       "condition_a": "C11",
       "condition_b": "C17",
       "metric": "hits_at_1",
+      "tested": true,
       "value_a": 0.5928338762214984,
       "value_b": 0.6914223669923996,
       "delta": 0.09858849077090115,
@@ -1388,6 +1435,7 @@
       "condition_a": "C13",
       "condition_b": "C17",
       "metric": "hits_at_1",
+      "tested": true,
       "value_a": 0.6290988056460369,
       "value_b": 0.6914223669923996,
       "delta": 0.06232356134636263,
@@ -1402,6 +1450,7 @@
       "condition_a": "C18",
       "condition_b": "C10",
       "metric": "f1",
+      "tested": true,
       "value_a": 0.26037982973149965,
       "value_b": 0.2842331069002503,
       "delta": 0.02385327716875063,
@@ -1416,6 +1465,7 @@
       "condition_a": "C18",
       "condition_b": "C15",
       "metric": "f1",
+      "tested": true,
       "value_a": 0.26037982973149965,
       "value_b": 0.35912624953720845,
       "delta": 0.09874641980570881,
@@ -1430,6 +1480,7 @@
       "condition_a": "C18",
       "condition_b": "C11",
       "metric": "f1",
+      "tested": true,
       "value_a": 0.26037982973149965,
       "value_b": 0.36314868804664724,
       "delta": 0.1027688583151476,
@@ -1444,6 +1495,7 @@
       "condition_a": "C18",
       "condition_b": "C13",
       "metric": "f1",
+      "tested": true,
       "value_a": 0.26037982973149965,
       "value_b": 0.4020541350165829,
       "delta": 0.14167430528508324,
@@ -1458,6 +1510,7 @@
       "condition_a": "C18",
       "condition_b": "C17",
       "metric": "f1",
+      "tested": true,
       "value_a": 0.26037982973149965,
       "value_b": 0.45150056335142885,
       "delta": 0.1911207336199292,
@@ -1472,6 +1525,7 @@
       "condition_a": "C10",
       "condition_b": "C15",
       "metric": "f1",
+      "tested": true,
       "value_a": 0.2842331069002503,
       "value_b": 0.35912624953720845,
       "delta": 0.07489314263695818,
@@ -1486,6 +1540,7 @@
       "condition_a": "C10",
       "condition_b": "C11",
       "metric": "f1",
+      "tested": true,
       "value_a": 0.2842331069002503,
       "value_b": 0.36314868804664724,
       "delta": 0.07891558114639696,
@@ -1500,6 +1555,7 @@
       "condition_a": "C10",
       "condition_b": "C13",
       "metric": "f1",
+      "tested": true,
       "value_a": 0.2842331069002503,
       "value_b": 0.4020541350165829,
       "delta": 0.1178210281163326,
@@ -1514,6 +1570,7 @@
       "condition_a": "C10",
       "condition_b": "C17",
       "metric": "f1",
+      "tested": true,
       "value_a": 0.2842331069002503,
       "value_b": 0.45150056335142885,
       "delta": 0.16726745645117858,
@@ -1528,6 +1585,7 @@
       "condition_a": "C15",
       "condition_b": "C11",
       "metric": "f1",
+      "tested": true,
       "value_a": 0.35912624953720845,
       "value_b": 0.36314868804664724,
       "delta": 0.004022438509438786,
@@ -1542,6 +1600,7 @@
       "condition_a": "C15",
       "condition_b": "C13",
       "metric": "f1",
+      "tested": true,
       "value_a": 0.35912624953720845,
       "value_b": 0.4020541350165829,
       "delta": 0.04292788547937443,
@@ -1556,6 +1615,7 @@
       "condition_a": "C15",
       "condition_b": "C17",
       "metric": "f1",
+      "tested": true,
       "value_a": 0.35912624953720845,
       "value_b": 0.45150056335142885,
       "delta": 0.0923743138142204,
@@ -1570,6 +1630,7 @@
       "condition_a": "C11",
       "condition_b": "C13",
       "metric": "f1",
+      "tested": true,
       "value_a": 0.36314868804664724,
       "value_b": 0.4020541350165829,
       "delta": 0.03890544696993564,
@@ -1584,6 +1645,7 @@
       "condition_a": "C11",
       "condition_b": "C17",
       "metric": "f1",
+      "tested": true,
       "value_a": 0.36314868804664724,
       "value_b": 0.45150056335142885,
       "delta": 0.08835187530478161,
@@ -1598,6 +1660,7 @@
       "condition_a": "C13",
       "condition_b": "C17",
       "metric": "f1",
+      "tested": true,
       "value_a": 0.4020541350165829,
       "value_b": 0.45150056335142885,
       "delta": 0.04944642833484597,
@@ -1612,6 +1675,7 @@
       "condition_a": "C18",
       "condition_b": "C10",
       "metric": "mrr",
+      "tested": true,
       "value_a": 0.6876659158908476,
       "value_b": 0.6978307796695766,
       "delta": 0.01016486377872905,
@@ -1620,6 +1684,7 @@
       "p_value": 0.0999900009999,
       "n_units": 1198,
       "n_pairs": 1,
+      "family_size": 10,
       "p_holm": 0.1999800019998
     },
     {
@@ -1627,6 +1692,7 @@
       "condition_a": "C18",
       "condition_b": "C11",
       "metric": "mrr",
+      "tested": true,
       "value_a": 0.6876659158908476,
       "value_b": 0.7719022424197658,
       "delta": 0.08423632652891822,
@@ -1635,6 +1701,7 @@
       "p_value": 9.999000099990002e-05,
       "n_units": 1198,
       "n_pairs": 1,
+      "family_size": 10,
       "p_holm": 0.000999900009999
     },
     {
@@ -1642,6 +1709,7 @@
       "condition_a": "C18",
       "condition_b": "C13",
       "metric": "mrr",
+      "tested": true,
       "value_a": 0.6876659158908476,
       "value_b": 0.771717292490757,
       "delta": 0.08405137659990947,
@@ -1650,6 +1718,7 @@
       "p_value": 9.999000099990002e-05,
       "n_units": 1198,
       "n_pairs": 1,
+      "family_size": 10,
       "p_holm": 0.000999900009999
     },
     {
@@ -1657,6 +1726,7 @@
       "condition_a": "C18",
       "condition_b": "C17",
       "metric": "mrr",
+      "tested": true,
       "value_a": 0.6876659158908476,
       "value_b": 0.8605344285816645,
       "delta": 0.17286851269081693,
@@ -1665,6 +1735,7 @@
       "p_value": 9.999000099990002e-05,
       "n_units": 1198,
       "n_pairs": 1,
+      "family_size": 10,
       "p_holm": 0.000999900009999
     },
     {
@@ -1672,6 +1743,7 @@
       "condition_a": "C10",
       "condition_b": "C11",
       "metric": "mrr",
+      "tested": true,
       "value_a": 0.6978307796695766,
       "value_b": 0.7719022424197658,
       "delta": 0.07407146275018917,
@@ -1680,6 +1752,7 @@
       "p_value": 9.999000099990002e-05,
       "n_units": 1198,
       "n_pairs": 1,
+      "family_size": 10,
       "p_holm": 0.000999900009999
     },
     {
@@ -1687,6 +1760,7 @@
       "condition_a": "C10",
       "condition_b": "C13",
       "metric": "mrr",
+      "tested": true,
       "value_a": 0.6978307796695766,
       "value_b": 0.771717292490757,
       "delta": 0.07388651282118042,
@@ -1695,6 +1769,7 @@
       "p_value": 9.999000099990002e-05,
       "n_units": 1198,
       "n_pairs": 1,
+      "family_size": 10,
       "p_holm": 0.000999900009999
     },
     {
@@ -1702,6 +1777,7 @@
       "condition_a": "C10",
       "condition_b": "C17",
       "metric": "mrr",
+      "tested": true,
       "value_a": 0.6978307796695766,
       "value_b": 0.8605344285816645,
       "delta": 0.16270364891208788,
@@ -1710,6 +1786,7 @@
       "p_value": 9.999000099990002e-05,
       "n_units": 1198,
       "n_pairs": 1,
+      "family_size": 10,
       "p_holm": 0.000999900009999
     },
     {
@@ -1717,6 +1794,7 @@
       "condition_a": "C11",
       "condition_b": "C13",
       "metric": "mrr",
+      "tested": true,
       "value_a": 0.7719022424197658,
       "value_b": 0.771717292490757,
       "delta": -0.00018494992900874863,
@@ -1725,6 +1803,7 @@
       "p_value": 0.9754024597540246,
       "n_units": 1198,
       "n_pairs": 1,
+      "family_size": 10,
       "p_holm": 0.9754024597540246
     },
     {
@@ -1732,6 +1811,7 @@
       "condition_a": "C11",
       "condition_b": "C17",
       "metric": "mrr",
+      "tested": true,
       "value_a": 0.7719022424197658,
       "value_b": 0.8605344285816645,
       "delta": 0.08863218616189872,
@@ -1740,6 +1820,7 @@
       "p_value": 9.999000099990002e-05,
       "n_units": 1198,
       "n_pairs": 1,
+      "family_size": 10,
       "p_holm": 0.000999900009999
     },
     {
@@ -1747,6 +1828,7 @@
       "condition_a": "C13",
       "condition_b": "C17",
       "metric": "mrr",
+      "tested": true,
       "value_a": 0.771717292490757,
       "value_b": 0.8605344285816645,
       "delta": 0.08881713609090747,
@@ -1755,6 +1837,7 @@
       "p_value": 9.999000099990002e-05,
       "n_units": 1198,
       "n_pairs": 1,
+      "family_size": 10,
       "p_holm": 0.000999900009999
     },
     {
@@ -1762,6 +1845,7 @@
       "condition_a": "C18",
       "condition_b": "C10",
       "metric": "hits_at_1",
+      "tested": true,
       "value_a": 0.6193656093489148,
       "value_b": 0.6343906510851419,
       "delta": 0.015025041736227096,
@@ -1776,6 +1860,7 @@
       "condition_a": "C18",
       "condition_b": "C11",
       "metric": "hits_at_1",
+      "tested": true,
       "value_a": 0.6193656093489148,
       "value_b": 0.7045075125208681,
       "delta": 0.08514190317195325,
@@ -1790,6 +1875,7 @@
       "condition_a": "C18",
       "condition_b": "C13",
       "metric": "hits_at_1",
+      "tested": true,
       "value_a": 0.6193656093489148,
       "value_b": 0.7203672787979967,
       "delta": 0.10100166944908184,
@@ -1804,6 +1890,7 @@
       "condition_a": "C18",
       "condition_b": "C17",
       "metric": "hits_at_1",
+      "tested": true,
       "value_a": 0.6193656093489148,
       "value_b": 0.8071786310517529,
       "delta": 0.1878130217028381,
@@ -1818,6 +1905,7 @@
       "condition_a": "C10",
       "condition_b": "C11",
       "metric": "hits_at_1",
+      "tested": true,
       "value_a": 0.6343906510851419,
       "value_b": 0.7045075125208681,
       "delta": 0.07011686143572615,
@@ -1832,6 +1920,7 @@
       "condition_a": "C10",
       "condition_b": "C13",
       "metric": "hits_at_1",
+      "tested": true,
       "value_a": 0.6343906510851419,
       "value_b": 0.7203672787979967,
       "delta": 0.08597662771285475,
@@ -1846,6 +1935,7 @@
       "condition_a": "C10",
       "condition_b": "C17",
       "metric": "hits_at_1",
+      "tested": true,
       "value_a": 0.6343906510851419,
       "value_b": 0.8071786310517529,
       "delta": 0.172787979966611,
@@ -1860,6 +1950,7 @@
       "condition_a": "C11",
       "condition_b": "C13",
       "metric": "hits_at_1",
+      "tested": true,
       "value_a": 0.7045075125208681,
       "value_b": 0.7203672787979967,
       "delta": 0.015859766277128595,
@@ -1874,6 +1965,7 @@
       "condition_a": "C11",
       "condition_b": "C17",
       "metric": "hits_at_1",
+      "tested": true,
       "value_a": 0.7045075125208681,
       "value_b": 0.8071786310517529,
       "delta": 0.10267111853088484,
@@ -1888,6 +1980,7 @@
       "condition_a": "C13",
       "condition_b": "C17",
       "metric": "hits_at_1",
+      "tested": true,
       "value_a": 0.7203672787979967,
       "value_b": 0.8071786310517529,
       "delta": 0.08681135225375625,
@@ -1902,6 +1995,7 @@
       "condition_a": "C18",
       "condition_b": "C10",
       "metric": "f1",
+      "tested": true,
       "value_a": 0.5948625506985128,
       "value_b": 0.575600565237871,
       "delta": -0.01926198546064184,
@@ -1916,6 +2010,7 @@
       "condition_a": "C18",
       "condition_b": "C11",
       "metric": "f1",
+      "tested": true,
       "value_a": 0.5948625506985128,
       "value_b": 0.6278625954198473,
       "delta": 0.033000044721334554,
@@ -1930,6 +2025,7 @@
       "condition_a": "C18",
       "condition_b": "C13",
       "metric": "f1",
+      "tested": true,
       "value_a": 0.5948625506985128,
       "value_b": 0.6721687299403943,
       "delta": 0.07730617924188155,
@@ -1944,6 +2040,7 @@
       "condition_a": "C18",
       "condition_b": "C17",
       "metric": "f1",
+      "tested": true,
       "value_a": 0.5948625506985128,
       "value_b": 0.7081881533101045,
       "delta": 0.11332560261159175,
@@ -1958,6 +2055,7 @@
       "condition_a": "C10",
       "condition_b": "C11",
       "metric": "f1",
+      "tested": true,
       "value_a": 0.575600565237871,
       "value_b": 0.6278625954198473,
       "delta": 0.05226203018197639,
@@ -1972,6 +2070,7 @@
       "condition_a": "C10",
       "condition_b": "C13",
       "metric": "f1",
+      "tested": true,
       "value_a": 0.575600565237871,
       "value_b": 0.6721687299403943,
       "delta": 0.09656816470252338,
@@ -1986,6 +2085,7 @@
       "condition_a": "C10",
       "condition_b": "C17",
       "metric": "f1",
+      "tested": true,
       "value_a": 0.575600565237871,
       "value_b": 0.7081881533101045,
       "delta": 0.1325875880722336,
@@ -2000,6 +2100,7 @@
       "condition_a": "C11",
       "condition_b": "C13",
       "metric": "f1",
+      "tested": true,
       "value_a": 0.6278625954198473,
       "value_b": 0.6721687299403943,
       "delta": 0.04430613452054699,
@@ -2014,6 +2115,7 @@
       "condition_a": "C11",
       "condition_b": "C17",
       "metric": "f1",
+      "tested": true,
       "value_a": 0.6278625954198473,
       "value_b": 0.7081881533101045,
       "delta": 0.0803255578902572,
@@ -2028,6 +2130,7 @@
       "condition_a": "C13",
       "condition_b": "C17",
       "metric": "f1",
+      "tested": true,
       "value_a": 0.6721687299403943,
       "value_b": 0.7081881533101045,
       "delta": 0.0360194233697102,
