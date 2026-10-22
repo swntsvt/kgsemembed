@@ -30,6 +30,7 @@ import argparse
 import json
 import random
 import sys
+from dataclasses import replace
 from itertools import combinations
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Tuple
@@ -162,14 +163,16 @@ def subgroup_difference(
     -------
     dict
         ``delta`` (CMT/EDAS mean delta minus the others'), ``ci_sources``
-        (test sources resampled within pairs) and ``ci_pairs`` (pairs
-        resampled within each subgroup).
+        (test sources resampled within pairs; the other pairs use seed + 1,
+        so the two subgroups' replicates are independent) and ``ci_pairs``
+        (pairs resampled within each subgroup).
     """
     sparse = list(subgroup_pairs(arrays, "cmt_edas").values())
     other = list(subgroup_pairs(arrays, "other").values())
     deltas_s = [pair_delta(pair, metric) for pair in sparse]
     deltas_o = [pair_delta(pair, metric) for pair in other]
-    within = _bootstrap_deltas(sparse, metric, settings) - _bootstrap_deltas(other, metric, settings)
+    other_settings = replace(settings, seed=settings.seed + 1)
+    within = _bootstrap_deltas(sparse, metric, settings) - _bootstrap_deltas(other, metric, other_settings)
     return {"delta": float(np.mean(deltas_s) - np.mean(deltas_o)),
             "ci_sources": _interval(within),
             "ci_pairs": pair_level_interval(deltas_s, deltas_o, settings)}

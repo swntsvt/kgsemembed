@@ -29,7 +29,7 @@ python scripts/generate_figure2_model_comparison.py --results_dir data/results/ 
   | all 21 pairs | −0.078 | [−0.114, −0.042] |
   | 11 CMT/EDAS pairs | −0.030 | [−0.075, +0.016] |
   | 10 other pairs | −0.131 | [−0.191, −0.074] |
-  | CMT/EDAS − other | +0.101 | sources [+0.030, +0.176]; pairs [+0.023, +0.182] |
+  | CMT/EDAS − other | +0.101 | sources [+0.028, +0.176]; pairs [+0.023, +0.182] |
 
   Pair intervals favouring C3: conference-sigkdd, confof-ekaw, ekaw-sigkdd
   (other) and confof-edas (CMT/EDAS); C10 is ahead on three CMT/EDAS pairs
@@ -37,9 +37,9 @@ python scripts/generate_figure2_model_comparison.py --results_dir data/results/ 
 - **Caveats**: exploratory; the cause is not established (the sparsity
   explanation is not supported); each ontology is in six pairs, so the
   pair-level interval is optimistic; 3–20 test reference sources per pair.
-- **Hits@1** agrees (difference +0.143 [+0.037, +0.253]). **F1** differs:
+- **Hits@1** agrees (difference +0.143 [+0.036, +0.251]). **F1** differs:
   overall −0.054 [−0.111, +0.005] and the group difference +0.097
-  [−0.017, +0.212] both include 0; cmt-edas is the one pair whose F1
+  [−0.020, +0.212] both include 0; cmt-edas is the one pair whose F1
   interval favours C10.
 - **Script changes**: the docstring no longer asserts the finding; the
   legend says "CMT or EDAS pair" (no "annotation-sparse"); callouts name the
@@ -64,7 +64,9 @@ All 15 (D1) and 10 (D2) pairwise differences, Holm within each dataset
 - The #139 README's figures (M5 0.7365 on D1, M4 0.7833 on D2, …) predate
   the #145 V8 re-runs; current values are M5 0.7132 / 0.7717, M4 0.6872 /
   0.7719, C17 0.7578 / 0.8605.
-- **Hits@1** agrees except D1 M3 below M4 (−0.015 [−0.026, −0.004]).
-  **F1** separates two MRR ties: M2 above M1 on D1 (+0.024 [+0.016, +0.032])
+- **Hits@1** agrees. Its D1 M3 − M4 interval (−0.015 [−0.026, −0.004])
+  excludes 0, as MRR's does before adjustment (−0.0075 [−0.0148, −0.0003]);
+  only MRR's Holm-adjusted test leaves M3 and M4 unseparated.
+- **F1** separates two MRR ties: M2 above M1 on D1 (+0.024 [+0.016, +0.032])
   and M5 above M4 on D2 (+0.044 [+0.025, +0.063]).
 - **Script change**: the docstring states these claims and points here.

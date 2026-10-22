@@ -24,6 +24,7 @@ from scripts.figure_claims import (  # noqa: E402
     figure2_conditions,
     pair_delta,
     pair_level_interval,
+    subgroup_difference,
     render_markdown,
     subgroup_pairs,
 )
@@ -122,3 +123,10 @@ def test_markdown_lists_every_metric_and_subgroup(cache: StubCache) -> None:
     for label in ("| MRR | cmt_edas |", "| Hits@1 | other |", "| F1 | all |", "cmt_edas − other"):
         assert label in text
     assert np.isfinite(figure1(cache, _SETTINGS)["f1"]["difference"]["delta"])
+
+
+def test_subgroup_bootstraps_are_independent() -> None:
+    same = StubCache({"cmt-edas": (0.4, 0.6), "confof-ekaw": (0.4, 0.6)})
+    arrays = column_arrays(same, ("C3", "C10"), "D3", "mrr")
+    low, high = subgroup_difference(arrays, "mrr", _SETTINGS)["ci_sources"]
+    assert low < 0 < high

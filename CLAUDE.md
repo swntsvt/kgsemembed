@@ -185,7 +185,8 @@ python scripts/generate_entity_type_table.py --results_dir data/results/
 # C10, CMT/EDAS pairs highlighted (not "annotation-sparse": EKAW is sparser).
 # Writes figures/fig1_d3_scatter.pdf (+ .png; other metrics get a _{metric}
 # suffix) and prints win counts. Its claim (#149): C3 leads on D3, and the
-# lead sits on the non-CMT/EDAS pairs; V8 has no advantage on any pair.
+# lead sits on the non-CMT/EDAS pairs; under MRR and Hits@1 no pair's
+# interval favours V8 (under F1, cmt-edas does).
 python scripts/generate_figure1_d3_scatter.py \
     --results_dir data/results/ --output_dir figures/ --metric mrr
 
