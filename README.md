@@ -64,11 +64,9 @@ venv/bin/python scripts/download_datasets.py --data_dir data/ --check
 `artifacts/issue-138/` records provenance: checksums against each release,
 reference statistics, and each benchmark's protocol compared with ours.
 
-**Licences.** Each dataset keeps the licence of its release, so read it before
-using or redistributing the data. SNOMED CT (D1) needs a SNOMED CT or UMLS
-licence. D4 is derived from Fandom wikis (DBkWik), and D5 from DBpedia and
-Wikidata. The tracked artefacts and the release data archive contain only
-URIs, scores and metrics, never dataset text.
+The datasets are not redistributed (the artefacts and release archive hold
+only URIs, scores and metrics); obtain them from their releases under their
+own terms. D1 requires a SNOMED CT licence.
 
 ## Running
 
@@ -250,4 +248,4 @@ No paper has been published yet. To cite the software:
 
 ## Licence
 
-Code: MIT (see `LICENSE`). The datasets keep the licences of their releases.
+MIT (see `LICENSE`).
