@@ -186,9 +186,14 @@ python scripts/results_inventory.py
 python scripts/release_checks.py --data_dir data/ \
     --ra1_zip reference-alignment.zip --openea_zip OpenEA_dataset_v2.0.zip
 
-# Print D3 class vs predicate F1 rows (LaTeX) for the Section 4.3 table.
-# F1 is weighted by n_refs per pair; report.md uses the unweighted pair mean.
-python scripts/generate_entity_type_table.py --results_dir data/results/
+# Print the D3 class vs predicate table (LaTeX, tab:entity_type, Section 4.3).
+# One definition (#166, evaluation/entity_types.py) shared with report.md's
+# Entity-Type Analysis, so both print the same values: D3 only (D4_schema is
+# not pooled), MRR/Hits@1/F1 as unweighted pair means plus pooled F1_mu, with
+# pairs and test references per type (class 21/210, predicate 8/31: a pair
+# records a type only with >= 3 test references of it).
+python scripts/generate_entity_type_table.py --results_dir data/results/ \
+    > artifacts/issue-166/entity_type_table.tex
 
 # Plot Figure 1: D3 per-pair MRR (default; --metric hits_at_1 / f1), C3 vs
 # C10, CMT/EDAS pairs highlighted (not "annotation-sparse": EKAW is sparser).
@@ -1336,8 +1341,8 @@ definitions live in the `metrics.py` module docstring; in short:
 - **D3**: the table's D3 column is the macro mean over 21 pairs (as is every
   statistic); the F1 table adds D3$_\mu$, pooled TP/FP/FN.
 - `report.md` ranks by MRR, with Hits@1 and F1 beside it (#140); its summary,
-  breakdown and group tables lead with MRR. The entity-type analysis is still
-  on F1.
+  breakdown and group tables lead with MRR. The entity-type analysis (#166)
+  shows MRR, Hits@1 and F1 per entity type, D3 only.
 
 ## Statistical analysis
 

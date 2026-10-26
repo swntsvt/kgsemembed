@@ -1,13 +1,13 @@
 """Command-line entry point for the Section 4.3 entity-type table.
 
-Reads the D3 result files and prints one LaTeX row per condition comparing
-class F1 with predicate F1, ready to paste into ``Table~\\ref{tab:entity_type}``.
-
-Each F1 is the mean over the 21 Conference pairs weighted by the bucket's test
-reference count, so a pair contributes in proportion to the references it
-holds.  Buckets with fewer than three references are excluded, matching the
-threshold the pipeline applies when writing ``per_entity_type``.  A condition
-missing either entity type is omitted from the table.
+Prints the D3 class-versus-predicate table as LaTeX (``tab:entity_type``) from
+:func:`kgsemembed.evaluation.entity_types.entity_type_summary`, the summary
+the report's "Entity-Type Analysis" section renders, so the two always print
+the same values (#166).  D3 only; MRR and Hits@1 (primary) and F1 (secondary)
+are unweighted means over the pairs reporting each entity type, and F1$_\\mu$
+pools TP, FP and FN over them.  The caption states the pairs and test
+references behind each entity type.  Conditions are listed in registry order;
+one without both entity types is left out.
 
 Results are read through ``kgsemembed.evaluation.load_all_results``, so
 malformed files, unregistered conditions and duplicate results are skipped with
@@ -16,7 +16,7 @@ a warning exactly as in the generated report.
 Usage
 -----
 python scripts/generate_entity_type_table.py \\
-    --results_dir data/results/
+    --results_dir data/results/ > artifacts/issue-166/entity_type_table.tex
 """
 
 from __future__ import annotations
@@ -24,100 +24,72 @@ from __future__ import annotations
 import argparse
 import logging
 import random
-from typing import List, Optional
+from typing import List
 
 import numpy as np
 import pandas as pd
 
 from kgsemembed.evaluation import load_all_results
-from kgsemembed.pipeline.conditions import get_condition
+from kgsemembed.evaluation import entity_types
 
-_DATASET_ID = "D3"
-_ENTITY_TYPES = ("class", "predicate")
-_MIN_REFS = 3
-_CONDITION_ORDER = (
-    "C1", "C2", "C3", "C4", "C7", "C9", "C20", "C10", "C13", "C18",
+_TABLE_METRICS = ("mrr", "hits_at_1", "f1", "f1_micro")
+_METRIC_HEADS = {"mrr": "MRR", "hits_at_1": "Hits@1", "f1": "F1", "f1_micro": r"F1$_{\mu}$"}
+_TYPE_HEADS = {"class": "cls", "predicate": "prd"}
+_CAPTION = (
+    r"\caption{{Class versus predicate (property) correspondences on D3. MRR "
+    r"and Hits@1 are primary, F1 secondary; each is the unweighted mean over "
+    r"the pairs reporting the entity type, and F1$_{{\mu}}$ pools TP, FP and FN "
+    r"over them. A pair reports an entity type only with at least {min_refs} "
+    r"test references of it: class values rest on {class_pairs} pairs and "
+    r"{class_refs} test references, predicate values on {predicate_pairs} "
+    r"pairs and {predicate_refs}. D4$_{{\mathrm{{sc}}}}$, a single pair from "
+    r"another benchmark, is not included.}}"
 )
-_TABLE_HEADER = "% Paste into Table~\\ref{tab:entity_type}"
 
 
-def _entity_type_rows(results_dir: str) -> pd.DataFrame:
-    """
-    Load the D3 class and predicate rows with enough references to report.
-
-    Parameters
-    ----------
-    results_dir : str
-        Root directory of the experiment result files.
-
-    Returns
-    -------
-    pd.DataFrame
-        One row per condition, pair and entity type, with numeric ``n_refs``.
-    """
-    df = load_all_results(results_dir, include_entity_type_breakdown=True)
-    df = df.assign(n_refs=pd.to_numeric(df["n_refs"], errors="coerce"))
-    return df[
-        (df["dataset_id"] == _DATASET_ID)
-        & df["entity_type"].isin(_ENTITY_TYPES)
-        & (df["n_refs"] >= _MIN_REFS)
+def _heads() -> List[str]:
+    """Return the column headings, one per metric and entity type."""
+    metric_heads = [
+        rf"{_METRIC_HEADS[metric]}$_{{\mathrm{{{_TYPE_HEADS[entity_type]}}}}}$"
+        if metric != "f1_micro" else rf"F1$_{{\mu,\mathrm{{{_TYPE_HEADS[entity_type]}}}}}$"
+        for metric in _TABLE_METRICS for entity_type in entity_types.ENTITY_TYPES
     ]
+    return ["Cond", "Strategy", "Model", *metric_heads]
 
 
-def _weighted_f1(rows: pd.DataFrame) -> Optional[float]:
+def latex_row(row: pd.Series) -> str:
     """
-    Average F1 over pairs, weighting each pair by its test reference count.
+    Render one condition of the shared summary as a LaTeX table row.
 
     Parameters
     ----------
-    rows : pd.DataFrame
-        Entity-type rows of one condition and one entity type.
+    row : pd.Series
+        One row of :func:`entity_types.entity_type_summary`.
 
     Returns
     -------
-    Optional[float]
-        The weighted mean F1, or ``None`` when the rows hold no references.
+    str
+        ``condition & strategy & model & values \\\\``, values to four decimals.
     """
-    total_refs = rows["n_refs"].sum()
-    if total_refs == 0:
-        return None
-    return float((rows["f1"] * rows["n_refs"]).sum() / total_refs)
+    values = [
+        f"{row[f'{entity_type}_{metric}']:.4f}"
+        for metric in _TABLE_METRICS for entity_type in entity_types.ENTITY_TYPES
+    ]
+    return " & ".join([row["condition_id"], row["strategy"], row["model_key"], *values]) + r" \\"
 
 
-def _latex_row(condition_id: str, rows: pd.DataFrame) -> Optional[str]:
+def _caption(complete: pd.DataFrame) -> str:
+    """Fill the caption with the pair and reference counts of each entity type."""
+    counts = {
+        f"{entity_type}_{noun}": entity_types.count_text(complete[f"{entity_type}_n_{noun}"])
+        for entity_type in entity_types.ENTITY_TYPES for noun in ("pairs", "refs")
+    }
+    return _CAPTION.format(min_refs=entity_types.MIN_REFS, **counts)
+
+
+def build_table(results_dir: str) -> List[str]:
     """
-    Render one condition as a LaTeX table row.
-
-    Parameters
-    ----------
-    condition_id : str
-        Registered condition identifier, e.g. ``"C1"``.
-    rows : pd.DataFrame
-        Entity-type rows as returned by :func:`_entity_type_rows`.
-
-    Returns
-    -------
-    Optional[str]
-        ``condition & model & class F1 & predicate F1 & gap & n_pairs \\\\``,
-        where ``n_pairs`` counts the pairs contributing to class F1, or
-        ``None`` when either entity type has no data for the condition.
-    """
-    own = rows[rows["condition_id"] == condition_id]
-    class_rows = own[own["entity_type"] == "class"]
-    class_f1 = _weighted_f1(class_rows)
-    predicate_f1 = _weighted_f1(own[own["entity_type"] == "predicate"])
-    if class_f1 is None or predicate_f1 is None:
-        return None
-    model_key = get_condition(condition_id).model_key
-    return (
-        f"{condition_id} & {model_key} & {class_f1:.4f} & {predicate_f1:.4f} & "
-        f"{class_f1 - predicate_f1:+.4f} & {len(class_rows)} \\\\"
-    )
-
-
-def build_table_rows(results_dir: str) -> List[str]:
-    """
-    Build the LaTeX rows of the entity-type table in paper order.
+    Build the LaTeX entity-type table.
 
     Parameters
     ----------
@@ -127,18 +99,28 @@ def build_table_rows(results_dir: str) -> List[str]:
     Returns
     -------
     List[str]
-        One row per condition in :data:`_CONDITION_ORDER` that has both class
-        and predicate data; conditions without it are left out.
+        The table's lines, or an empty list when no condition reports both
+        entity types on D3.
     """
-    rows = _entity_type_rows(results_dir)
-    latex_rows = [_latex_row(condition_id, rows) for condition_id in _CONDITION_ORDER]
-    return [row for row in latex_rows if row is not None]
+    df = load_all_results(results_dir, include_entity_type_breakdown=True)
+    complete = entity_types.complete_rows(entity_types.entity_type_summary(df))
+    if complete.empty:
+        return []
+    heads = _heads()
+    return [
+        r"\begin{table*}[t]", r"\scriptsize", r"\setlength{\tabcolsep}{4pt}",
+        _caption(complete), r"\label{tab:entity_type}",
+        r"\begin{tabular}{lll" + "r" * (len(heads) - 3) + "}", r"\hline",
+        " & ".join(rf"\textbf{{{head}}}" for head in heads) + r" \\", r"\hline",
+        *(latex_row(row) for _, row in complete.iterrows()),
+        r"\hline", r"\end{tabular}", r"\end{table*}",
+    ]
 
 
 def _build_arg_parser() -> argparse.ArgumentParser:
     """Build the command-line argument parser for the entity-type table."""
     parser = argparse.ArgumentParser(
-        description="Print the D3 class-versus-predicate F1 rows as LaTeX."
+        description="Print the D3 class-versus-predicate table as LaTeX."
     )
     parser.add_argument(
         "--results_dir", default="data/results/", help="Root directory of result files."
@@ -147,14 +129,13 @@ def _build_arg_parser() -> argparse.ArgumentParser:
 
 
 def main() -> None:
-    """Read the D3 results and print the entity-type table rows."""
+    """Read the D3 results and print the entity-type table."""
     random.seed(42)
     np.random.seed(42)
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s %(message)s")
     args = _build_arg_parser().parse_args()
-    print(_TABLE_HEADER)
-    for row in build_table_rows(args.results_dir):
-        print(row)
+    for line in build_table(args.results_dir):
+        print(line)
 
 
 if __name__ == "__main__":
