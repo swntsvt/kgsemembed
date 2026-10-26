@@ -176,8 +176,11 @@ python scripts/dataset_provenance.py --data_dir data/ \
 
 # Provenance and protocols (#138), into artifacts/issue-138/. Reference
 # statistics load every dataset (~2 min, no model); the inventory reads result
-# files and local git refs; release checks read the two original archives in
-# place (download commands in the script's docstring; nothing is fetched).
+# files and, per source commit, only develop/main ancestry and v* release tags
+# (#168: a new branch or non-release tag leaves it byte-identical; a new
+# release tag containing the commit changes it); release checks read the two
+# original archives in place (download commands in the script's docstring;
+# nothing is fetched).
 python scripts/reference_statistics.py --data_dir data/
 python scripts/results_inventory.py
 python scripts/release_checks.py --data_dir data/ \
@@ -1131,7 +1134,8 @@ python scripts/v8_fix_report.py --old_dir data/results/ --new_dir data/results_i
   none was flagged. Their five source commits are on feature branches only
   (squash merges), so each carries an annotated `results/issue-*` tag on
   origin. Since #141 the 297 stored results (271 C, 26 B0) all come from
-  `c6931db` on `develop` (`results_inventory.md`, regenerated in #143).
+  `c6931db`, on `develop` and `main` and in both release tags
+  (`results_inventory.md`, regenerated in #168).
 - **Reporting**: "controlled comparison under a re-ranking protocol", never
   benchmark results. No published score in our tables. Ranking and matching
   metrics are reported separately.
