@@ -5,11 +5,13 @@ fields that decide whether they are comparable and reproducible: source
 commit and tree state, evaluation protocol, V1/V2 annotation digest (#136),
 D1 known-pair count (#137), candidate-file hash, library versions and model
 revisions.  Each source commit is resolved against the local repository:
-whether it exists, whether ``develop`` contains it, and which branches or
-tags do.  Results that cannot be combined with the current ones are flagged.
+whether it exists, whether ``develop`` and ``main`` contain it, and which
+release tags (``v*``) do.  Results that cannot be combined with the current
+ones are flagged.
 
-Commit reachability depends on the local clone's refs, so that column can
-differ between machines; every other cell is read from the result files.
+Only those stable refs are read, so creating a feature branch or a
+non-release tag leaves the file unchanged; a new release tag or a merge into
+``main`` changes it.  Every other cell is read from the result files.
 
 Usage
 -----
@@ -45,7 +47,7 @@ _ANNOTATION_COMPONENTS = frozenset({"V1", "V2"})
 _ANNOTATION_DATASETS = frozenset({"D1", "D2"})
 _V8_CHANGED_DATASETS = frozenset({"D1", "D2", "D4_instance", "D5"})
 _GIT_TIMEOUT_SECONDS = 30
-_REF_PREFIXES = ("refs/heads/", "refs/remotes/", "refs/tags/")
+_RELEASE_TAG_PATTERN = "v*"
 
 
 @dataclass(frozen=True)
@@ -111,11 +113,11 @@ class CommitInfo:
         The object is present in the local clone.
     date, subject : str
         Committer date and subject line (empty when missing).
-    on_develop : bool
-        ``origin/develop`` (or, without it, the local ``develop``) contains
-        the commit.
-    refs : Tuple[str, ...]
-        Local branches, remote-tracking branches and tags containing it.
+    on_develop, on_main : bool
+        ``origin/develop`` / ``origin/main`` (or, without them, the local
+        branch) contains the commit.
+    release_tags : Tuple[str, ...]
+        Release tags (``v*``) containing it.
     """
 
     commit: str
@@ -123,7 +125,8 @@ class CommitInfo:
     date: str
     subject: str
     on_develop: bool
-    refs: Tuple[str, ...]
+    on_main: bool
+    release_tags: Tuple[str, ...]
 
 
 def _record(tree: str, payload: dict) -> ResultRecord:
@@ -251,17 +254,9 @@ def _git(*args: str) -> Optional[str]:
     return completed.stdout.strip()
 
 
-def short_ref(refname: str) -> str:
-    """Strip the ``refs/heads/``, ``refs/remotes/`` or ``refs/tags/`` prefix of a full ref name."""
-    for prefix in _REF_PREFIXES:
-        if refname.startswith(prefix):
-            return refname[len(prefix):]
-    return refname
-
-
-def containing_refs(commit: str) -> Tuple[str, ...]:
+def release_tags(commit: str) -> Tuple[str, ...]:
     """
-    List the branches, remote-tracking branches and tags that contain a commit.
+    List the release tags (``v*``) that contain a commit.
 
     Parameters
     ----------
@@ -271,19 +266,28 @@ def containing_refs(commit: str) -> Tuple[str, ...]:
     Returns
     -------
     Tuple[str, ...]
-        Short ref names, sorted; symbolic ``*/HEAD`` refs are left out.
+        Tag names, sorted.
     """
-    listed = _git("for-each-ref", "--contains", commit, "--format=%(refname)", *_REF_PREFIXES)
-    names = (line for line in (listed or "").splitlines() if line and not line.endswith("/HEAD"))
-    return tuple(sorted(short_ref(name) for name in names))
+    listed = _git("tag", "--contains", commit, "--list", _RELEASE_TAG_PATTERN)
+    return tuple(sorted(line for line in (listed or "").splitlines() if line))
+
+
+def tracking_ref(branch: str) -> str:
+    """Return ``origin/<branch>`` when this clone has it, else the local branch."""
+    remote = f"origin/{branch}"
+    return remote if _git("rev-parse", "--verify", "--quiet", remote) else branch
 
 
 def develop_ref() -> str:
     """Return ``origin/develop`` when this clone has it, else the local ``develop``."""
-    return "origin/develop" if _git("rev-parse", "--verify", "--quiet", "origin/develop") else "develop"
+    return tracking_ref("develop")
 
 
-def commit_info(commit: str, develop: str) -> CommitInfo:
+def _contains(ref: str, commit: str) -> bool:
+    return _git("merge-base", "--is-ancestor", commit, ref) is not None
+
+
+def commit_info(commit: str, develop: str, main: str) -> CommitInfo:
     """
     Resolve a source commit against the local repository.
 
@@ -291,20 +295,22 @@ def commit_info(commit: str, develop: str) -> CommitInfo:
     ----------
     commit : str
         Full commit hash from a result file.
-    develop : str
-        Ref the ``on_develop`` test uses, from :func:`develop_ref`.
+    develop, main : str
+        Refs the ``on_develop`` and ``on_main`` tests use, from
+        :func:`tracking_ref`.
 
     Returns
     -------
     CommitInfo
-        Existence, date, subject, ``develop`` ancestry and containing refs.
+        Existence, date, subject, ``develop``/``main`` ancestry and release tags.
     """
     shown = _git("show", "-s", "--format=%cs%x00%s", commit)
     if shown is None:
-        return CommitInfo(commit, False, "", "", False, ())
+        return CommitInfo(commit, False, "", "", False, False, ())
     date, subject = shown.split("\x00", 1)
-    on_develop = _git("merge-base", "--is-ancestor", commit, develop) is not None
-    return CommitInfo(commit, True, date, subject, on_develop, containing_refs(commit))
+    return CommitInfo(
+        commit, True, date, subject, _contains(develop, commit), _contains(main, commit), release_tags(commit),
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -355,6 +361,16 @@ def group_section(records: Sequence[ResultRecord], current: str) -> List[str]:
     return ["## 1. Provenance groups", "", *_table(header, rows)]
 
 
+def _yes_no(value: bool) -> str:
+    return "yes" if value else "no"
+
+
+def _tags_cell(info: CommitInfo) -> str:
+    if not info.exists:
+        return "**missing**"
+    return ", ".join(info.release_tags) if info.release_tags else "none"
+
+
 def commit_section(infos: Sequence[CommitInfo], counts: Counter) -> List[str]:
     """
     Render every source commit with its reachability.
@@ -373,10 +389,10 @@ def commit_section(infos: Sequence[CommitInfo], counts: Counter) -> List[str]:
     """
     rows = [
         [f"`{i.commit[:7]}`", i.date, i.subject.replace("|", "\\|"), str(counts[i.commit]),
-         "yes" if i.on_develop else "no", ", ".join(i.refs) if i.refs else ("**none**" if i.exists else "**missing**")]
+         _yes_no(i.on_develop), _yes_no(i.on_main), _tags_cell(i)]
         for i in sorted(infos, key=lambda info: (info.date, info.commit))
     ]
-    header = ["Commit", "Date", "Subject", "Files", "On develop", "Local refs containing it"]
+    header = ["Commit", "Date", "Subject", "Files", "On develop", "On main", "Release tags"]
     return ["## 2. Source commits", "", *_table(header, rows)]
 
 
@@ -446,11 +462,12 @@ def _preamble(records: Sequence[ResultRecord], current: str) -> List[str]:
         f"- **V8 exclusion digest** (`{v8_exclusions_digest()[:12]}…`) matters only where V8 text is read on",
         "  D1, D2, D4_instance or D5; on D3 and D4_schema #145 left the text byte-identical.",
         f"- **n_train_refs** must be {_D1_KNOWN_PAIRS} on D1 (#137 known pairs); D5 records its training links.",
-        "- **On develop** tests `origin/develop` (the local `develop` only when the clone has no",
-        "  remote-tracking copy). **Local refs** are read from this clone, so they can differ on",
-        "  another machine. A result commit made on a feature branch is not an ancestor of",
+        "- **On develop** / **On main** test `origin/develop` / `origin/main` (the local branch only",
+        "  when the clone has no remote-tracking copy). **Release tags** lists the `v*` tags that",
+        "  contain the commit; other branches and tags are not read, so the file does not change",
+        "  when one is created. A result commit made on a feature branch is not an ancestor of",
         "  `develop` after a squash merge (only a commit made on `develop` itself is); such a",
-        "  commit with no ref may still be reachable on GitHub through `refs/pull/<n>/head`.",
+        "  commit may still be reachable on GitHub through `refs/pull/<n>/head`.",
         "",
     ]
 
@@ -495,8 +512,8 @@ def main() -> None:
     np.random.seed(42)
     args = _build_arg_parser().parse_args()
     records = [record for root in args.results_dirs for record in load_records(Path(root))]
-    develop = develop_ref()
-    infos = [commit_info(commit, develop) for commit in sorted({record.git_commit for record in records})]
+    develop, main = develop_ref(), tracking_ref("main")
+    infos = [commit_info(commit, develop, main) for commit in sorted({record.git_commit for record in records})]
     output = Path(args.output)
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text("\n".join(build_report(records, infos)), encoding="utf-8")

@@ -209,23 +209,28 @@ venv/bin/python scripts/generate_figure2_model_comparison.py \
     --results_dir data/results/ --output_dir figures/ --metric mrr
 ```
 
-Two generated outputs postdate the tag: the paired intervals behind the
-figures' claims (`figure_claims.py`, #149) and the B0 comparison regenerated
-after #142/#145 (#143; the tag's `baseline_comparison.md` predates both).
+Three generated outputs postdate the tag: the paired intervals behind the
+figures' claims (`figure_claims.py`, #149), the B0 comparison regenerated
+after #142/#145 (#143; the tag's `baseline_comparison.md` predates both), and
+the results inventory, which since #168 records only whether each source
+commit is on `develop`/`main` and which release tags contain it, so it no
+longer changes when a branch is created. It does change when a later release
+tag contains the commit.
 Reproducing them needs a checkout of `develop` that includes #143 (until the
-next release), with the same archive extracted into it. Both scripts rewrite
+next release), with the same archive extracted into it. The scripts rewrite
 tracked files, so the last step checks that they regenerate unchanged. The
-hand-written protocol notes and the results inventory in
-`artifacts/issue-137/` and `artifacts/issue-138/` were also corrected in
-#143, so read them on `develop` rather than at the tag.
+hand-written protocol notes in `artifacts/issue-137/` and
+`artifacts/issue-138/` were also corrected in #143, so read them on `develop`
+rather than at the tag.
 
 ```bash
 git checkout develop
 venv/bin/python scripts/figure_claims.py --results_dir data/results/ \
     --output_dir artifacts/issue-149/                       # ~1.5 min
 venv/bin/python scripts/generate_baseline_comparison.py
+venv/bin/python scripts/results_inventory.py                # reads git refs; seconds
 git diff --exit-code artifacts/issue-149/figure_claims.md artifacts/issue-149/figure_claims.json \
-    artifacts/issue-137/baseline_comparison.md
+    artifacts/issue-137/baseline_comparison.md artifacts/issue-138/results_inventory.md
 ```
 
 `artifacts/issue-139/metric_ceilings.json` (the ceilings and reference counts
