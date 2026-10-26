@@ -130,8 +130,12 @@ python -m kgsemembed.pipeline.run_experiment \
 python scripts/generate_candidates.py --datasets D1 D2 D3 D4 D5 \
     --data_dir data/
 
-# Generate the results report (#140; a few minutes, no model). Its primary
+# Generate the results report (#140; several minutes, no model). Its primary
 # analysis is the per-dataset paired tests, read from the per-source sidecars;
+# then every condition against B0 (#165, --baseline_dir, default
+# data/results_ngram_baseline/; adds ~3.5 min; omitted with a warning
+# when that directory is absent, so a report regenerated on develop has one
+# section more than the v0.2.0 archive's report.md);
 # the Wilcoxon over dataset columns is a consistency summary on MRR and F1
 # (see "Statistical analysis"). Only results under the current evaluation
 # protocol are accepted. --ceilings (default artifacts/issue-139/
@@ -1058,14 +1062,18 @@ python scripts/v8_fix_report.py --old_dir data/results/ --new_dir data/results_i
   condition − B0, with the #140 units, settings and sidecar/setup guards;
   `SidecarCache(results_dir, baseline_dir)` reads B0 from its own tree. MRR
   decision: Holm across every condition compared with B0 on one column (m =
-  the registered cells: D1 14, D2 13, D3 10, D4 11 + 11, D5 11), an untested
-  cell kept in its family with p = 1 (`apply_baseline_holm`); separate from
-  the ablation-group families. Plan fixed on #165 before any test ran.
+  the cells the registry assigns the column at the time of the run: D1 14,
+  D2 13, D3 10, D4 11 + 11, D5 11), an untested cell kept in its family with
+  p = 1 (`apply_baseline_holm`); separate from the ablation-group families.
+  Plan fixed on #165 before any test ran, including that a column gaining
+  conditions (#163) grows its family and has its decisions recomputed.
+  `aggregator.baseline_section_body` renders both the report section and
+  the artifact, so the two never disagree.
   Significantly above / below B0 on MRR: D1 5 / 6, D2 4 / 6, D3 1 / 2,
   D4_schema 0 / 0, D4_instance 3 / 2, D5 0 / 11. Gains: D1 C4 +0.074, C3,
   C17, C6, C16; D2 C4 +0.085, C17, C1, C3; D3 C1 +0.043; D4_instance C3
   +0.039, C5, C7. The #163 cells (C4 D4/D5, C7 D1/D2/D5, C15 D2) join their
-  columns' families once run.
+  columns' families once run, so these counts are as of the 70-cell run.
 - **Provenance** (`dataset_provenance.py`): every D1–D4 file is
   byte-identical to the OAEI MELT release (D1 = Bio-ML 2022
   `bio-ml-equiv-unsupervised/2022/snomed.body-fma.body`; SNOMED CT

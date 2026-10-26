@@ -1500,13 +1500,27 @@ def test_baseline_section_renders_counts_tables_and_untested_cells(tmp_path: Pat
     text = _report_text(tmp_path, tmp_path, baseline_results=_baseline_rows())
     section = text.split("# Paired Tests Against B0", 1)[1].split("\n# ", 1)[0]
     assert _headings_of(section) == [
-        "## MRR against B0 per column", "## MRR (primary)", "## Hits@1 (primary)", "## F1 (secondary)",
+        "## MRR against B0 per column", "## MRR against B0 (primary)",
+        "## Hits@1 against B0 (primary)", "## F1 against B0 (secondary)",
     ]
     assert "| D1 | 2 | 1 | 1 | 0 | 1 | 0 |" in section
-    assert ("| B0 | B0 vs C1 | D1 | 0.7000 | 0.7200 | 0.0200 | [0.0100, 0.0300] | 0.0020 "
+    assert ("| C1 | V1 | M1 | D1 | 0.7000 | 0.7200 | 0.0200 | [0.0100, 0.0300] | 0.0020 "
             "| 0.0280 | 14 | yes | 0.8860 | 4605 |") in section
-    assert "- B0 vs C2 on D1: C2/D1 has no per-source sidecar." in section
-    assert "Holm across every condition compared with B0 on one column" in section
+    assert "Not tested against B0 (each cell stays in its column's Holm family with p = 1):" in section
+    assert "- C2 on D1: C2/D1 has no per-source sidecar." in section
+    assert "results written before #140" not in section
+
+
+def test_baseline_headings_never_repeat_the_registered_paired_tests(tmp_path: Path) -> None:
+    text = _report_text(tmp_path, tmp_path, paired_results=_paired_rows(), baseline_results=_baseline_rows())
+    headings = [line for line in text.splitlines() if line.startswith("## ")]
+    assert len(headings) == len(set(headings))
+
+
+def test_baseline_section_without_rows_states_it_instead_of_an_empty_table(tmp_path: Path) -> None:
+    section = _report_text(tmp_path, tmp_path, baseline_results=[]).split("# Paired Tests Against B0", 1)[1]
+    assert "## MRR against B0 per column\n\n_No MRR cells._" in section
+    assert "|  |" not in section.split("\n# ", 1)[0]
 
 
 def test_consistency_section_lists_mrr_before_f1_and_is_labelled(tmp_path: Path) -> None:

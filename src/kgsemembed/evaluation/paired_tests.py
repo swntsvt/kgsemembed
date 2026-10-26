@@ -48,8 +48,10 @@ sanity check C19 with B0 (the stage-1 n-gram order, read from its own result
 tree) on every column the condition was run on, statistic condition − B0,
 with the same units, settings and guards.  Its MRR decision family is every
 condition compared with B0 within one column (group :data:`BASELINE_ID`),
-fixed by the registry: an untested cell stays in it with p = 1
-(:func:`apply_baseline_holm`).  These families are separate from the
+sized by the registry's coverage at the time of the run: an untested cell
+stays in it with p = 1 (:func:`apply_baseline_holm`).  A column that gains a
+condition (#163) therefore gains a family member, and its decisions are
+recomputed under the same rule, as the plan on #165 states.  These families are separate from the
 ablation-group families; B0 never enters the registered comparisons or the
 Wilcoxon families.
 """
