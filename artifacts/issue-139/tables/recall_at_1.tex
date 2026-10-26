@@ -2,7 +2,7 @@
 \scriptsize
 \setlength{\tabcolsep}{4pt}
 \begin{threeparttable}
-\caption{Mean test Recall@1 per condition per dataset (secondary; fraction of test reference correspondences whose target is ranked first, so a source with $n$ gold targets counts $n$ times and at most one of them can be recovered). D3 values are means over 21 pairs. Ceiling row: the most the metric can reach on the stored top-20 candidate lists. Dashes in dataset columns indicate conditions not run on that dataset. Bold: best result per dataset column. B0: stage-1 character 3-gram cosine order of the same top-20 candidate lists every condition re-ranks, evaluated under the same populations, validation-tuned threshold and metric definitions; it is not an external matching system.}
+\caption{Mean test Recall@1 per condition per dataset (secondary; fraction of test reference correspondences whose target is ranked first, so a source with $n$ gold targets counts $n$ times and at most one of them can be recovered). D3 values are means over 21 pairs. Ceiling row: the most the metric can reach on the stored top-20 candidate lists. Dashes in dataset columns indicate conditions not run on that dataset. Bold: best result per dataset column. C20 (V2, M2) is the controlled baseline for C10 (V2+V8, M2): the two differ only by the V8 component, and C20 forms its own group (E), placed after group B so it sits beside C10. $\ddagger$: M4 (BioLORD) evaluated on D1 and D2 only. B0: stage-1 character 3-gram cosine order of the same top-20 candidate lists every condition re-ranks, evaluated under the same populations, validation-tuned threshold and metric definitions; it is not an external matching system.}
 \label{tab:ranking_recall_at_1}
 \begin{tabular}{llllrrrrrrr}
 \hline

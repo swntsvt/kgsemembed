@@ -7,6 +7,7 @@ exercised end to end without touching the repository's ``data/results``.
 
 import json
 import logging
+import re
 import sys
 from pathlib import Path
 from typing import Dict, Iterator, List
@@ -89,6 +90,19 @@ def test_model_markers_match_caption(tmp_path: Path) -> None:
     assert all(r"$^\dagger$" not in row[2] for row in rows.values())
     assert rows["C17"][2] == r"M4$^\ddagger$"
     assert rows["C10"][2] == "M2"
+
+
+@pytest.mark.parametrize("metric", script._METRICS)
+def test_every_mark_is_defined_in_every_table(tmp_path: Path, metric: str) -> None:
+    """Each table defines the marks it uses, so it stands alone in the paper."""
+    lines = build_table(str(tmp_path), metric, baseline_dir=str(tmp_path))
+    caption = _caption_and_label(lines)[0]
+    body = "\n".join(line for line in lines if not line.startswith(r"\caption"))
+    for mark in re.findall(r"\$\^(\\[a-z]+)\$", body):
+        assert f"${mark}$:" in caption
+    for note in re.findall(r"\\tnote\{(.)\}", body):
+        assert rf"\item[{note}]" in body
+    assert "C20 (V2, M2) is the controlled baseline for C10" in caption
 
 
 def test_every_condition_appears_in_paper_order(tmp_path: Path) -> None:
