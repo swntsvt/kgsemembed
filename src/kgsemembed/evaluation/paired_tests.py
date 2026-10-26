@@ -40,6 +40,18 @@ Method
 
 Every result also carries the column's top-20 ceiling, the most the metric
 can reach on the stored candidate lists.
+
+Against the stage-1 baseline (#165)
+-----------------------------------
+:func:`run_baseline_tests` compares every registered condition except the
+sanity check C19 with B0 (the stage-1 n-gram order, read from its own result
+tree) on every column the condition was run on, statistic condition − B0,
+with the same units, settings and guards.  Its MRR decision family is every
+condition compared with B0 within one column (group :data:`BASELINE_ID`),
+fixed by the registry: an untested cell stays in it with p = 1
+(:func:`apply_baseline_holm`).  These families are separate from the
+ablation-group families; B0 never enters the registered comparisons or the
+Wilcoxon families.
 """
 
 import json
@@ -51,6 +63,7 @@ import numpy as np
 
 from kgsemembed.evaluation.per_source import RESULT_LINK_KEYS, SIDECAR_SUFFIX
 from kgsemembed.evaluation.stats import expand_dataset_ids, registered_comparisons
+from kgsemembed.pipeline.conditions import EXPERIMENT_CONDITIONS, SANITY_CHECK_GROUP
 from kgsemembed.utils.errors import DataError
 
 N_REPLICATES = 10_000
@@ -62,6 +75,7 @@ SECONDARY_METRICS = ("f1",)
 METRICS = (*PRIMARY_METRICS, *SECONDARY_METRICS)
 DECISION_METRIC = "mrr"
 CEILING_KEYS = {"mrr": "ranking_ceiling", "hits_at_1": "ranking_ceiling", "f1": "f1_recall_ceiling"}
+BASELINE_ID = "B0"
 
 _RESULT_SUFFIX = "_results.json"
 _RANKING_WIDTH = 2
@@ -514,11 +528,14 @@ class SidecarCache:
 
     A condition takes part in several comparisons (C10 in five), so its
     sidecars are read, checked and decomposed once, and a loading failure is
-    remembered and raised again for every comparison that needs them.
+    remembered and raised again for every comparison that needs them.  B0 is
+    read from ``baseline_dir`` when one is given, every condition from
+    ``results_dir``.
     """
 
-    def __init__(self, results_dir: str | Path) -> None:
+    def __init__(self, results_dir: str | Path, baseline_dir: Optional[str | Path] = None) -> None:
         self._results_dir = results_dir
+        self._baseline_dir = baseline_dir
         self._sidecars: Dict[Tuple[str, str], object] = {}
         self._values: Dict[Tuple[str, str, str], Dict[str, Values]] = {}
 
@@ -527,12 +544,18 @@ class SidecarCache:
         key = (condition_id, dataset_id)
         if key not in self._sidecars:
             try:
-                self._sidecars[key] = load_sidecars(self._results_dir, condition_id, dataset_id)
+                self._sidecars[key] = load_sidecars(self._root(condition_id), condition_id, dataset_id)
             except UNTESTABLE as exc:
                 self._sidecars[key] = exc
         if isinstance(self._sidecars[key], Exception):
             raise self._sidecars[key]
         return self._sidecars[key]
+
+    def _root(self, condition_id: str) -> str | Path:
+        """Return the result tree a condition is read from."""
+        if condition_id == BASELINE_ID and self._baseline_dir is not None:
+            return self._baseline_dir
+        return self._results_dir
 
     def values(self, condition_id: str, dataset_id: str, metric: str) -> Dict[str, Values]:
         """Return the unit values of every pair of a condition on a column."""
@@ -651,3 +674,89 @@ def run_paired_tests(
                            "dataset_id": dataset_id, "cache": cache, "counts": counts}
                 rows += _comparison_rows(context, settings)
     return apply_holm(rows)
+
+
+def apply_baseline_holm(rows: List[dict], alpha: float = ALPHA) -> List[dict]:
+    """
+    Add Holm decisions to the B0 rows, keeping untested cells in their family.
+
+    The family is every condition compared with B0 on one column, as
+    registered, so an untested cell enters the adjustment with p = 1 instead
+    of shrinking the family; only tested rows receive ``p_holm``.
+
+    Parameters
+    ----------
+    rows : List[dict]
+        Rows from :func:`run_baseline_tests` before adjustment.
+    alpha : float
+        Family-wise error rate.
+
+    Returns
+    -------
+    List[dict]
+        The same rows, tested decision-metric ones extended with
+        ``family_size``, ``p_holm`` and ``significant``.
+    """
+    families: Dict[str, List[dict]] = {}
+    for row in rows:
+        if row["metric"] == DECISION_METRIC:
+            families.setdefault(row["dataset_id"], []).append(row)
+    for family in families.values():
+        adjusted = holm_adjust([row["p_value"] if row["tested"] else 1.0 for row in family])
+        for row, p_holm in zip(family, adjusted):
+            if row["tested"]:
+                row.update(family_size=len(family), p_holm=p_holm, significant=p_holm < alpha)
+    return rows
+
+
+def baseline_comparisons() -> List[Tuple[str, str]]:
+    """
+    List every ``(condition_id, dataset_id)`` tested against B0, in registry order.
+
+    Returns
+    -------
+    List[Tuple[str, str]]
+        Each registered condition outside the sanity-check group, on every
+        column it was run on (``"D4"`` expands to both D4 columns).
+    """
+    return [
+        (condition.condition_id, dataset_id)
+        for condition in EXPERIMENT_CONDITIONS if condition.ablation_group != SANITY_CHECK_GROUP
+        for dataset_id in expand_dataset_ids(list(condition.datasets))
+    ]
+
+
+def run_baseline_tests(
+    results_dir: str | Path, baseline_dir: str | Path, counts: Optional[dict] = None,
+    settings: TestSettings = TestSettings(),
+) -> List[dict]:
+    """
+    Test every condition against B0 on every column it covers (#165).
+
+    Parameters
+    ----------
+    results_dir : str | Path
+        Root of the condition result tree, with per-source sidecars.
+    baseline_dir : str | Path
+        Root of the B0 result tree (``B0/{column}/...``), with sidecars.
+    counts : Optional[dict]
+        Per-pair reference counts and ceilings, or ``None`` to omit ceilings.
+    settings : TestSettings
+        Replicates and seed.
+
+    Returns
+    -------
+    List[dict]
+        One row per condition, column and metric, ``condition_a`` B0 and
+        ``condition_b`` the condition (so ``delta`` is condition − B0), in
+        registry order.  MRR rows carry Holm decisions over every condition
+        compared with B0 on one column; a cell that cannot be tested is
+        reported with its reason and stays in its family
+        (:func:`apply_baseline_holm`).
+    """
+    rows, cache = [], SidecarCache(results_dir, baseline_dir)
+    for condition_id, dataset_id in baseline_comparisons():
+        context = {"group": BASELINE_ID, "condition_a": BASELINE_ID, "condition_b": condition_id,
+                   "dataset_id": dataset_id, "cache": cache, "counts": counts}
+        rows += _comparison_rows(context, settings)
+    return apply_baseline_holm(rows)
