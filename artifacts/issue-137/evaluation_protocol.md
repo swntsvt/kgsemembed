@@ -173,8 +173,9 @@ and a false negative to F1.
 
 - Each column is one pair, except D3, which is the unweighted mean over its 21
   pairs. That covers the main table, its ranking companion, the comparison and
-  the report. The Section 4.3 entity-type table instead weights D3 by
-  `n_refs`.
+  the report. The Section 4.3 entity-type table and the report's entity-type
+  section share one definition (#166): D3 only, unweighted means over the
+  pairs reporting each entity type, plus micro F1 pooled over them.
 - Mean* in the main table averages D1–D4 (both D4 columns) and leaves out D5.
 - Since #140 the primary tests are per-dataset paired tests over test
   reference sources (`evaluation/paired_tests.py`; D3 pairs are strata). The

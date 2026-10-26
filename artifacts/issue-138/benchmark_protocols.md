@@ -56,7 +56,9 @@ Aggregation:
 
 - **Column value** = the pair's value, except D3 = unweighted mean over its
   21 pairs (main table, ranking tables, report, B0 comparison). The Section
-  4.3 entity-type table instead weights D3 pairs by `n_refs`.
+  4.3 entity-type table and the report's entity-type section (#166) use the
+  same unweighted mean over the D3 pairs reporting each entity type, plus
+  micro F1 pooled over them.
 - **Mean\*** averages D1–D4 (both D4 columns), never D5.
 - **Significance tests** treat dataset columns as observations; D3's pairs
   share seven ontologies and are not independent. B0 comparisons are
@@ -317,8 +319,9 @@ micro-averaging and global matching.
   sources' wrong predictions are FPs as in the track.
 - The number of judgeable unmatched sources depends on each method's top
   target, so it is the only population count that varies between methods.
-- D4_schema is also reported by entity type (test: 12 class, 32 property
-  references, one shared threshold).
+- D4_schema records per-entity-type metrics (test: 12 class, 32 property
+  references, one shared threshold), but the entity-type analysis is D3 only
+  (#166): one pair from another benchmark is not pooled with D3's 21.
 
 | Aspect | OAEI KG track | This study |
 |---|---|---|
