@@ -1130,10 +1130,11 @@ def test_report_ppas_values_from_results(tmp_path: Path) -> None:
         "Not isolated — C5 can sample (V4, M2 budget); C14 cannot "
         "(ppas_effective false: M3 has no budget) | 0.4000 | 0.5500 | 0.1500 |"
     ) in text
-    assert (
-        "| C10 vs C15 | D1 | Confounded (model M2 vs M3) | "
-        "No — V2+V8 does not invoke PPAS under either model | N/A | N/A | N/A |"
-    ) in text
+    for dataset_id in ("D1", "D2"):
+        assert (
+            f"| C10 vs C15 | {dataset_id} | Confounded (model M2 vs M3) | "
+            "No — V2+V8 does not invoke PPAS under either model | N/A | N/A | N/A |"
+        ) in text
 
 
 def test_report_ppas_section_no_longer_lists_c19(tmp_path: Path) -> None:
@@ -1142,7 +1143,7 @@ def test_report_ppas_section_no_longer_lists_c19(tmp_path: Path) -> None:
     section = output.read_text(encoding="utf-8").split("# PPAS Ablation", 1)[1]
     section = section.split("\n# ", 1)[0]
     rows = [line for line in section.splitlines() if " vs " in line]
-    assert [row.split(" | ")[0] for row in rows] == ["| C5 vs C14", "| C10 vs C15"]
+    assert [row.split(" | ")[0] for row in rows] == ["| C5 vs C14", "| C10 vs C15", "| C10 vs C15"]
     assert "Controlled" not in section and "| Yes —" not in section
 
 
