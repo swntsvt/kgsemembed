@@ -2,8 +2,9 @@
 
 Loads previously generated result files, runs the per-dataset paired tests of
 every registered comparison (#140; the primary analysis, read from the
-per-source sidecars), the cross-dataset Wilcoxon consistency summary on MRR
-and on F1, and renders a Markdown report.  Statistical comparison for one
+per-source sidecars), the paired tests of every condition against the stage-1
+baseline B0 (#165; read from ``--baseline_dir``), the cross-dataset Wilcoxon
+consistency summary on MRR and on F1, and renders a Markdown report.  Statistical comparison for one
 ablation group failing does not abort the report: the failure is logged and the
 remaining groups continue.  A comparison without sidecars is listed as not
 tested.
@@ -12,6 +13,7 @@ Usage
 -----
 python scripts/generate_report.py \\
     --results_dir data/results/ \\
+    --baseline_dir data/results_ngram_baseline/ \\
     --output data/results/report.md
 """
 
@@ -27,7 +29,7 @@ import numpy as np
 
 from kgsemembed.evaluation import run_group_comparisons
 from kgsemembed.evaluation.aggregator import generate_markdown_report, load_all_results
-from kgsemembed.evaluation.paired_tests import run_paired_tests
+from kgsemembed.evaluation.paired_tests import run_baseline_tests, run_paired_tests
 from kgsemembed.evaluation.reference_counts import DEFAULT_COUNTS_PATH, load_reference_counts
 
 _LOGGER = logging.getLogger("kgsemembed.scripts.generate_report")
@@ -42,6 +44,10 @@ def _build_arg_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--results_dir", default="data/results/", help="Root directory of result JSON files."
+    )
+    parser.add_argument(
+        "--baseline_dir", default="data/results_ngram_baseline/",
+        help="Root of the B0 results (pipeline/ngram_baseline.py); absent omits the B0 section.",
     )
     parser.add_argument(
         "--output", default="data/results/report.md", help="Destination Markdown report path."
@@ -82,6 +88,20 @@ def _paired_results(results_dir: str, counts: Optional[dict]) -> Optional[List[d
         return None
 
 
+def _baseline_results(
+    results_dir: str, baseline_dir: str, counts: Optional[dict]
+) -> Optional[List[dict]]:
+    """Run the tests against B0, omitting them with a warning if B0 or the run is missing."""
+    if not Path(baseline_dir).is_dir():
+        _LOGGER.warning("No B0 results at %s; the section against B0 is omitted.", baseline_dir)
+        return None
+    try:
+        return run_baseline_tests(results_dir, baseline_dir, counts)
+    except Exception as exc:
+        _LOGGER.warning("Skipping the paired tests against B0: %s", exc)
+        return None
+
+
 def main() -> None:
     """Load results, gather statistical comparisons, and write the report."""
     random.seed(42)
@@ -92,7 +112,10 @@ def main() -> None:
     df = load_all_results(args.results_dir, include_entity_type_breakdown=True, counts=counts)
     comparisons = _collect_comparisons(args.results_dir)
     paired = _paired_results(args.results_dir, counts)
-    generate_markdown_report(df, comparisons or None, args.output, paired_results=paired)
+    baseline = _baseline_results(args.results_dir, args.baseline_dir, counts)
+    generate_markdown_report(
+        df, comparisons or None, args.output, paired_results=paired, baseline_results=baseline
+    )
     print(f"Report written to {args.output}")
 
 

@@ -61,8 +61,9 @@ Aggregation:
   micro F1 pooled over them.
 - **Mean\*** averages D1–D4 (both D4 columns), never D5.
 - **Significance tests** treat dataset columns as observations; D3's pairs
-  share seven ontologies and are not independent. B0 comparisons are
-  descriptive (one pair per column, no intervals).
+  share seven ontologies and are not independent. Every condition is also
+  tested against B0 per column with the #140 paired intervals (#165), on MRR
+  with Holm across the conditions compared with B0 on one column.
 
 ### 1.2 Ceilings set by stage 1 and by one prediction per source
 

@@ -146,6 +146,19 @@ _ABLATION_GROUPS = ("A", "B", "C", "D", "E")
 _GROUP_REFERENCE_CONDITIONS: Dict[str, Tuple[str, ...]] = {"E": ("C10",)}
 
 _PAIRED_TITLE = "Per-Dataset Paired Tests"
+_BASELINE_TITLE = "Paired Tests Against B0"
+_BASELINE_SUMMARY_HEADING = "MRR against B0 per column"
+_BASELINE_HEADINGS = {
+    "mrr": "MRR against B0 (primary)", "hits_at_1": "Hits@1 against B0 (primary)",
+    "f1": "F1 against B0 (secondary)",
+}
+_BASELINE_UNTESTED_INTRO = (
+    "Not tested against B0 (each cell stays in its column's Holm family with p = 1):"
+)
+_BASELINE_SUMMARY_LABELS = {
+    "dataset_id": "Column", "n_cells": "Cells", "n_tested": "Tested", "above": "Above B0",
+    "below": "Below B0", "significant_gain": "Significant gain", "significant_loss": "Significant loss",
+}
 _NO_DECISION = "—"
 _UNTESTED_INTRO = (
     "Not tested (results written before #140 have no per-source sidecar; "
@@ -1122,6 +1135,102 @@ def _paired_section(rows: List[dict]) -> str:
     return _section(_PAIRED_TITLE, "\n\n".join(block for block in blocks if block))
 
 
+def _baseline_note() -> str:
+    """Describe the condition-against-B0 tests and their decision family."""
+    defaults = paired_tests.TestSettings()
+    return (
+        "_Every condition except the sanity check C19 against B0, the stage-1 "
+        "n-gram order of the same top-20 lists, on every column it was run on "
+        "(#165). Δ = condition − B0, positive when re-ranking beats stage 1. "
+        f"{int(paired_tests.CONFIDENCE * 100)}% percentile bootstrap over test "
+        "sources resampled within each pair (D3's 21 pairs are strata; its value "
+        "is their mean) and a paired randomisation p, two-sided; "
+        f"{defaults.n_replicates:,} replicates each, seed {defaults.seed}. MRR "
+        "and Hits@1 count test reference sources; F1 adds unmatched sources' "
+        "predictions and is recomputed from TP, FP and FN. Only MRR carries a "
+        "decision: Holm across every condition compared with B0 on one column, "
+        "m = the cells the registry assigns that column at the time of the run "
+        "(an untested cell enters with p = 1, so it never shrinks the family), "
+        f"alpha {paired_tests.ALPHA}; separate from the ablation-group families. "
+        "Hits@1 and F1 show their interval and unadjusted p (—: no decision); "
+        "intervals are not adjusted. Ceiling: the most the metric can reach on "
+        "the stored top-20 lists (F1: its recall ceiling)._"
+    )
+
+
+def _baseline_summary_table(rows: List[dict]) -> str:
+    """Render the per-column MRR counts of conditions above and below B0."""
+    summary = paired_tests.baseline_summary(rows)
+    if not summary:
+        return f"## {_BASELINE_SUMMARY_HEADING}\n\n_No MRR cells._"
+    frame = pd.DataFrame.from_records(summary).rename(columns=_BASELINE_SUMMARY_LABELS)
+    table = _render_dataframe(frame)
+    return f"## {_BASELINE_SUMMARY_HEADING}\n\n{table}"
+
+
+def _baseline_row(row: dict) -> dict:
+    """Project one tested condition-against-B0 row onto the report columns."""
+    condition = get_condition(row["condition_b"])
+    return {
+        "Condition": row["condition_b"],
+        "Strategy": condition.strategy_name,
+        "Model": condition.model_key,
+        "Column": row["dataset_id"],
+        "B0": row["value_a"],
+        "Condition value": row["value_b"],
+        "Δ (condition − B0)": row["delta"],
+        "95% CI": _interval_cell(row),
+        "p": row["p_value"],
+        **_decision_cells(row),
+        "Ceiling": row["ceiling"],
+        "n": row["n_units"],
+    }
+
+
+def _baseline_block(rows: List[dict], metric: str) -> str:
+    """Render the tested condition-against-B0 rows of one metric as a sub-table."""
+    tested = [_baseline_row(row) for row in rows if row["tested"] and row["metric"] == metric]
+    body = _render_dataframe(pd.DataFrame.from_records(tested)) if tested else "_Not tested._"
+    return f"## {_BASELINE_HEADINGS[metric]}\n\n{body}"
+
+
+def _baseline_untested(rows: List[dict]) -> str:
+    """List each condition and column not tested against B0, with its own reason."""
+    reasons = {(r["condition_b"], r["dataset_id"]): r["reason"] for r in rows if not r["tested"]}
+    lines = [f"- {condition} on {column}: {reason}" for (condition, column), reason in reasons.items()]
+    return f"{_BASELINE_UNTESTED_INTRO}\n\n" + "\n".join(lines) if lines else ""
+
+
+def baseline_section_body(rows: List[dict]) -> str:
+    """
+    Render the condition-against-B0 tests below their section title.
+
+    The report's "Paired Tests Against B0" section and the tracked artifact of
+    ``scripts/baseline_paired_tests.py`` both use this text, so the two always
+    agree.
+
+    Parameters
+    ----------
+    rows : List[dict]
+        Output of :func:`kgsemembed.evaluation.paired_tests.run_baseline_tests`.
+
+    Returns
+    -------
+    str
+        Method note, per-column MRR counts, one sub-table per metric and the
+        cells that could not be tested, each with its reason.
+    """
+    blocks = [_baseline_note(), _baseline_summary_table(rows)]
+    blocks += [_baseline_block(rows, metric) for metric in paired_tests.METRICS]
+    blocks.append(_baseline_untested(rows))
+    return "\n\n".join(block for block in blocks if block)
+
+
+def _baseline_section(rows: List[dict]) -> str:
+    """Build the report section testing every condition against B0."""
+    return _section(_BASELINE_TITLE, baseline_section_body(rows))
+
+
 def _mean_metric(
     df: pd.DataFrame, condition_id: str, dataset_id: str, metric: str = "f1"
 ) -> Optional[float]:
@@ -1256,16 +1365,18 @@ def generate_markdown_report(
     stats_results: Optional[List[dict]] = None,
     output_path: str = "data/results/report.md",
     paired_results: Optional[List[dict]] = None,
+    baseline_results: Optional[List[dict]] = None,
 ) -> None:
     """
     Render the full Phase 2 experiment report to ``output_path``.
 
     Sections are emitted in a fixed order: executive summary, condition summary,
     per-dataset breakdown, entity-type analysis, ablation-group analysis, the
-    optional per-dataset paired tests (primary analysis) and cross-dataset
-    Wilcoxon consistency summary, PPAS ablation and sanity checks.  The two
-    statistical sections are included only when ``paired_results`` and
-    ``stats_results``, respectively, are not ``None``.  Ranking tables lead
+    optional per-dataset paired tests (primary analysis), paired tests against
+    B0 and cross-dataset Wilcoxon consistency summary, PPAS ablation and sanity
+    checks.  The three statistical sections are included only when
+    ``paired_results``, ``baseline_results`` and ``stats_results``,
+    respectively, are not ``None``.  Ranking tables lead
     with MRR, then Hits@1, then F1.  Sanity-check conditions appear only in
     the last section.
     Parent directories are created as needed and identical inputs always produce
@@ -1286,6 +1397,9 @@ def generate_markdown_report(
         Destination Markdown file.
     paired_results : Optional[List[dict]]
         Per-dataset paired-test rows to render; ``None`` omits the section.
+    baseline_results : Optional[List[dict]]
+        Condition-against-B0 rows (``paired_tests.run_baseline_tests``) to
+        render; ``None`` omits the section.
     """
     pairs = _pair_level_frame(df)
     main = _without_sanity_checks(pairs)
@@ -1299,6 +1413,8 @@ def generate_markdown_report(
     ]
     if paired_results is not None:
         sections.append(_paired_section(paired_results))
+    if baseline_results is not None:
+        sections.append(_baseline_section(baseline_results))
     if stats_results is not None:
         sections.append(_statistical_section(stats_results))
     sections.append(_ppas_section(pairs))
