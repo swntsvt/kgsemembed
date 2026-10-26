@@ -78,6 +78,13 @@ def test_unregistered_and_old_protocol_results_are_ignored(tmp_path: Path) -> No
     assert comparison.load_condition_payloads(str(tmp_path)) == []
 
 
+def test_the_sanity_check_is_not_counted_against_b0(tmp_path: Path) -> None:
+    """C19 reproduces C10, so counting both would count one result twice."""
+    _write(tmp_path, _payload("C19", 0.1))
+    _write(tmp_path, _payload("C10", 0.1))
+    assert [p["condition_id"] for p in comparison.load_condition_payloads(str(tmp_path))] == ["C10"]
+
+
 def test_correspondence_count(tmp_path: Path) -> None:
     rdf = tmp_path / "reference.rdf"
     rdf.write_text("<map><Cell/></map>\n<map><Cell/></map>")

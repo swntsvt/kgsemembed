@@ -182,8 +182,10 @@ and a false negative to F1.
   cross-dataset Wilcoxon summary (`evaluation/stats.py`) treats dataset
   columns, not pairs, as observations: the 21 D3 pairs share seven
   ontologies, so they are not independent.
-- B0 is not part of the C1–C20 ablation groups or their Wilcoxon families. Its
-  comparisons are descriptive: one pair per column, no intervals.
+- B0 is not part of the C1–C20 ablation groups or their Wilcoxon families.
+  Since #165 every condition is tested against it per column with the #140
+  paired intervals and randomisation tests; on MRR, Holm across every
+  condition compared with B0 on one column (`baseline_paired_tests.md`).
 
 ## 5. Results against B0
 
@@ -207,17 +209,31 @@ B0 per column:
 | F1 | 0.3062 | 0.6626 | 0.5140 | 0.8090 | 0.8802 | 0.1730 |
 | Candidate recall@20 | 0.8578 | 0.9465 | 0.8621 | 0.9318 | 0.9725 | 0.2667 |
 
-The effect of re-ranking depends on the dataset. Descriptively, on one pair
-per column:
+The effect of re-ranking depends on the dataset.
 
-Number of conditions above / below / equal to B0, per metric (as regenerated
-in #143: 271 C-results, after #142 retired C12 and #145 re-ran V8):
+Number of conditions above / below / equal to B0, per metric, by point
+estimate (as regenerated in #165: 270 C-results, the sanity check C19 left
+out as in every results table):
 
 | Metric | D1 | D2 | D3 | D4_schema | D4_instance | D5 |
 |---|---|---|---|---|---|---|
-| MRR | 7 / 8 / 0 | 6 / 7 / 0 | 6 / 4 / 0 | 10 / 1 / 0 | 8 / 3 / 0 | 0 / 11 / 0 |
-| Recall@1 | 7 / 8 / 0 | 5 / 8 / 0 | 5 / 5 / 0 | 8 / 1 / 2 | 8 / 3 / 0 | 0 / 11 / 0 |
-| F1 | 9 / 6 / 0 | 7 / 6 / 0 | 1 / 9 / 0 | 9 / 1 / 1 | 0 / 11 / 0 | 0 / 11 / 0 |
+| MRR | 7 / 7 / 0 | 6 / 7 / 0 | 6 / 4 / 0 | 10 / 1 / 0 | 8 / 3 / 0 | 0 / 11 / 0 |
+| Recall@1 | 7 / 7 / 0 | 5 / 8 / 0 | 5 / 5 / 0 | 8 / 1 / 2 | 8 / 3 / 0 | 0 / 11 / 0 |
+| F1 | 9 / 5 / 0 | 7 / 6 / 0 | 1 / 9 / 0 | 9 / 1 / 1 | 0 / 11 / 0 | 0 / 11 / 0 |
+
+With paired intervals (#165, `artifacts/issue-165/baseline_paired_tests.md`;
+MRR, Holm across every condition compared with B0 on one column, alpha 0.05),
+conditions significantly above / below B0:
+
+| | D1 | D2 | D3 | D4_schema | D4_instance | D5 |
+|---|---|---|---|---|---|---|
+| MRR | 5 / 6 of 14 | 4 / 6 of 13 | 1 / 2 of 10 | 0 / 0 of 11 | 3 / 2 of 11 | 0 / 11 of 11 |
+
+- Significant gains: D1 C4 +0.074, C3 +0.062, C17 +0.052, C6 +0.049, C16
+  +0.022; D2 C4 +0.085, C17 +0.043, C1 +0.033, C3 +0.031; D3 C1 +0.043;
+  D4_instance C3 +0.039, C5 +0.020, C7 +0.018.
+- No condition differs significantly from B0 on D4_schema (44 test
+  reference sources), and every D5 condition is significantly below it.
 
 - **Ranking improves on D1, D2 and D4, but not uniformly.** The best
   condition's MRR gain over B0 is:
@@ -233,7 +249,7 @@ in #143: 271 C-results, after #142 retired C12 and #145 re-ran V8):
     +0.033).
   - On D4_instance, 8 of 11 beat it on MRR, and none on F1. The best F1 is
     C20's 0.8036 against B0's 0.8802.
-  - On D1, by contrast, 9 of 15 beat B0 on F1 while 7 do on MRR.
+  - On D1, by contrast, 9 of 14 beat B0 on F1 while 7 do on MRR.
 
   F1 depends on the top-1 score clearing a threshold tuned on validation. How
   well that threshold separates correct from incorrect top-1 predictions
@@ -303,8 +319,9 @@ only from Mean*, as before.
 - **D5 release identity.** Checksums are recorded but not compared with the
   OpenEA v2.0 archive.
 - **One pair per column.** D1, D2, D4 and D5 are single pairs, and D3's 21
-  pairs share seven ontologies. The comparisons with B0 are descriptive. No
-  claim is made beyond these five datasets.
+  pairs share seven ontologies. The intervals against B0 (#165) resample test
+  sources within these pairs, so they describe these pairs, not other
+  ontologies or graphs. No claim is made beyond these five datasets.
 - **No external systems.** BERTMapLt, LogMap, AML and other systems were not
   run or reproduced (#137, scope item 4).
 

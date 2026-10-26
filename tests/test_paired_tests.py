@@ -370,3 +370,19 @@ def test_a_b0_result_from_another_setup_is_not_compared(tmp_path: Path) -> None:
     _write(baseline, "B0", "D1", "p", sidecar, {**_payload(sidecar), "candidates_sha256": "d" * 64})
     cell = _cell(pt.run_baseline_tests(results, baseline, None, _FAST), "C1", "D1")
     assert not cell["tested"]
+
+
+def test_baseline_summary_counts_gains_and_losses_per_column() -> None:
+    rows = [
+        {"metric": "mrr", "dataset_id": "D1", "tested": True, "delta": 0.1, "significant": True},
+        {"metric": "mrr", "dataset_id": "D1", "tested": True, "delta": -0.2, "significant": False},
+        {"metric": "mrr", "dataset_id": "D1", "tested": False},
+        {"metric": "f1", "dataset_id": "D1", "tested": True, "delta": 0.3},
+        {"metric": "mrr", "dataset_id": "D5", "tested": True, "delta": -0.1, "significant": True},
+    ]
+    assert pt.baseline_summary(rows) == [
+        {"dataset_id": "D1", "n_cells": 3, "n_tested": 2, "above": 1, "below": 1,
+         "significant_gain": 1, "significant_loss": 0},
+        {"dataset_id": "D5", "n_cells": 1, "n_tested": 1, "above": 0, "below": 1,
+         "significant_gain": 0, "significant_loss": 1},
+    ]

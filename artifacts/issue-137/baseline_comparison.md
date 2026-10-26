@@ -1,10 +1,10 @@
 # Stage-1 n-gram baseline (B0) against C1–C20
 
-Every row ranks the same stored top-20 candidate lists for the same validation and test populations, with the threshold tuned on validation only (evaluation protocol 2). B0 is the stage-1 character 3-gram cosine order of those lists; a condition's difference from B0 is what embedding re-ranking adds or costs. D3 is the unweighted mean over 21 pairs; every other column is one pair. Descriptive only: no intervals or tests.
+Every row ranks the same stored top-20 candidate lists for the same validation and test populations, with the threshold tuned on validation only (evaluation protocol 2). B0 is the stage-1 character 3-gram cosine order of those lists; a condition's difference from B0 is what embedding re-ranking adds or costs. D3 is the unweighted mean over 21 pairs; every other column is one pair. The sanity check C19 is left out. Descriptive; the paired intervals and tests against B0 are in `artifacts/issue-165/baseline_paired_tests.md`.
 
 ## Population check
 
-271 C-results share B0's `candidates_sha256`, `population` block and `evaluation_protocol` on the same pair; 0 do not and are excluded below. Under D4's partial reference the judgeable ranked-source counts are excluded from the check, because they depend on each method's top-ranked target.
+270 C-results share B0's `candidates_sha256`, `population` block and `evaluation_protocol` on the same pair; 0 do not and are excluded below. Under D4's partial reference the judgeable ranked-source counts are excluded from the check, because they depend on each method's top-ranked target.
 
 ## B0: stage-1 n-gram order
 
@@ -48,9 +48,8 @@ Every row ranks the same stored top-20 candidate lists for the same validation a
 | C16 | +0.0222 | -0.0243 | — | — | — | — |
 | C17 | +0.0523 | +0.0430 | — | — | — | — |
 | C18 | -0.0578 | -0.1299 | -0.0523 | +0.0212 | -0.0088 | -0.1470 |
-| C19 | -0.0563 | — | — | — | — | — |
 | C20 | -0.0844 | -0.0452 | +0.0264 | +0.0061 | +0.0061 | -0.1391 |
-| above / below / equal B0 | 7 / 8 / 0 | 6 / 7 / 0 | 6 / 4 / 0 | 10 / 1 / 0 | 8 / 3 / 0 | 0 / 11 / 0 |
+| above / below / equal B0 | 7 / 7 / 0 | 6 / 7 / 0 | 6 / 4 / 0 | 10 / 1 / 0 | 8 / 3 / 0 | 0 / 11 / 0 |
 | best condition | C4 (0.7792) | C4 (0.9021) | C1 (0.7634) | C3 (0.9205) | C3 (0.9443) | C14 (0.1550) |
 
 ## Recall@1: condition − B0
@@ -74,9 +73,8 @@ Every row ranks the same stored top-20 candidate lists for the same validation a
 | C16 | +0.0216 | -0.0239 | — | — | — | — |
 | C17 | +0.0695 | +0.0519 | — | — | — | — |
 | C18 | -0.0450 | -0.1334 | -0.0787 | +0.0227 | -0.0116 | -0.1482 |
-| C19 | -0.0467 | — | — | — | — | — |
 | C20 | -0.0681 | -0.0338 | +0.0387 | +0.0000 | +0.0152 | -0.1435 |
-| above / below / equal B0 | 7 / 8 / 0 | 5 / 8 / 0 | 5 / 5 / 0 | 8 / 1 / 2 | 8 / 3 / 0 | 0 / 11 / 0 |
+| above / below / equal B0 | 7 / 7 / 0 | 5 / 8 / 0 | 5 / 5 / 0 | 8 / 1 / 2 | 8 / 3 / 0 | 0 / 11 / 0 |
 | best condition | C4 (0.6299) | C4 (0.8608) | C1 (0.7010) | C3 (0.9091) | C3 (0.9261) | C14 (0.1247) |
 
 ## Recall@10: condition − B0
@@ -100,9 +98,8 @@ Every row ranks the same stored top-20 candidate lists for the same validation a
 | C16 | +0.0247 | -0.0033 | — | — | — | — |
 | C17 | +0.0159 | +0.0124 | — | — | — | — |
 | C18 | -0.0304 | -0.1129 | +0.0011 | +0.0227 | -0.0080 | -0.1476 |
-| C19 | -0.0256 | — | — | — | — | — |
 | C20 | -0.0343 | -0.0404 | +0.0160 | +0.0227 | +0.0000 | -0.1295 |
-| above / below / equal B0 | 8 / 7 / 0 | 5 / 8 / 0 | 7 / 3 / 0 | 10 / 1 / 0 | 8 / 2 / 1 | 0 / 11 / 0 |
+| above / below / equal B0 | 8 / 6 / 0 | 5 / 8 / 0 | 7 / 3 / 0 | 10 / 1 / 0 | 8 / 2 / 1 | 0 / 11 / 0 |
 | best condition | C6 (0.8485) | C4 (0.9440) | C1 (0.8621) | C1 (0.9318) | C5 (0.9717) | C14 (0.2260) |
 
 ## F1: condition − B0
@@ -126,9 +123,8 @@ Every row ranks the same stored top-20 candidate lists for the same validation a
 | C16 | +0.0954 | -0.0362 | — | — | — | — |
 | C17 | +0.1453 | +0.0456 | — | — | — | — |
 | C18 | -0.0458 | -0.0677 | -0.2266 | +0.0851 | -0.1550 | -0.1670 |
-| C19 | -0.0219 | — | — | — | — | — |
 | C20 | -0.0301 | +0.0003 | -0.0302 | +0.0381 | -0.0766 | -0.1635 |
-| above / below / equal B0 | 9 / 6 / 0 | 7 / 6 / 0 | 1 / 9 / 0 | 9 / 1 / 1 | 0 / 11 / 0 | 0 / 11 / 0 |
+| above / below / equal B0 | 9 / 5 / 0 | 7 / 6 / 0 | 1 / 9 / 0 | 9 / 1 / 1 | 0 / 11 / 0 | 0 / 11 / 0 |
 | best condition | C17 (0.4515) | C4 (0.7830) | C1 (0.5473) | C10 (0.9176) | C20 (0.8036) | C14 (0.1262) |
 
 ## D5: every condition against B0

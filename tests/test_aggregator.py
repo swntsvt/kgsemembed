@@ -1475,6 +1475,40 @@ def test_statistical_sections_follow_the_group_analysis_in_order(tmp_path: Path)
     ]
 
 
+def test_baseline_section_follows_the_paired_tests(tmp_path: Path) -> None:
+    headings = _headings(_report_text(tmp_path, tmp_path, paired_results=[], baseline_results=[]))
+    assert headings[5:7] == ["# Per-Dataset Paired Tests", "# Paired Tests Against B0"]
+    assert "# Paired Tests Against B0" not in _report_text(tmp_path, tmp_path, paired_results=[])
+
+
+def _baseline_rows() -> List[dict]:
+    tested = {
+        "group": "B0", "condition_a": "B0", "condition_b": "C1", "dataset_id": "D1",
+        "tested": True, "value_a": 0.70, "value_b": 0.72, "delta": 0.02, "ci_low": 0.01,
+        "ci_high": 0.03, "p_value": 0.002, "p_holm": 0.028, "family_size": 14,
+        "significant": True, "ceiling": 0.886, "n_units": 4605, "n_pairs": 1,
+    }
+    undecided = {k: v for k, v in tested.items() if k not in ("p_holm", "family_size", "significant")}
+    untested = {"group": "B0", "condition_a": "B0", "condition_b": "C2", "dataset_id": "D1",
+                "tested": False, "reason": "C2/D1 has no per-source sidecar."}
+    return ([{**tested, "metric": "mrr"}]
+            + [{**undecided, "metric": m} for m in ("hits_at_1", "f1")]
+            + [{**untested, "metric": m} for m in ("mrr", "hits_at_1", "f1")])
+
+
+def test_baseline_section_renders_counts_tables_and_untested_cells(tmp_path: Path) -> None:
+    text = _report_text(tmp_path, tmp_path, baseline_results=_baseline_rows())
+    section = text.split("# Paired Tests Against B0", 1)[1].split("\n# ", 1)[0]
+    assert _headings_of(section) == [
+        "## MRR against B0 per column", "## MRR (primary)", "## Hits@1 (primary)", "## F1 (secondary)",
+    ]
+    assert "| D1 | 2 | 1 | 1 | 0 | 1 | 0 |" in section
+    assert ("| B0 | B0 vs C1 | D1 | 0.7000 | 0.7200 | 0.0200 | [0.0100, 0.0300] | 0.0020 "
+            "| 0.0280 | 14 | yes | 0.8860 | 4605 |") in section
+    assert "- B0 vs C2 on D1: C2/D1 has no per-source sidecar." in section
+    assert "Holm across every condition compared with B0 on one column" in section
+
+
 def test_consistency_section_lists_mrr_before_f1_and_is_labelled(tmp_path: Path) -> None:
     stats = [*_synthetic_stats(), {**_synthetic_stats()[0], "metric": "mrr"}]
     text = _report_text(tmp_path, tmp_path, stats_results=stats)

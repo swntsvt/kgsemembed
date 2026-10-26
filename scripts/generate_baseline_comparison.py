@@ -16,8 +16,10 @@ writes a Markdown report of counts and metrics only (no entity text and no URIs)
 - a D5 section setting every D5 condition against B0.
 
 Dataset columns follow the main table: D3 is the unweighted mean over its 21
-pairs.  One pair per other column; no intervals or tests (see
-``evaluation/stats.py`` for the dataset-column tests).
+pairs.  One pair per other column.  The sanity check C19 (a duplicate of C10)
+is left out, as in every results table.  This report is descriptive; the
+paired intervals and tests of every condition against B0 are in
+``artifacts/issue-165/baseline_paired_tests.md`` (#165).
 
 Usage
 -----
@@ -39,7 +41,7 @@ import numpy as np
 import pandas as pd
 
 from kgsemembed.evaluation.metrics import EVALUATION_PROTOCOL_VERSION
-from kgsemembed.pipeline.conditions import get_condition
+from kgsemembed.pipeline.conditions import SANITY_CHECK_GROUP, get_condition
 
 _LOGGER = logging.getLogger("kgsemembed.scripts.generate_baseline_comparison")
 
@@ -65,17 +67,19 @@ def _read_payloads(paths: List[Path]) -> List[dict]:
     return payloads
 
 
-def _is_registered(condition_id: str) -> bool:
+def _is_reported(condition_id: str) -> bool:
     try:
-        get_condition(condition_id)
+        return get_condition(condition_id).ablation_group != SANITY_CHECK_GROUP
     except KeyError:
         return False
-    return True
 
 
 def load_condition_payloads(results_dir: str) -> List[dict]:
     """
-    Load every registered C-condition result written under protocol 2.
+    Load every reported C-condition result written under protocol 2.
+
+    Reported means registered and outside the sanity-check group, so C19,
+    which must reproduce C10, is never counted against B0 twice.
 
     Parameters
     ----------
@@ -90,7 +94,7 @@ def load_condition_payloads(results_dir: str) -> List[dict]:
     payloads = _read_payloads(sorted(Path(results_dir).glob("*/*/*_results.json")))
     return [
         p for p in payloads
-        if _is_registered(str(p.get("condition_id")))
+        if _is_reported(str(p.get("condition_id")))
         and p.get("evaluation_protocol") == EVALUATION_PROTOCOL_VERSION
     ]
 
@@ -342,7 +346,8 @@ _SCOPE = (
     "populations, with the threshold tuned on validation only (evaluation protocol 2). B0 is "
     "the stage-1 character 3-gram cosine order of those lists; a condition's difference from "
     "B0 is what embedding re-ranking adds or costs. D3 is the unweighted mean over 21 pairs; "
-    "every other column is one pair. Descriptive only: no intervals or tests."
+    "every other column is one pair. The sanity check C19 is left out. Descriptive; "
+    "the paired intervals and tests against B0 are in `artifacts/issue-165/baseline_paired_tests.md`."
 )
 
 

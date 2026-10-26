@@ -760,3 +760,42 @@ def run_baseline_tests(
                    "dataset_id": dataset_id, "cache": cache, "counts": counts}
         rows += _comparison_rows(context, settings)
     return apply_baseline_holm(rows)
+
+
+def baseline_summary(rows: List[dict]) -> List[dict]:
+    """
+    Count, per column, the conditions above and below B0 on MRR.
+
+    Parameters
+    ----------
+    rows : List[dict]
+        Output of :func:`run_baseline_tests`.
+
+    Returns
+    -------
+    List[dict]
+        One entry per column in order of appearance: ``dataset_id``, cells
+        (``n_cells``), tested cells, point estimates above and below B0, and
+        Holm-significant gains and losses.
+    """
+    summary: Dict[str, dict] = {}
+    for row in rows:
+        if row["metric"] != DECISION_METRIC:
+            continue
+        entry = summary.setdefault(row["dataset_id"], {
+            "dataset_id": row["dataset_id"], "n_cells": 0, "n_tested": 0, "above": 0,
+            "below": 0, "significant_gain": 0, "significant_loss": 0,
+        })
+        entry["n_cells"] += 1
+        if row["tested"]:
+            _count_baseline_cell(entry, row)
+    return list(summary.values())
+
+
+def _count_baseline_cell(entry: dict, row: dict) -> None:
+    """Add one tested MRR cell to its column's counts."""
+    entry["n_tested"] += 1
+    entry["above"] += row["delta"] > 0
+    entry["below"] += row["delta"] < 0
+    entry["significant_gain"] += row["significant"] and row["delta"] > 0
+    entry["significant_loss"] += row["significant"] and row["delta"] < 0

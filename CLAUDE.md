@@ -167,12 +167,18 @@ python scripts/generate_results_table.py --results_dir data/results/ \
     --baseline_dir data/results_ngram_baseline/ --metric mrr
 
 # Stage-1 n-gram baseline B0 (#137): no model, ~5 min; refuses data/results/.
-# Then B0 vs C1-C20 and dataset provenance into artifacts/issue-137/.
+# Then B0 vs C1-C20 (descriptive; C19 left out) and dataset provenance into
+# artifacts/issue-137/, and the paired tests of every condition against B0
+# (#165, ~3.5 min) into artifacts/issue-165/baseline_paired_tests.{md,json}.
+# generate_report.py runs the same tests for its "Paired Tests Against B0"
+# section (--baseline_dir, default data/results_ngram_baseline/).
 python -m kgsemembed.pipeline.ngram_baseline --datasets D1 D2 D3 D4 D5 \
     --data_dir data/ --results_dir data/results_ngram_baseline/
 python scripts/generate_baseline_comparison.py
 python scripts/dataset_provenance.py --data_dir data/ \
     --release_cache ~/oaei_track_cache/oaei.webdatacommons.org
+python scripts/baseline_paired_tests.py --results_dir data/results/ \
+    --baseline_dir data/results_ngram_baseline/ --output_dir artifacts/issue-165/
 
 # Provenance and protocols (#138), into artifacts/issue-138/. Reference
 # statistics load every dataset (~2 min, no model); the inventory reads result
@@ -1038,15 +1044,28 @@ python scripts/v8_fix_report.py --old_dir data/results/ --new_dir data/results_i
   0.5140 / 0.8090 / 0.8802 / 0.1730. Best MRR gain over B0: D1 +0.074 and
   D2 +0.085 (C4), D3 +0.043 (C1), D4_schema +0.033 (C3, C8 and C10 tie),
   D4_instance +0.039 (C3). Counts below are from `baseline_comparison.md` as
-  regenerated in #143 (271 C-results, after #142 retired C12 and #145
-  re-ran V8). Only about half the conditions beat B0 on D1/D2 MRR (D1 7 of
-  15, D2 6 of 13). Better ranking need not mean better F1: on D3, 6 of 10
+  regenerated in #165 (270 C-results: C12 retired in #142, V8 re-run in
+  #145, the sanity check C19 left out). Only about half the conditions beat
+  B0 on D1/D2 MRR (D1 7 of 14, D2 6 of 13). Better ranking need not mean better F1: on D3, 6 of 10
   beat B0 on MRR but 1 of 10 on F1; on D4_instance 8 of 11 on MRR but none
   on F1 (B0 0.8802 is the column's best F1, C20 0.8036 next). Every D5
   condition is below B0 on every metric (best C14 MRR −0.026);
   label/annotation-only conditions (C1, C2, C20) score MRR 0.042 and the
   V8 ones 0.034–0.049, near the 0.048 a random order of the same lists
   would get.
+- **Paired tests against B0 (#165)**: `paired_tests.run_baseline_tests` tests
+  every condition but C19 against B0 on each column it ran on (70 cells),
+  condition − B0, with the #140 units, settings and sidecar/setup guards;
+  `SidecarCache(results_dir, baseline_dir)` reads B0 from its own tree. MRR
+  decision: Holm across every condition compared with B0 on one column (m =
+  the registered cells: D1 14, D2 13, D3 10, D4 11 + 11, D5 11), an untested
+  cell kept in its family with p = 1 (`apply_baseline_holm`); separate from
+  the ablation-group families. Plan fixed on #165 before any test ran.
+  Significantly above / below B0 on MRR: D1 5 / 6, D2 4 / 6, D3 1 / 2,
+  D4_schema 0 / 0, D4_instance 3 / 2, D5 0 / 11. Gains: D1 C4 +0.074, C3,
+  C17, C6, C16; D2 C4 +0.085, C17, C1, C3; D3 C1 +0.043; D4_instance C3
+  +0.039, C5, C7. The #163 cells (C4 D4/D5, C7 D1/D2/D5, C15 D2) join their
+  columns' families once run.
 - **Provenance** (`dataset_provenance.py`): every D1–D4 file is
   byte-identical to the OAEI MELT release (D1 = Bio-ML 2022
   `bio-ml-equiv-unsupervised/2022/snomed.body-fma.body`; SNOMED CT
