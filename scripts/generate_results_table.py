@@ -97,6 +97,12 @@ _F1_COLUMN_HEADS = (
 _D3_PAIR_COUNT = 21
 _MODEL_MARKERS = {"M4": r"M4$^\ddagger$"}
 _MISSING = "---"
+_CONDITION_NOTES = (
+    r"C20 (V2, M2) is the controlled baseline for C10 (V2+V8, M2): "
+    r"the two differ only by the V8 component, and C20 forms its own "
+    r"group (E), placed after group B so it sits beside C10. "
+    r"$\ddagger$: M4 (BioLORD) evaluated on D1 and D2 only."
+)
 _CAPTION = (
     r"\caption{Mean test F1 per condition per dataset (secondary matching "
     r"metric: thresholded top-1 predictions, threshold tuned on validation). "
@@ -107,10 +113,7 @@ _CAPTION = (
     r"threshold and value rest. "
     r"Dashes in dataset columns indicate conditions not run on that dataset. "
     r"Bold: best result per dataset column. "
-    r"C20 (V2, M2) is the controlled baseline for C10 (V2+V8, M2): "
-    r"the two differ only by the V8 component, and C20 forms its own "
-    r"group (E), placed after group B so it sits beside C10. "
-    r"$\ddagger$: M4 (BioLORD) evaluated on D1 and D2 only.}"
+    + _CONDITION_NOTES + "}"
 )
 _BASELINE_ID = "B0"
 _BASELINE_LEADING = [_BASELINE_ID, "n-gram", _MISSING, _MISSING]
@@ -155,7 +158,7 @@ _RANKING_CAPTION = (
     r"values are means over 21 pairs. Ceiling row: the most the metric can "
     r"reach on the stored top-20 candidate lists. Dashes in dataset "
     r"columns indicate conditions not run on that dataset. Bold: best result "
-    r"per dataset column.}}"
+    r"per dataset column. " + _CONDITION_NOTES + "}}"
 )
 _MEAN_NOTE = (
     r"\item[*] Mean over D1--D4 (D4 schema and instance), shown only for "

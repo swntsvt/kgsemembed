@@ -1564,6 +1564,22 @@ def test_executive_summary_names_the_best_condition_by_mrr(tmp_path: Path) -> No
     assert "| D1 | C1 | V1 | M1 | 0.9000 | 0.8000 | 0.2000 |" in text
 
 
+def test_executive_summary_lists_every_tied_best_condition_in_registry_order(tmp_path: Path) -> None:
+    for condition_id, mrr in (("C10", 0.9), ("C3", 0.9), ("C9", 0.90004), ("C1", 0.5)):
+        _write_scored(tmp_path, condition_id, mrr=mrr, f1=0.2)
+    text = _report_text(tmp_path, tmp_path)
+    body = text.split("# Executive Summary", 1)[1].split("\n# ", 1)[0]
+    rows = [line.split(" | ")[1] for line in body.splitlines() if line.startswith("| D1 |")]
+    assert rows == ["C3", "C9", "C10"]
+    assert "_Tied best MRR at four decimal places, one row per condition in registry order: D1 (C3, C9, C10)._" in body
+
+
+def test_executive_summary_has_no_tie_note_without_a_tie(tmp_path: Path) -> None:
+    _write_scored(tmp_path, "C1", mrr=0.9, f1=0.2)
+    _write_scored(tmp_path, "C2", mrr=0.5, f1=0.8)
+    assert "Tied best" not in _report_text(tmp_path, tmp_path)
+
+
 def test_hits_at_1_of_an_older_result_is_derived_from_the_counts(tmp_path: Path) -> None:
     metrics = {key: 0.5 for key in _METRIC_KEYS}
     _write_result(tmp_path, "C1", "D1", "d1", 0.5,

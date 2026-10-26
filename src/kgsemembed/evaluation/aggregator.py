@@ -685,19 +685,43 @@ def _cell(pivot: pd.DataFrame, condition_id: str, dataset_id: str) -> Optional[f
     return None if pd.isna(value) else float(value)
 
 
+def _tied_best(column: pd.Series) -> List[str]:
+    """Return every condition at the column's maximum, in registry order."""
+    tied = column[column == column.max()].index
+    return sorted(tied, key=lambda cid: (_REGISTRY_ORDER.get(cid, len(_REGISTRY_ORDER)), cid))
+
+
 def _best_conditions(df: pd.DataFrame) -> List[tuple]:
-    """Return ``(dataset_id, condition_id)`` of the best condition by MRR per dataset."""
+    """
+    Return ``(dataset_id, condition_id)`` of the best conditions by MRR per dataset.
+
+    Values are compared as printed (four decimal places), as the results
+    tables bold them, so every tied condition is returned, in registry order.
+    """
     breakdown = build_dataset_breakdown_table(df, "mrr")
     best: List[tuple] = []
     for dataset_id in breakdown.columns:
         column = breakdown[dataset_id].dropna()
-        if not column.empty:
-            best.append((dataset_id, column.idxmax()))
+        best.extend((dataset_id, condition_id) for condition_id in _tied_best(column))
     return best
 
 
+def _tie_note(best: List[tuple]) -> str:
+    """Name the datasets whose best MRR is shared, or return an empty string."""
+    by_dataset: Dict[str, List[str]] = {}
+    for dataset_id, condition_id in best:
+        by_dataset.setdefault(dataset_id, []).append(condition_id)
+    ties = [f"{d} ({', '.join(c)})" for d, c in by_dataset.items() if len(c) > 1]
+    if not ties:
+        return ""
+    return (
+        "\n\n_Tied best MRR at four decimal places, one row per condition in "
+        f"registry order: {'; '.join(ties)}._"
+    )
+
+
 def _executive_summary_section(df: pd.DataFrame, summary: pd.DataFrame) -> str:
-    """Build the executive-summary section naming the best condition by MRR per dataset."""
+    """Build the executive-summary section naming the best conditions by MRR per dataset."""
     best = _best_conditions(df) if not df.empty else []
     if not best:
         return _section("Executive Summary", "_No results available._")
@@ -712,7 +736,8 @@ def _executive_summary_section(df: pd.DataFrame, summary: pd.DataFrame) -> str:
         }
         for dataset_id, condition_id in best
     ]
-    return _section("Executive Summary", _render_dataframe(pd.DataFrame.from_records(records)))
+    table = _render_dataframe(pd.DataFrame.from_records(records))
+    return _section("Executive Summary", table + _tie_note(best))
 
 
 def _condition_summary_section(summary: pd.DataFrame) -> str:
