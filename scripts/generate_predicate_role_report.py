@@ -2,8 +2,9 @@
 
 Reads the ``PR-*`` results in ``data/results_predicate_roles/`` and, read-only,
 the #128 lexicographic P1 runs at 48 tokens (D1 from
-``data/results_ppas_controlled/``, D2 from ``data/results_ppas_validation/``),
-used only to measure the ordering artefact.
+``data/results_ppas_controlled/``, D2 from ``data/results_ppas_validation/``,
+or the trees given by ``--d1_link_dir``/``--d2_link_dir``), used only to
+measure the ordering artefact.
 
 Per dataset, never pooled across datasets or budgets, it reports:
 
@@ -28,6 +29,12 @@ Usage
 -----
 python scripts/generate_predicate_role_report.py \\
     --results_dir data/results_predicate_roles/
+
+# Post-#137 D1 re-run (#164): P1 at 48 from its own controlled tree
+python scripts/generate_predicate_role_report.py \\
+    --results_dir data/results_issue164/predicate_roles/ \\
+    --d1_link_dir data/results_issue164/ppas_controlled/ \\
+    --d2_link_dir data/results_issue164/ppas_validation/
 """
 
 from __future__ import annotations
@@ -82,9 +89,8 @@ def load_role_runs(results_dir: Path) -> List[Run]:
     return runs
 
 
-def load_link_runs(dataset_id: str) -> List[Run]:
-    """Load the lexicographic P1 run at the link budget of a dataset, read-only."""
-    root = Path(_LINK_DIRS[dataset_id])
+def load_link_runs(dataset_id: str, root: Path) -> List[Run]:
+    """Load the lexicographic P1 run at the link budget of a dataset from ``root``, read-only."""
     if not root.exists():
         return []
     runs = [r for rs in base_report.load_runs(root).values() for r in rs
@@ -401,7 +407,8 @@ def dataset_parts(dataset_id: str, groups: Dict[Budget, Group], links: List[Run]
     ]
 
 
-def build_report(results_dir: Path, figures_dir: Path, data_dir: Path) -> str:
+def build_report(results_dir: Path, figures_dir: Path, data_dir: Path,
+                 link_dirs: Optional[Dict[str, str]] = None) -> str:
     """
     Render the predicate-role report and its figures.
 
@@ -413,6 +420,8 @@ def build_report(results_dir: Path, figures_dir: Path, data_dir: Path) -> str:
         Directory the PNG figures are written to.
     data_dir : Path
         Dataset root, for the dataset-version check.
+    link_dirs : Optional[Dict[str, str]]
+        Results root of each dataset's P1 link run; defaults to ``_LINK_DIRS``.
 
     Returns
     -------
@@ -424,7 +433,8 @@ def build_report(results_dir: Path, figures_dir: Path, data_dir: Path) -> str:
         raise FileNotFoundError(f"No predicate-role results under {results_dir}.")
     figures_dir.mkdir(parents=True, exist_ok=True)
     prefix = validation._relative_prefix(figures_dir, results_dir)
-    links = {d: load_link_runs(d) for d in ROLE_MATRIX}
+    roots = {**_LINK_DIRS, **(link_dirs or {})}
+    links = {d: load_link_runs(d, Path(roots[d])) for d in ROLE_MATRIX}
     sections = ["# Predicate-role ablation (#131)", _READING,
                 "## Execution record", completeness_section(runs),
                 execution_record(runs + [r for rs in links.values() for r in rs]),
@@ -444,6 +454,8 @@ def _build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--output", default=None, help="Markdown path; defaults to <results_dir>/report.md.")
     parser.add_argument("--figures_dir", default=None, help="Defaults to <results_dir>/figures/.")
     parser.add_argument("--data_dir", default="data/", help="Dataset root, for the version check.")
+    parser.add_argument("--d1_link_dir", default=_LINK_DIRS["D1"], help="Results root of the D1 P1@48 link run.")
+    parser.add_argument("--d2_link_dir", default=_LINK_DIRS["D2"], help="Results root of the D2 P1@48 link run.")
     return parser
 
 
@@ -455,7 +467,8 @@ def main() -> None:
     results_dir = Path(args.results_dir)
     figures_dir = Path(args.figures_dir) if args.figures_dir else results_dir / "figures"
     output = Path(args.output) if args.output else results_dir / "report.md"
-    output.write_text(build_report(results_dir, figures_dir, Path(args.data_dir)), encoding="utf-8")
+    link_dirs = {"D1": args.d1_link_dir, "D2": args.d2_link_dir}
+    output.write_text(build_report(results_dir, figures_dir, Path(args.data_dir), link_dirs), encoding="utf-8")
     print(f"Wrote {output}")
 
 

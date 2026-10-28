@@ -640,6 +640,16 @@ def test_runs_with_different_signatures_are_never_combined(controlled_run):
     assert "Missing policies: P2, P3, P4, P5, P6, P7" in text
 
 
+def test_role_report_reads_the_p1_link_run_from_the_given_tree(controlled_run, tmp_path):
+    import scripts.generate_predicate_role_report as role_report
+
+    _, results_dir = controlled_run
+    [link] = role_report.load_link_runs("D1", results_dir)
+    assert link["condition_id"] == "PA-all-base-det-48"
+    assert link["_source_dir"] == str(results_dir)
+    assert role_report.load_link_runs("D1", tmp_path / "absent") == []
+
+
 def test_duplicate_labels_within_one_signature_raise(controlled_run):
     _, results_dir = controlled_run
     runs = _controlled_runs(results_dir)
