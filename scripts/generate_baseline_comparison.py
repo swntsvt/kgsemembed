@@ -10,7 +10,8 @@ writes a Markdown report of counts and metrics only (no entity text and no URIs)
   an unmatched source is judged only when its top-ranked target is a
   reference target, so those counts depend on each method's ranking;
 - B0 per dataset column (MRR, Hits@1, Recall@1, Recall@10, F1, candidate
-  recall@20)
+  recall@20); Hits@1 of a result stored before #139 is derived from its
+  Recall@1 with the ``--ceilings`` reference counts, as in the results tables
   and its test-source gold-rank distribution from the B0 sidecars;
 - per metric, each condition's difference from B0 per dataset column, with
   counts above/below B0 and the best condition;
@@ -42,6 +43,12 @@ import numpy as np
 import pandas as pd
 
 from kgsemembed.evaluation.metrics import EVALUATION_PROTOCOL_VERSION
+from kgsemembed.evaluation.reference_counts import (
+    DEFAULT_COUNTS_PATH,
+    PairCounts,
+    load_reference_counts,
+    result_metric,
+)
 from kgsemembed.pipeline.conditions import SANITY_CHECK_GROUP, get_condition
 
 _LOGGER = logging.getLogger("kgsemembed.scripts.generate_baseline_comparison")
@@ -168,17 +175,29 @@ def split_matched(
     return matched, mismatched
 
 
-def column_means(payloads: List[dict]) -> pd.DataFrame:
+def _metric_value(payload: dict, metric: str, counts: Optional[Dict[PairKey, PairCounts]]) -> float:
+    recorded = metric in payload["metrics"]
+    derivable = counts is not None and (payload["dataset_id"], payload["pair_name"]) in counts
+    if metric == "hits_at_1" and not (recorded or derivable):
+        return np.nan
+    return result_metric(payload, metric, counts)
+
+
+def column_means(payloads: List[dict], counts: Optional[Dict[PairKey, PairCounts]] = None) -> pd.DataFrame:
     """
     Average each metric per condition and dataset column.
 
-    A metric missing from any pair of a column (Hits@1 before #139) leaves
-    that column's mean missing, never an average of the other pairs.
+    Hits@1 not recorded in a result (before #139) is derived from its
+    Recall@1 with ``counts``; when it cannot be, that column's mean is
+    missing, never an average of the other pairs.
 
     Parameters
     ----------
     payloads : List[dict]
         Result payloads (C-conditions and/or B0).
+    counts : Optional[Dict[PairKey, PairCounts]]
+        Per-pair reference counts (``scripts/metric_ceilings.py``), or
+        ``None`` to use recorded values only.
 
     Returns
     -------
@@ -187,7 +206,7 @@ def column_means(payloads: List[dict]) -> pd.DataFrame:
     """
     rows = [
         {"condition_id": p["condition_id"], "dataset_id": p["dataset_id"],
-         **{metric: p["metrics"].get(metric, np.nan) for metric in _METRICS}}
+         **{metric: _metric_value(p, metric, counts) for metric in _METRICS}}
         for p in payloads
     ]
     grouped = pd.DataFrame(rows).groupby(["condition_id", "dataset_id"])
@@ -323,7 +342,9 @@ def _d5_section(means: pd.DataFrame) -> List[str]:
     return ["## D5: every condition against B0", "", *_table(header, rows), ""]
 
 
-def build_report(results_dir: str, baseline_dir: str) -> List[str]:
+def build_report(
+    results_dir: str, baseline_dir: str, counts: Optional[Dict[PairKey, PairCounts]] = None
+) -> List[str]:
     """
     Build the Markdown comparison of C1–C20 against B0.
 
@@ -333,6 +354,8 @@ def build_report(results_dir: str, baseline_dir: str) -> List[str]:
         Root of the C-condition results.
     baseline_dir : str
         Root of the B0 results.
+    counts : Optional[Dict[PairKey, PairCounts]]
+        Per-pair reference counts for deriving older results' Hits@1.
 
     Returns
     -------
@@ -341,7 +364,7 @@ def build_report(results_dir: str, baseline_dir: str) -> List[str]:
     """
     baseline, sidecars = load_baseline(baseline_dir)
     matched, mismatched = split_matched(load_condition_payloads(results_dir), baseline)
-    means = column_means(matched + list(baseline.values()))
+    means = column_means(matched + list(baseline.values()), counts)
     lines = ["# Stage-1 n-gram baseline (B0) against C1–C20", "", _SCOPE, ""]
     lines += _population_section(matched, mismatched) + _baseline_section(means, recall_at_20_by_column(baseline))
     lines += _distribution_section(sidecars)
@@ -367,7 +390,18 @@ def _build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--output", default="artifacts/issue-137/baseline_comparison.md", help="Markdown output path."
     )
+    parser.add_argument(
+        "--ceilings", default=str(DEFAULT_COUNTS_PATH),
+        help="Per-pair reference counts (scripts/metric_ceilings.py) for older results' Hits@1.",
+    )
     return parser
+
+
+def _load_counts(path: str) -> Optional[Dict[PairKey, PairCounts]]:
+    if Path(path).exists():
+        return load_reference_counts(path)
+    _LOGGER.warning("No reference counts at %s; Hits@1 is shown only where recorded.", path)
+    return None
 
 
 def main() -> None:
@@ -378,7 +412,8 @@ def main() -> None:
     args = _build_arg_parser().parse_args()
     output = Path(args.output)
     output.parent.mkdir(parents=True, exist_ok=True)
-    output.write_text("\n".join(build_report(args.results_dir, args.baseline_dir)) + "\n", encoding="utf-8")
+    report = build_report(args.results_dir, args.baseline_dir, _load_counts(args.ceilings))
+    output.write_text("\n".join(report) + "\n", encoding="utf-8")
     _LOGGER.info("Wrote %s", output)
 
 

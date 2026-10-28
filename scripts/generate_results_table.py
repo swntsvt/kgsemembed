@@ -162,7 +162,7 @@ _RANKING_CAPTION = (
 )
 _MEAN_NOTE = (
     r"\item[*] Mean over D1--D4 (D4 schema and instance), shown only for "
-    r"conditions run on all of them; excludes D5 (recall@20 ceiling 26.67\%)."
+    r"conditions run on all of them; excludes D5 (top-20 ceiling 26.67\% on every metric)."
 )
 
 

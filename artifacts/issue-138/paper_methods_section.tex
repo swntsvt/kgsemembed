@@ -57,7 +57,7 @@ source. R@20: stage-1 candidate recall@20 on test references (D3: mean over
 21 pairs), the ceiling of Recall@$k$. MRR and Hits@$k$ are capped instead by
 the share of test reference sources with a gold target among their
 candidates, which differs under one-to-many references (D1: 0.886); it is the
-ceiling row of each results table.}
+ceiling row of the MRR and Hits@1 tables.}
 \label{tab:datasets}
 \begin{tabular}{llllrrrr}
 \hline
@@ -155,9 +155,10 @@ counts behind each value.
 Every comparison is tested within each dataset column, on the units the
 metric counts. For MRR and Hits@1 the unit is a test reference source,
 credited once at its best-ranked gold target. For F1 the units are the test
-reference sources and every other test source that either method predicted,
-each with its true positives, false positives and false negatives; F1 is
-recomputed from their sums. The statistic is the difference between the two
+reference sources and every other test source that either method predicted
+(on D4, only predictions judged under its partial reference, i.e.\ those
+whose target is a reference target), each with its true positives, false
+positives and false negatives; F1 is recomputed from their sums. The statistic is the difference between the two
 methods' column values, as the tables report them (for D3, the mean of the
 21 pair values). Its 95\% interval is a percentile bootstrap that resamples
 units with replacement within each pair, so D3's pairs are strata and never
@@ -166,7 +167,7 @@ swaps the two methods' outcomes of each unit with probability $1/2$:
 $p = (1 + \#\{|\Delta^*| \geq |\Delta|\})/(R + 1)$. Both use $R = 10{,}000$
 replicates and seed 42. Two results are compared only if they share candidate
 lists, test references and gold targets, the evaluation protocol and the
-known pairs.
+number of known pairs.
 
 Only MRR carries a significance decision. Its $p$-values are Holm-adjusted at
 $\alpha = 0.05$ within each family. For the twelve registered ablation
