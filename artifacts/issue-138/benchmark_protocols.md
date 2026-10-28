@@ -402,8 +402,9 @@ structure, subset, and one-prediction-per-source matching.
 
 **Implications.**
 
-- D5 MRR/Hits@1 are **within-candidate** ranking scores, capped by stage-1
-  recall@20. They cannot be compared with OpenEA's all-target Hits@1/MRR,
+- D5 MRR/Hits@1 are **within-candidate** ranking scores, capped by the
+  ranking ceiling (0.2667, equal to candidate recall@20 on D5's 1:1
+  reference). They cannot be compared with OpenEA's all-target Hits@1/MRR,
   which also come from supervised models.
 - Every embedding condition is below B0 on D5 (`baseline_comparison.md`).
 - D5 is excluded from Mean\*.
@@ -436,9 +437,10 @@ only transformations.
   BERTMapLt itself was not run, and nothing here is compared with its
   published scores.
 - Compare conditions only within a column and on matched populations;
-  `baseline_comparison.md` verifies 278/278 results share candidates,
-  population and protocol with B0.
-- Report ranking metrics (MRR, Recall@k: threshold-free, within candidates)
+  `baseline_comparison.md` verifies 277/277 results (the sanity check C19
+  left out) share candidates, population and protocol with B0.
+- Report ranking metrics (MRR and Hits@1, primary since #139, and Recall@k:
+  threshold-free, within candidates)
   and matching metrics (P/R/F1: top-1 above a validation-tuned threshold)
   separately; they can disagree (D3, D4_instance).
 - Report D5 and D4_schema with their caps and sizes (§1.2, §5).

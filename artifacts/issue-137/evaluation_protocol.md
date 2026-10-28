@@ -340,8 +340,6 @@ only from Mean*, as before.
   post-fix population in #164 (`data/results_issue164/`,
   `artifacts/issue-164/`); the #134 serialization results were not, so their
   D1 numbers remain on the pre-fix population.
-- **D5 release identity.** Verified in #138: every D5 file is byte-identical
-  to the OpenEA v2.0 archive (`artifacts/issue-138/release_checks.md`).
 - **One pair per column.** D1, D2, D4 and D5 are single pairs, and D3's 21
   pairs share seven ontologies. The intervals against B0 (#165) resample test
   sources within these pairs, so they describe these pairs, not other

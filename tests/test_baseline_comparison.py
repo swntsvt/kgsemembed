@@ -103,3 +103,12 @@ def test_release_status(tmp_path: Path) -> None:
     assert provenance.release_status(local, other) == "DIFFERENT"
     assert provenance.release_status(local, tmp_path / "missing") == "release file not in cache"
     assert provenance.release_status(local, None) == "not in the MELT repository"
+
+
+def test_column_mean_is_missing_when_any_pair_lacks_the_metric() -> None:
+    complete = _payload("C1", 0.4, pair_name="a")
+    partial = _payload("C1", 0.6, pair_name="b")
+    del partial["metrics"]["hits_at_1"]
+    means = comparison.column_means([complete, partial])
+    assert comparison._cell(means, "C1", "D5", "mrr") == 0.5
+    assert comparison._cell(means, "C1", "D5", "hits_at_1") is None

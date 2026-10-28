@@ -172,6 +172,9 @@ def column_means(payloads: List[dict]) -> pd.DataFrame:
     """
     Average each metric per condition and dataset column.
 
+    A metric missing from any pair of a column (Hits@1 before #139) leaves
+    that column's mean missing, never an average of the other pairs.
+
     Parameters
     ----------
     payloads : List[dict]
@@ -184,10 +187,11 @@ def column_means(payloads: List[dict]) -> pd.DataFrame:
     """
     rows = [
         {"condition_id": p["condition_id"], "dataset_id": p["dataset_id"],
-         **{metric: p["metrics"][metric] for metric in _METRICS}}
+         **{metric: p["metrics"].get(metric, np.nan) for metric in _METRICS}}
         for p in payloads
     ]
-    return pd.DataFrame(rows).groupby(["condition_id", "dataset_id"]).mean()
+    grouped = pd.DataFrame(rows).groupby(["condition_id", "dataset_id"])
+    return grouped.agg(lambda values: values.mean(skipna=False))
 
 
 def _fmt(value: Optional[float], signed: bool = False) -> str:
@@ -203,7 +207,9 @@ def _table(header: List[str], rows: List[List[str]]) -> List[str]:
 
 def _cell(means: pd.DataFrame, condition_id: str, dataset_id: str, metric: str) -> Optional[float]:
     key = (condition_id, dataset_id)
-    return float(means.loc[key, metric]) if key in means.index else None
+    if key not in means.index or pd.isna(means.loc[key, metric]):
+        return None
+    return float(means.loc[key, metric])
 
 
 def _delta(means: pd.DataFrame, condition_id: str, dataset_id: str, metric: str) -> Optional[float]:
