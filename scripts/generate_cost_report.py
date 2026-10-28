@@ -100,14 +100,70 @@ def stage2_row(record: Dict[str, object], sizes: Dict[str, Dict[str, object]]) -
     }
 
 
-def load_rows(args: argparse.Namespace) -> List[Dict[str, object]]:
+def timing_records(args: argparse.Namespace, prefix: str) -> List[Dict[str, object]]:
+    """
+    Read the column's timing records of one kind and refuse a multi-pair column.
+
+    Parameters
+    ----------
+    args : argparse.Namespace
+        ``timing_dir`` and ``column``.
+    prefix : str
+        ``"C"`` for condition records, ``"stage1"`` for stage-1 records.
+
+    Returns
+    -------
+    List[Dict[str, object]]
+        The records, sorted by file name.
+
+    Raises
+    ------
+    ValueError
+        If there is no record or the records cover more than one pair: the
+        report is per column and does not sum pairs (D3 has 21).
+    """
+    paths = sorted(Path(args.timing_dir).glob(f"{prefix}*_{args.column}_*.json"))
+    records = [read_json(path) for path in paths]
+    pairs = {record["pair_name"] for record in records}
+    if len(pairs) != 1:
+        raise ValueError(f"{args.column}: expected timing records of one pair, found {sorted(pairs)}")
+    return records
+
+
+def check_uniform(records: List[Dict[str, object]]) -> None:
+    """
+    Refuse records that differ in commit, machine or number of repeats.
+
+    Parameters
+    ----------
+    records : List[Dict[str, object]]
+        Every timing record of the column, stage 1 included.
+
+    Raises
+    ------
+    ValueError
+        If any of those fields, or the device of a condition record, differs.
+    """
+    fields = {
+        "git_commit": lambda r: r["git_commit"], "machine": lambda r: json.dumps(r["machine"], sort_keys=True),
+        "repeats": lambda r: r["repeats"], "device": lambda r: r.get("model", {}).get("device"),
+    }
+    for name, value in fields.items():
+        values = {value(record) for record in records} - {None}
+        if len(values) > 1:
+            raise ValueError(f"timing records differ in {name}: {sorted(map(str, values))}")
+
+
+def load_rows(records: List[Dict[str, object]], args: argparse.Namespace) -> List[Dict[str, object]]:
     """
     Build the condition rows of the column, in registry order.
 
     Parameters
     ----------
+    records : List[Dict[str, object]]
+        The column's condition timing records.
     args : argparse.Namespace
-        ``timing_dir``, ``input_size`` and ``column``.
+        ``input_size`` and ``column``.
 
     Returns
     -------
@@ -115,47 +171,47 @@ def load_rows(args: argparse.Namespace) -> List[Dict[str, object]]:
         One row per timed condition.
     """
     sizes = {r["condition_id"]: r for r in read_json(Path(args.input_size)) if r["column"] == args.column}
-    records = [read_json(path) for path in sorted(Path(args.timing_dir).glob(f"C*_{args.column}_*.json"))]
     rows = [stage2_row(record, sizes) for record in records]
     return sorted(rows, key=lambda row: _REGISTRY_ORDER.index(row["condition_id"]))
 
 
-def baseline_row(args: argparse.Namespace) -> Dict[str, object]:
+def baseline_row(record: Dict[str, object], args: argparse.Namespace) -> Dict[str, object]:
     """
     Build B0's row: stage-1 seconds and its stored MRR.
 
     Parameters
     ----------
+    record : Dict[str, object]
+        The column's stage-1 timing record.
     args : argparse.Namespace
-        ``timing_dir``, ``baseline_dir`` and ``column``.
+        ``baseline_dir`` and ``column``.
 
     Returns
     -------
     Dict[str, object]
         Median and range of the stage-1 seconds, and B0's MRR.
     """
-    (record,) = [read_json(p) for p in Path(args.timing_dir).glob(f"stage1_{args.column}_*.json")]
     stored = read_json(Path(args.baseline_dir) / "B0" / args.column / f"{record['pair_name']}_results.json")
     seconds = record["score_seconds"]
     return {"stage1": statistics.median(seconds), "stage1_range": (min(seconds), max(seconds)),
             "mrr": stored["metrics"]["mrr"], "n_sources": record["n_sources"]}
 
 
-def machine_note(args: argparse.Namespace) -> str:
+def machine_note(record: Dict[str, object]) -> str:
     """
     Describe the machine, commit and repeats behind the timings.
 
     Parameters
     ----------
-    args : argparse.Namespace
-        ``timing_dir`` and ``column``.
+    record : Dict[str, object]
+        A condition timing record; :func:`check_uniform` has checked that
+        every record agrees with it.
 
     Returns
     -------
     str
         One sentence naming chip, memory, device, torch version, commit and repeats.
     """
-    record = read_json(sorted(Path(args.timing_dir).glob(f"C*_{args.column}_*.json"))[0])
     machine = record["machine"]
     return (
         f"{machine['chip']}, {machine['memory_bytes'] // 2**30} GB, device {record['model']['device']}, "
@@ -175,7 +231,7 @@ def _markdown_line(row: Dict[str, object], cheapest: float, b0_mrr: float) -> st
     return "| " + " | ".join(cells) + " |"
 
 
-def render_markdown(rows: List[Dict[str, object]], b0: Dict[str, object], args: argparse.Namespace) -> str:
+def render_markdown(rows: List[Dict[str, object]], b0: Dict[str, object], context: Dict[str, object]) -> str:
     """
     Render the cost table as Markdown.
 
@@ -185,8 +241,8 @@ def render_markdown(rows: List[Dict[str, object]], b0: Dict[str, object], args: 
         Condition rows.
     b0 : Dict[str, object]
         B0's row.
-    args : argparse.Namespace
-        ``column`` and ``timing_dir``.
+    context : Dict[str, object]
+        ``column``, ``note`` (from :func:`machine_note`) and ``repeats``.
 
     Returns
     -------
@@ -196,12 +252,13 @@ def render_markdown(rows: List[Dict[str, object]], b0: Dict[str, object], args: 
     cheapest = min(row["stage2"] for row in rows)
     low, high = b0["stage1_range"]
     lines = [
-        f"# Computational cost on {args.column} (#181)", "",
+        f"# Computational cost on {context['column']} (#181)", "",
         "Generated by `scripts/generate_cost_report.py` from `scripts/encode_timing.py` and "
-        f"`scripts/encoded_input_size.py`. Machine: {machine_note(args)}. Seconds are wall-clock "
+        f"`scripts/encoded_input_size.py`. Machine: {context['note']}. Seconds are wall-clock "
         "and descriptive: they hold for this implementation and machine (MPS, batches padded to a "
         "multiple of 64 tokens, batch size reduced for long texts), not in general. Every timed run "
-        "reproduced its stored metrics exactly, and every encoding pass returned identical embeddings.",
+        "reproduced its stored metrics exactly, and every encoding pass returned identical embeddings. "
+        "Verbalisation is timed once, without a warm-up.",
         "",
         f"Stage 1 (n-gram scoring over all targets, every condition's shared first stage and B0's "
         f"whole cost): {b0['stage1']:.1f} s ({low:.1f}–{high:.1f}) for {b0['n_sources']:,} sources; "
@@ -217,12 +274,12 @@ def _latex_line(row: Dict[str, object], cheapest: float, b0_mrr: float) -> str:
     cells = [
         row["condition_id"], row["strategy"], row["model_key"], f"{row['n_parameters'] / 1e6:,.0f}",
         f"{row['encoded_tokens'] / 1e6:.2f}", f"{row['stage2'] / 60:.1f}",
-        f"{row['stage2'] / cheapest:.0f}", f"{row['mrr']:.3f}", f"{row['mrr'] - b0_mrr:+.3f}".replace("-", "$-$"),
+        f"{row['stage2'] / cheapest:.1f}", f"{row['mrr']:.3f}", f"{row['mrr'] - b0_mrr:+.3f}".replace("-", "$-$"),
     ]
     return " & ".join(cells).replace(",", "{,}") + r" \\"
 
 
-def render_latex(rows: List[Dict[str, object]], b0: Dict[str, object], args: argparse.Namespace) -> str:
+def render_latex(rows: List[Dict[str, object]], b0: Dict[str, object], context: Dict[str, object]) -> str:
     """
     Render the cost table as LaTeX (threeparttable, as the results tables).
 
@@ -232,8 +289,8 @@ def render_latex(rows: List[Dict[str, object]], b0: Dict[str, object], args: arg
         Condition rows.
     b0 : Dict[str, object]
         B0's row.
-    args : argparse.Namespace
-        ``column`` and ``timing_dir``.
+    context : Dict[str, object]
+        ``column``, ``note`` (from :func:`machine_note`) and ``repeats``.
 
     Returns
     -------
@@ -243,18 +300,18 @@ def render_latex(rows: List[Dict[str, object]], b0: Dict[str, object], args: arg
     cheapest = min(row["stage2"] for row in rows)
     head = [
         r"\begin{table}[t]", r"\centering", r"\small", r"\begin{threeparttable}",
-        rf"\caption{{Computational cost of stage~2 on {args.column}, one run per condition. Tokens: "
+        rf"\caption{{Computational cost of stage~2 on {context['column']}, one run per condition. Tokens: "
         r"total encoded tokens (sources and unique candidates, each capped at the model's limit). "
-        r"Time: verbalisation, encoding (median of three passes) and ranking, in minutes; "
+        rf"Time: verbalisation, encoding (median of {context['repeats']} passes) and ranking, in minutes; "
         r"$\times$: relative to the cheapest condition. Stage~1, shared by every condition and "
-        rf"B0's whole cost, takes {b0['stage1']:.0f}\,s.}}",
-        rf"\label{{tab:cost_{args.column.lower()}}}", r"\begin{tabular}{lllrrrrrr}", r"\hline",
+        rf"B0's whole cost, takes {b0['stage1']:.3g}\,s.}}",
+        rf"\label{{tab:cost_{context['column'].lower()}}}", r"\begin{tabular}{lllrrrrrr}", r"\hline",
         r"\textbf{Cond.} & \textbf{Text} & \textbf{Model} & \textbf{Params (M)} & \textbf{Tokens (M)} "
         r"& \textbf{Time (min)} & $\times$ & \textbf{MRR} & $\Delta$\textbf{B0} \\", r"\hline",
         rf"B0 & -- & -- & -- & -- & -- & -- & {b0['mrr']:.3f} & -- \\",
     ]
     tail = [r"\hline", r"\end{tabular}", r"\begin{tablenotes}\footnotesize",
-            rf"\item Timings: {machine_note(args)}; descriptive, specific to this machine and implementation.",
+            rf"\item Timings: {context['note']}; descriptive, specific to this machine and implementation.",
             r"\end{tablenotes}", r"\end{threeparttable}", r"\end{table}"]
     return "\n".join(head + [_latex_line(row, cheapest, b0["mrr"]) for row in rows] + tail) + "\n"
 
@@ -333,11 +390,14 @@ def main() -> None:
     np.random.seed(42)
     random.seed(42)
     args = parse_args()
-    rows, b0 = load_rows(args), baseline_row(args)
+    records, (stage1,) = timing_records(args, "C"), timing_records(args, "stage1")
+    check_uniform(records + [stage1])
+    rows, b0 = load_rows(records, args), baseline_row(stage1, args)
+    context = {"column": args.column, "note": machine_note(records[0]), "repeats": records[0]["repeats"]}
     output = Path(args.output_dir)
     output.mkdir(parents=True, exist_ok=True)
-    (output / f"cost_{args.column}.md").write_text(render_markdown(rows, b0, args))
-    (output / f"cost_{args.column}.tex").write_text(render_latex(rows, b0, args))
+    (output / f"cost_{args.column}.md").write_text(render_markdown(rows, b0, context))
+    (output / f"cost_{args.column}.tex").write_text(render_latex(rows, b0, context))
     plot(rows, b0, args.column, output / f"cost_vs_mrr_{args.column}")
 
 

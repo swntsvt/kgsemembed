@@ -71,3 +71,29 @@ def test_stage2_row_takes_the_median_encoding_pass():
     assert row["stage2"] == 1.0 + 7.0 + 0.5
     assert row["n_texts"] == 40
     assert row["encoded_tokens"] == 1234
+
+
+def _provenance(**changes: object) -> dict:
+    record = {"pair_name": "p", "git_commit": "abc", "machine": {"chip": "M4"}, "repeats": 3,
+              "model": {"device": "mps"}}
+    return {**record, **changes}
+
+
+def test_check_uniform_accepts_agreeing_records():
+    stage1 = {key: value for key, value in _provenance().items() if key != "model"}
+    cost.check_uniform([_provenance(), _provenance(), stage1])
+
+
+@pytest.mark.parametrize("change", [{"git_commit": "def"}, {"repeats": 2}, {"machine": {"chip": "M3"}},
+                                    {"model": {"device": "cpu"}}])
+def test_check_uniform_refuses_mixed_provenance(change):
+    with pytest.raises(ValueError, match="differ"):
+        cost.check_uniform([_provenance(), _provenance(**change)])
+
+
+def test_timing_records_refuse_a_multi_pair_column(tmp_path):
+    for pair in ("a", "b"):
+        (tmp_path / f"C1_D3_{pair}.json").write_text(json.dumps({"pair_name": pair}))
+    args = cost.argparse.Namespace(timing_dir=str(tmp_path), column="D3")
+    with pytest.raises(ValueError, match="one pair"):
+        cost.timing_records(args, "C")
