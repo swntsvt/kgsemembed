@@ -42,13 +42,9 @@ from typing import Dict, List, Optional, Tuple
 import numpy as np
 import pandas as pd
 
+from kgsemembed.evaluation.aggregator import hits_at_1_or_none, strict_mean
 from kgsemembed.evaluation.metrics import EVALUATION_PROTOCOL_VERSION
-from kgsemembed.evaluation.reference_counts import (
-    DEFAULT_COUNTS_PATH,
-    PairCounts,
-    load_reference_counts,
-    result_metric,
-)
+from kgsemembed.evaluation.reference_counts import DEFAULT_COUNTS_PATH, PairCounts, load_reference_counts
 from kgsemembed.pipeline.conditions import SANITY_CHECK_GROUP, get_condition
 
 _LOGGER = logging.getLogger("kgsemembed.scripts.generate_baseline_comparison")
@@ -176,11 +172,10 @@ def split_matched(
 
 
 def _metric_value(payload: dict, metric: str, counts: Optional[Dict[PairKey, PairCounts]]) -> float:
-    recorded = metric in payload["metrics"]
-    derivable = counts is not None and (payload["dataset_id"], payload["pair_name"]) in counts
-    if metric == "hits_at_1" and not (recorded or derivable):
-        return np.nan
-    return result_metric(payload, metric, counts)
+    if metric != "hits_at_1":
+        return float(payload["metrics"][metric])
+    value = hits_at_1_or_none(payload, counts)
+    return np.nan if value is None else value
 
 
 def column_means(payloads: List[dict], counts: Optional[Dict[PairKey, PairCounts]] = None) -> pd.DataFrame:
@@ -188,8 +183,9 @@ def column_means(payloads: List[dict], counts: Optional[Dict[PairKey, PairCounts
     Average each metric per condition and dataset column.
 
     Hits@1 not recorded in a result (before #139) is derived from its
-    Recall@1 with ``counts``; when it cannot be, that column's mean is
-    missing, never an average of the other pairs.
+    Recall@1 with ``counts``, as in ``report.md``; when it cannot be, that
+    column's mean is missing, never an average of the other pairs, and a
+    warning names how many results lack it.
 
     Parameters
     ----------
@@ -209,8 +205,18 @@ def column_means(payloads: List[dict], counts: Optional[Dict[PairKey, PairCounts
          **{metric: _metric_value(p, metric, counts) for metric in _METRICS}}
         for p in payloads
     ]
-    grouped = pd.DataFrame(rows).groupby(["condition_id", "dataset_id"])
-    return grouped.agg(lambda values: values.mean(skipna=False))
+    frame = pd.DataFrame(rows)
+    _warn_missing_hits_at_1(frame)
+    return frame.groupby(["condition_id", "dataset_id"]).agg(strict_mean)
+
+
+def _warn_missing_hits_at_1(frame: pd.DataFrame) -> None:
+    missing = int(frame["hits_at_1"].isna().sum())
+    if missing:
+        _LOGGER.warning(
+            "%d of %d results lack Hits@1 and cannot derive it; their columns show no Hits@1 mean, "
+            "and the Hits@1 tallies leave those conditions out.", missing, len(frame),
+        )
 
 
 def _fmt(value: Optional[float], signed: bool = False) -> str:
@@ -398,10 +404,10 @@ def _build_arg_parser() -> argparse.ArgumentParser:
 
 
 def _load_counts(path: str) -> Optional[Dict[PairKey, PairCounts]]:
-    if Path(path).exists():
-        return load_reference_counts(path)
-    _LOGGER.warning("No reference counts at %s; Hits@1 is shown only where recorded.", path)
-    return None
+    if not Path(path).is_file():
+        _LOGGER.warning("No reference counts at %s; older results' Hits@1 omitted.", path)
+        return None
+    return load_reference_counts(path)
 
 
 def main() -> None:

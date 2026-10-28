@@ -120,3 +120,12 @@ def test_column_mean_derives_hits_at_1_from_reference_counts() -> None:
     counts = {("D5", "p"): {"n_test_refs": 2, "n_test_reference_sources": 1}}
     means = comparison.column_means([older], counts)
     assert comparison._cell(means, "C1", "D5", "hits_at_1") == 1.0
+
+
+def test_column_mean_is_missing_when_counts_disagree_with_the_result() -> None:
+    older = _payload("C1", 0.5)
+    del older["metrics"]["hits_at_1"]
+    counts = {("D5", "p"): {"n_test_refs": 3, "n_test_reference_sources": 3}}
+    means = comparison.column_means([older], counts)
+    assert comparison._cell(means, "C1", "D5", "hits_at_1") is None
+    assert comparison._cell(means, "C1", "D5", "mrr") == 0.5

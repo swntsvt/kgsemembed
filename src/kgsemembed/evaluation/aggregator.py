@@ -272,12 +272,30 @@ def _load_json(path: Path) -> Optional[dict]:
         return None
 
 
-def _hits_at_1(payload: dict, counts: Optional[dict]) -> Optional[float]:
-    """Return a result's source-level Hits@1, derived for older results, or ``None``."""
+def hits_at_1_or_none(payload: dict, counts: Optional[dict]) -> Optional[float]:
+    """
+    Return a result's source-level Hits@1, derived for older results, or ``None``.
+
+    Parameters
+    ----------
+    payload : dict
+        Parsed result JSON.
+    counts : Optional[dict]
+        Per-pair reference counts, needed only when Hits@1 was not recorded.
+
+    Returns
+    -------
+    Optional[float]
+        The recorded or derived Hits@1, or ``None`` when it cannot be derived
+        (no counts, a different test reference count, no Recall@1).
+    """
     try:
         return result_metric(payload, _HITS_AT_1, counts)
     except (KeyError, TypeError, ValueError):
         return None
+
+
+_hits_at_1 = hits_at_1_or_none
 
 
 def _build_record(payload: dict, path: Path, counts: Optional[dict] = None) -> Optional[dict]:
@@ -550,9 +568,24 @@ def load_all_results(
     )
 
 
-def _strict_mean(values: pd.Series) -> float:
-    """Mean that is missing when any value is, so a mean never covers fewer pairs."""
+def strict_mean(values: pd.Series) -> float:
+    """
+    Return a mean that is missing when any value is, so it never covers fewer pairs.
+
+    Parameters
+    ----------
+    values : pd.Series
+        Values to average.
+
+    Returns
+    -------
+    float
+        The mean, NaN when any value is missing.
+    """
     return float(values.mean(skipna=False))
+
+
+_strict_mean = strict_mean
 
 
 def _dataset_column_means(df: pd.DataFrame) -> pd.DataFrame:
