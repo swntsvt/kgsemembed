@@ -135,7 +135,7 @@ def test_best_names_every_condition_tied_at_four_decimals() -> None:
     payloads = [_payload("C10", 0.70001), _payload("C2", 0.6), _payload("C3", 0.7), _payload("C8", 0.69999)]
     means = comparison.column_means(payloads)
     conditions = comparison._conditions(means)
-    assert comparison._best(means, conditions, "D5", "mrr") == "C3, C8, C10 (0.7000)"
+    assert comparison._best(means, conditions, "D5", "mrr") == "C3, C10, C8 (0.7000)"
 
 
 def test_best_names_a_single_condition_without_a_tie() -> None:

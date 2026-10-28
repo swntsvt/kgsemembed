@@ -42,7 +42,7 @@ from typing import Dict, List, Optional, Tuple
 import numpy as np
 import pandas as pd
 
-from kgsemembed.evaluation.aggregator import hits_at_1_or_none, strict_mean
+from kgsemembed.evaluation.aggregator import _tied_best, hits_at_1_or_none, strict_mean
 from kgsemembed.evaluation.metrics import EVALUATION_PROTOCOL_VERSION
 from kgsemembed.evaluation.reference_counts import DEFAULT_COUNTS_PATH, PairCounts, load_reference_counts
 from kgsemembed.pipeline.conditions import SANITY_CHECK_GROUP, get_condition
@@ -336,12 +336,12 @@ def _best(means: pd.DataFrame, conditions: List[str], dataset_id: str, metric: s
     ``report.md``'s summary (#167), so a shared best is never credited to one
     condition.
     """
-    values = {c: round(v, 4) for c in conditions if (v := _cell(means, c, dataset_id, metric)) is not None}
-    if not values:
+    values = pd.Series(
+        {c: v for c in conditions if (v := _cell(means, c, dataset_id, metric)) is not None}, dtype=float
+    ).round(4)
+    if values.empty:
         return "—"
-    top = max(values.values())
-    tied = [c for c in conditions if values.get(c) == top]
-    return f"{', '.join(tied)} ({_fmt(top)})"
+    return f"{', '.join(_tied_best(values))} ({_fmt(values.max())})"
 
 
 def _d5_section(means: pd.DataFrame) -> List[str]:
