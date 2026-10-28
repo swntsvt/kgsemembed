@@ -329,11 +329,19 @@ def _tally(means: pd.DataFrame, conditions: List[str], dataset_id: str, metric: 
 
 
 def _best(means: pd.DataFrame, conditions: List[str], dataset_id: str, metric: str) -> str:
-    values = {c: v for c in conditions if (v := _cell(means, c, dataset_id, metric)) is not None}
+    """
+    Name every condition tied for the column's best value, in registry order.
+
+    Values are compared as printed (four decimal places), the tie rule of
+    ``report.md``'s summary (#167), so a shared best is never credited to one
+    condition.
+    """
+    values = {c: round(v, 4) for c in conditions if (v := _cell(means, c, dataset_id, metric)) is not None}
     if not values:
         return "—"
-    best = max(values, key=values.get)
-    return f"{best} ({_fmt(values[best])})"
+    top = max(values.values())
+    tied = [c for c in conditions if values.get(c) == top]
+    return f"{', '.join(tied)} ({_fmt(top)})"
 
 
 def _d5_section(means: pd.DataFrame) -> List[str]:
