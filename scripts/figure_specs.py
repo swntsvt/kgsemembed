@@ -48,7 +48,7 @@ BARS = (
 )
 DATASETS = (
     DatasetSpec("D1", "d1_snomed_fma", "D1 (SNOMED-FMA)", 0.45),
-    DatasetSpec("D2", "d2_anatomy", "D2 (Anatomy MA-NCI)", 1.0, frozenset({"C15"})),
+    DatasetSpec("D2", "d2_anatomy", "D2 (Anatomy MA-NCI)", 1.0),
 )
 
 

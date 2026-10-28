@@ -123,8 +123,9 @@ always pass a separate directory unless you mean to add to or replace the
 stored results.
 
 **Long-running:** omitting `--conditions` and `--datasets` runs all 19
-conditions on every dataset each one covers (271 results). That took about
-20 hours on the M4 Pro, most of it on D4 instances. Run it in `tmux`:
+conditions on every dataset each one covers (278 results). The 271 of the
+#141 re-run took about 20 hours on the M4 Pro, most of it on D4 instances;
+the 7 cells #163 added took 3.6 hours. Run it in `tmux`:
 
 ```bash
 venv/bin/python -m kgsemembed.pipeline.run_experiment \

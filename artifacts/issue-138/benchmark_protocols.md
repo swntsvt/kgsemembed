@@ -423,7 +423,7 @@ only transformations.
   BERTMapLt itself was not run, and nothing here is compared with its
   published scores.
 - Compare conditions only within a column and on matched populations;
-  `baseline_comparison.md` verifies 271/271 results share candidates,
+  `baseline_comparison.md` verifies 278/278 results share candidates,
   population and protocol with B0.
 - Report ranking metrics (MRR, Recall@k: threshold-free, within candidates)
   and matching metrics (P/R/F1: top-1 above a validation-tuned threshold)

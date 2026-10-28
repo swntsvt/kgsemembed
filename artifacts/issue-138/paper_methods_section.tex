@@ -78,6 +78,14 @@ unchanged stage-1 order (B0). Because candidates, populations, thresholds and
 metric definitions are identical for every condition and for B0, differences
 between them isolate the effect of re-ranking.
 
+Every condition runs on every dataset column unless a reason fixed with the
+design excludes it: the biomedical model (M4) runs on the biomedical datasets
+D1 and D2, the instance-oriented strategies (V4, V5) on D4 and D5, and the
+long-context model without a token budget (M3) on D5 and, for the model
+comparison, on D1 and D2. Two conditions are compared only on columns both
+were run on, and a mean over D1--D4 is reported only for conditions run on
+all of them.
+
 For D1--D4, each reference alignment is split by source entity into 20\%
 validation and 80\% test, with a fixed seed, so that all correspondences of a
 source fall into the same split. D5 uses OpenEA's fold~1 as published (3,000

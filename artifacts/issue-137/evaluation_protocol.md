@@ -37,7 +37,7 @@ construction:
 - threshold selection;
 - metric definitions and denominators.
 
-`baseline_comparison.md` checks this for every stored result: 271 of 271
+`baseline_comparison.md` checks this for every stored result: 278 of 278
 C-results match B0 on candidates, population block and protocol version.
 
 A condition's difference from B0 is therefore what embedding re-ranking adds
@@ -212,14 +212,14 @@ B0 per column:
 The effect of re-ranking depends on the dataset.
 
 Number of conditions above / below / equal to B0, per metric, by point
-estimate (as regenerated in #165: 270 C-results, the sanity check C19 left
+estimate (as regenerated in #163: 277 C-results, the sanity check C19 left
 out as in every results table):
 
 | Metric | D1 | D2 | D3 | D4_schema | D4_instance | D5 |
 |---|---|---|---|---|---|---|
-| MRR | 7 / 7 / 0 | 6 / 7 / 0 | 6 / 4 / 0 | 10 / 1 / 0 | 8 / 3 / 0 | 0 / 11 / 0 |
-| Recall@1 | 7 / 7 / 0 | 5 / 8 / 0 | 5 / 5 / 0 | 8 / 1 / 2 | 8 / 3 / 0 | 0 / 11 / 0 |
-| F1 | 9 / 5 / 0 | 7 / 6 / 0 | 1 / 9 / 0 | 9 / 1 / 1 | 0 / 11 / 0 | 0 / 11 / 0 |
+| MRR | 8 / 7 / 0 | 7 / 8 / 0 | 6 / 4 / 0 | 11 / 1 / 0 | 9 / 3 / 0 | 0 / 13 / 0 |
+| Recall@1 | 8 / 7 / 0 | 6 / 9 / 0 | 5 / 5 / 0 | 9 / 1 / 2 | 9 / 3 / 0 | 0 / 13 / 0 |
+| F1 | 9 / 6 / 0 | 8 / 7 / 0 | 1 / 9 / 0 | 10 / 1 / 1 | 0 / 12 / 0 | 0 / 13 / 0 |
 
 With paired intervals (#165, `artifacts/issue-165/baseline_paired_tests.md`;
 MRR, Holm across every condition compared with B0 on one column, alpha 0.05),
@@ -227,11 +227,17 @@ conditions significantly above / below B0:
 
 | | D1 | D2 | D3 | D4_schema | D4_instance | D5 |
 |---|---|---|---|---|---|---|
-| MRR | 5 / 6 of 14 | 4 / 6 of 13 | 1 / 2 of 10 | 0 / 0 of 11 | 3 / 2 of 11 | 0 / 11 of 11 |
+| MRR | 5 / 6 of 15 | 5 / 7 of 15 | 1 / 2 of 10 | 0 / 0 of 12 | 4 / 2 of 12 | 0 / 13 of 13 |
 
 - Significant gains: D1 C4 +0.074, C3 +0.062, C17 +0.052, C6 +0.049, C16
-  +0.022; D2 C4 +0.085, C17 +0.043, C1 +0.033, C3 +0.031; D3 C1 +0.043;
-  D4_instance C3 +0.039, C5 +0.020, C7 +0.018.
+  +0.022; D2 C4 +0.085, C17 +0.043, C1 +0.033, C7 +0.032, C3 +0.031; D3 C1
+  +0.043; D4_instance C4 +0.041, C3 +0.039, C5 +0.020, C7 +0.018.
+- The #163 cells (C4 on D4/D5, C7 on D1/D2/D5, C15 on D2) grew their
+  columns' families from 14/13/11/11/11 (D1/D2/D4_schema/D4_instance/D5) to
+  15/15/12/12/13 and the decisions were recomputed, as the #165 plan fixed.
+  Of the new cells, C4 on D4_instance and C7 on D2 are significant gains, C7
+  on D1 (+0.005) and C4 on D4_schema (+0.021) are not significant, and C15
+  on D2 (−0.092), C4 on D5 and C7 on D5 are significant losses.
 - No condition differs significantly from B0 on D4_schema (44 test
   reference sources), and every D5 condition is significantly below it.
 
@@ -240,23 +246,23 @@ conditions significantly above / below B0:
   - D1: +0.074 (C4, V3/M2);
   - D2: +0.085 (C4);
   - D4_schema: +0.033 (C3, V2+V6/M2; C8 and C10 tie);
-  - D4_instance: +0.039 (C3).
+  - D4_instance: +0.041 (C4; C3 +0.039).
 
   Only about half the conditions beat B0 on D1 and D2 MRR. Conditions without
   lexical text collapse: C9 (V8 only) loses 0.44–0.57 MRR on D1–D3.
 - **Better ranking does not always give better matching F1.**
   - On D3, 6 of 10 conditions beat B0 on MRR, but only 1 of 10 on F1 (C1,
     +0.033).
-  - On D4_instance, 8 of 11 beat it on MRR, and none on F1. The best F1 is
+  - On D4_instance, 9 of 12 beat it on MRR, and none on F1. The best F1 is
     C20's 0.8036 against B0's 0.8802.
-  - On D1, by contrast, 9 of 14 beat B0 on F1 while 7 do on MRR.
+  - On D1, by contrast, 9 of 15 beat B0 on F1 while 8 do on MRR.
 
   F1 depends on the top-1 score clearing a threshold tuned on validation. How
   well that threshold separates correct from incorrect top-1 predictions
   depends on the score scale (n-gram cosine against embedding cosine) as much
   as on the order. D3's validation sets are small (20% of 4–25 references per
   pair), and D4_instance's F1 counts only judgeable unmatched sources.
-- **Re-ranking reduces every metric on D5.** All 11 D5 conditions are below
+- **Re-ranking reduces every metric on D5.** All 13 D5 conditions are below
   B0 on MRR, Recall@1, Recall@10 and F1 (D5 section of
   `baseline_comparison.md`).
 

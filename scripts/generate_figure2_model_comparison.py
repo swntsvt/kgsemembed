@@ -12,8 +12,7 @@ both datasets.
 
 Each result file's ``strategy`` and ``model_key`` are checked against the bar
 it is plotted under, so a bar can never carry the wrong label.  A missing
-result, such as C15 on D2 which is not run, is drawn as ``n/a`` rather than
-as a zero-height bar.
+result is drawn as ``n/a`` rather than as a zero-height bar.
 
 Writes ``fig2_model_comparison.pdf`` (and a ``.png`` preview) to the output
 directory for MRR, ``fig2_model_comparison_{metric}.pdf`` otherwise, and

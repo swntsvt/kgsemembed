@@ -141,7 +141,7 @@ def _write_result(root: Path, condition: str, strategy: str, model_key: str,
 def test_figure2_conditions_are_every_expected_bar_in_order(tmp_path: Path) -> None:
     _write_result(tmp_path, "C10", "V2+V8", "M2")
     assert figure2_conditions(tmp_path, _D1) == ["C18", "C10", "C15", "C11", "C13", "C17"]
-    assert figure2_conditions(tmp_path, _D2) == ["C18", "C10", "C11", "C13", "C17"]
+    assert figure2_conditions(tmp_path, _D2) == ["C18", "C10", "C15", "C11", "C13", "C17"]
 
 
 def test_figure2_conditions_refuse_a_mislabelled_result(tmp_path: Path) -> None:
@@ -158,7 +158,7 @@ def test_figure2_conditions_check_only_the_plotted_file(tmp_path: Path) -> None:
 def test_a_missing_bar_withholds_holm(tmp_path: Path) -> None:
     rows = figure_claims.figure2(tmp_path, paired_tests.SidecarCache(tmp_path), _SETTINGS)
     mrr = [row for row in rows if row["metric"] == "mrr"]
-    assert len(mrr) == 15 + 10 and all(not row["tested"] for row in mrr)
+    assert len(mrr) == 15 + 15 and all(not row["tested"] for row in mrr)
     assert all("No results for" in row["reason"] for row in mrr)
 
 
