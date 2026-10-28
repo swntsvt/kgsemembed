@@ -1,0 +1,60 @@
+% Predicate-role ablation: appendix text (#164, study #131).
+% D1: post-#137 population (726 known pairs), re-run at 66aabc3; D2: #131
+% (3d5c487), unaffected by #137. Source:
+% artifacts/issue-164/reports/predicate_roles/report.md. Intervals: 95% paired
+% bootstrap over the test reference sources of one pair (2,000 resamples,
+% seed 42); no significance test. Serialization order (#134) is left to a
+% follow-up paper, so no order-controlled number is cited here.
+
+\section{Which annotations help: a predicate-role ablation}
+\label{app:roles}
+
+Section~\ref{sec:ppas} holds the representation fixed. Here we vary its
+content. Every predicate of D1 and D2 is assigned one role, fixed from
+property declarations and sample values before any run: \emph{core}
+(\texttt{rdfs:label}, \texttt{rdf:type}, \texttt{rdfs:subClassOf}),
+preferred name, synonym, definition, identifier, non-English, disjointness,
+or other. With M2 and the key--value representation, arms remove one role
+from both sides (R-$x$), keep only core (A-core), or add one role to core
+(C+$x$); A0 keeps everything. Without a budget, only the model's 512-token
+limit applies (no input reached it).
+
+\begin{table}[t]
+\centering
+\caption{MRR differences of the predicate-role arms, no token budget.
+95\% paired bootstrap intervals over test reference sources (D1 4,605,
+D2 1,198). One model (M2), one pair per dataset.}
+\label{tab:roles}
+\begin{tabular}{lrr}
+\toprule
+Contrast & D1 & D2 \\
+\midrule
+A-core $-$ A0 & $+0.274$ [$0.262$, $0.286$] & $+0.136$ [$0.115$, $0.157$] \\
+R-syn $-$ A0 & $+0.026$ [$0.019$, $0.033$] & $+0.007$ [$-0.007$, $0.021$] \\
+R-def $-$ A0 & $+0.005$ [$0.002$, $0.007$] & $+0.076$ [$0.062$, $0.090$] \\
+R-nonEn $-$ A0 & $+0.138$ [$0.129$, $0.146$] & --- \\
+R-pref $-$ A0 & $-0.038$ [$-0.043$, $-0.032$] & --- \\
+R-id $-$ A0 & $-0.052$ [$-0.058$, $-0.045$] & $0$ \\
+C+syn $-$ A-core & $-0.251$ [$-0.262$, $-0.239$] & $-0.060$ [$-0.076$, $-0.043$] \\
+C+def $-$ A-core & $-0.027$ [$-0.032$, $-0.023$] & $-0.129$ [$-0.147$, $-0.110$] \\
+C+pref $-$ A-core & $+0.029$ [$0.023$, $0.034$] & --- \\
+C+id $-$ A-core & $-0.056$ [$-0.064$, $-0.049$] & --- \\
+\bottomrule
+\end{tabular}
+
+\smallskip
+{\footnotesize --- arm not run on D2 (the role is absent or not in its
+design); $0$: identical texts in both arms.}
+\end{table}
+
+Core text alone ranks best on both datasets (Table~\ref{tab:roles}), and
+the single-role removals do not add up to that gain, so it does not come
+from one role. Adding synonyms or definitions to core text hurts on both
+datasets, which is consistent with the drop in V1/V2 MRR once those
+predicates were read correctly. Under a budget the roles interact with the
+token limit: on D2, removing synonyms gains more under a budget than without
+one (difference-in-differences $+0.063$ [$0.043$, $0.081$] at 24 tokens),
+while removing definitions loses its gain ($-0.076$ [$-0.090$, $-0.062$]).
+Selected items are written in a fixed order, and part of these effects may
+depend on where an item appears in the text rather than on its content; we
+leave that question to separate work.
