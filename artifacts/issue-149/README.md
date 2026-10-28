@@ -58,19 +58,20 @@ python scripts/generate_figure2_model_comparison.py --results_dir data/results/ 
   computing intervals still stops the run. If any Figure 2 MRR comparison of
   a dataset is not tested, no Holm p-value is given for that dataset
   ("family incomplete"), since adjusting over fewer comparisons would lower
-  the rest. The family is every bar expected on the dataset (C15 is the one
-  bar not run on D2), so a missing result withholds Holm instead of
+  the rest. The family is every bar expected on the dataset (until #163, C15
+  was not run on D2), so a missing result withholds Holm instead of
   shrinking the family; only the result file each bar plots is checked.
 
 ## Figure 2 (D1/D2, V2+V8 per model, plus C17 V1/M4): keep, claim restated
 
-All 15 (D1) and 10 (D2) pairwise differences, Holm within each dataset
+All 15 (D1) and 15 (D2, 10 before #163 added C15) pairwise differences, Holm within each dataset
 (exploratory, separate from the registered families in `report.md`):
 
 - The domain-specific model does not lead with V2+V8 fixed. D1: M5 − M4
   +0.026 [+0.018, +0.034], M5 − M3 +0.019 [+0.012, +0.025], M3 vs M4
   −0.0075 [−0.0148, −0.0003] (Holm p 0.079). D2: M5 vs M4 −0.0002
-  [−0.012, +0.011]. M1 ≈ M2 on both (D1 +0.0015 [−0.005, +0.008], D2 +0.010
+  [−0.012, +0.011]; M3 (C15, run in #163) is below both, M4 − M3 +0.047
+  [+0.033, +0.060], M5 − M3 +0.047 [+0.036, +0.057]. M1 ≈ M2 on both (D1 +0.0015 [−0.005, +0.008], D2 +0.010
   [−0.002, +0.022]), both below every other model.
 - No V2+V8 model reaches C17 (V1/M4): C17 − best V2+V8 D1 +0.045
   [+0.036, +0.054] (C13), D2 +0.089 [+0.071, +0.107] (C11); with M4 fixed,

@@ -19,7 +19,7 @@ Phase 2 datasets: D1 (SNOMED-FMA Body), D2 (Anatomy MA-NCI), D3 (Conference,
 21 pairs), D4 (memoryalpha-stexpanded, schema and instance), D5
 (DBpedia-Wikidata 15K EN, OpenEA). Five datasets total.
 
-**Current focus**: Issue #143 — CLAUDE.md corrected against the code and stored results (#134 test results, tags, dependencies, directory structure, padding drift) and README.md rewritten around the Phase 2 pipeline (install, data, run, reproduce; legacy Hydra scaffold as a short note). Previously #149 — Figure 1 and Figure 2 claims judged against #140 paired intervals under MRR (`scripts/figure_claims.py`, `artifacts/issue-149/`): Figure 1 kept with its claim reframed (no V8 advantage on D3; C3's lead sits on the non-CMT/EDAS pairs; CMT/EDAS are not the sparsest ontologies), Figure 2 kept with its claim restated (M5 leads on D1, ties M4 on D2; C17 above every V2+V8 model). Previously #141's release — the C1–C20 and B0 re-run at c6931db (sidecars, Hits@k, device, pinned revisions; every metric equal to the stored one), regenerated tables, tag `v0.2.0-phase2-results` and its data archive (see "Release (#141)"). Previously #140 — per-dataset paired tests (bootstrap intervals, randomisation p-values, on MRR, Hits@1 and F1, with a Holm decision within group × column on MRR only) from new per-source sidecars; Wilcoxon kept as a cross-dataset consistency summary on MRR; `report.md` leads with MRR. Previously #141 — pinned model revisions, device check and recording (`--allow_device`), and `requirements-lock.txt`. Previously #142 — retire C12 (duplicate of C9; IDs not renumbered), move C19 to a sanity-check group and section, correct stale condition descriptions and PPAS labels, and average the report's summary table over dataset columns. Previously #145 — V8 excludes annotation predicates (FMA, oboInOwl, OWL axiom annotations, DBkWik page text, description/name vocabularies) instead of listing them as relationships; text inventory, per-predicate classification and V8 re-runs (`artifacts/issue-145/`). Previously #139 — re-ranking MRR and source-level Hits@1 as the paper's primary metrics (F1 secondary), one definition of each metric's unit, ceiling and 1:N handling, and tables that show the top-20 ceiling, D3 micro F1 and F1's reference counts (`artifacts/issue-139/`). Previously #138 — dataset and reference-alignment provenance, each dataset's protocol against its benchmark's official one, and the paper's datasets/protocol text (`artifacts/issue-138/`); #137 — stage-1 n-gram ranking baseline (B0) and the written evaluation protocol (`artifacts/issue-137/`); #136 — V1/V2 read the synonym and definition predicates D1/D2 actually use; #134 — text-serialization-order experiment on D1 and D2 (effect of item order with the selected set held fixed; order frozen on D2 validation before any test evaluation); #128, #130 and #131 merged (Phase 2)
+**Current focus**: Issue #163 — the condition × dataset gaps filled or justified: C4 (V3/M2) now runs on D1–D5, C7 (V6+V3/M2) on D1–D5 and C15 (V2+V8/M3) on D1/D2 (7 new cells at a6b5778, see "Coverage (#163)"); every other gap is by design (`artifacts/issue-163/coverage.md`). Previously #143 — CLAUDE.md corrected against the code and stored results (#134 test results, tags, dependencies, directory structure, padding drift) and README.md rewritten around the Phase 2 pipeline (install, data, run, reproduce; legacy Hydra scaffold as a short note). Previously #149 — Figure 1 and Figure 2 claims judged against #140 paired intervals under MRR (`scripts/figure_claims.py`, `artifacts/issue-149/`): Figure 1 kept with its claim reframed (no V8 advantage on D3; C3's lead sits on the non-CMT/EDAS pairs; CMT/EDAS are not the sparsest ontologies), Figure 2 kept with its claim restated (M5 leads on D1, ties M4 on D2; C17 above every V2+V8 model). Previously #141's release — the C1–C20 and B0 re-run at c6931db (sidecars, Hits@k, device, pinned revisions; every metric equal to the stored one), regenerated tables, tag `v0.2.0-phase2-results` and its data archive (see "Release (#141)"). Previously #140 — per-dataset paired tests (bootstrap intervals, randomisation p-values, on MRR, Hits@1 and F1, with a Holm decision within group × column on MRR only) from new per-source sidecars; Wilcoxon kept as a cross-dataset consistency summary on MRR; `report.md` leads with MRR. Previously #141 — pinned model revisions, device check and recording (`--allow_device`), and `requirements-lock.txt`. Previously #142 — retire C12 (duplicate of C9; IDs not renumbered), move C19 to a sanity-check group and section, correct stale condition descriptions and PPAS labels, and average the report's summary table over dataset columns. Previously #145 — V8 excludes annotation predicates (FMA, oboInOwl, OWL axiom annotations, DBkWik page text, description/name vocabularies) instead of listing them as relationships; text inventory, per-predicate classification and V8 re-runs (`artifacts/issue-145/`). Previously #139 — re-ranking MRR and source-level Hits@1 as the paper's primary metrics (F1 secondary), one definition of each metric's unit, ceiling and 1:N handling, and tables that show the top-20 ceiling, D3 micro F1 and F1's reference counts (`artifacts/issue-139/`). Previously #138 — dataset and reference-alignment provenance, each dataset's protocol against its benchmark's official one, and the paper's datasets/protocol text (`artifacts/issue-138/`); #137 — stage-1 n-gram ranking baseline (B0) and the written evaluation protocol (`artifacts/issue-137/`); #136 — V1/V2 read the synonym and definition predicates D1/D2 actually use; #134 — text-serialization-order experiment on D1 and D2 (effect of item order with the selected set held fixed; order frozen on D2 validation before any test evaluation); #128, #130 and #131 merged (Phase 2)
 
 ## Git Workflow
 
@@ -215,11 +215,11 @@ python scripts/generate_figure1_d3_scatter.py \
     --results_dir data/results/ --output_dir figures/ --metric mrr
 
 # Plot Figure 2: D1/D2 MRR (default; --metric hits_at_1 / f1) per model with
-# V2+V8 held constant, plus the C17 (V1/M4) reference bar. C15 has no D2 run,
-# so that bar is drawn as n/a. Writes figures/fig2_model_comparison.pdf
+# V2+V8 held constant, plus the C17 (V1/M4) reference bar (C15's D2 bar since
+# #163; a missing result is drawn as n/a). Writes figures/fig2_model_comparison.pdf
 # (+ .png; other metrics suffixed) and prints the values. Its claim (#149):
-# with V2+V8 fixed, M5 leads on D1 and ties M4 on D2, and no V2+V8 model
-# reaches C17 (V1/M4).
+# with V2+V8 fixed, M5 leads on D1 and ties M4 on D2 (M3 below both there),
+# and no V2+V8 model reaches C17 (V1/M4).
 python scripts/generate_figure2_model_comparison.py \
     --results_dir data/results/ --output_dir figures/ --metric mrr
 
@@ -228,6 +228,12 @@ python scripts/generate_figure2_model_comparison.py \
 # figures' paper text is artifacts/issue-149/paper_figures_section.tex.
 python scripts/figure_claims.py --results_dir data/results/ \
     --output_dir artifacts/issue-149/
+
+# Condition x column coverage (#163; registry and result files only, seconds):
+# every cell run (pair count), by design (reason) or registered but not run;
+# a gap with no registered reason raises. artifacts/issue-163/coverage.md.
+python scripts/coverage_table.py --results_dir data/results/ \
+    --output artifacts/issue-163/coverage.md
 
 # Padded vs unpadded embedding drift (#143; loads each model, one per
 # process; M3 needs --n 32) into artifacts/issue-143/padding_drift.{json,md}
@@ -1047,33 +1053,35 @@ python scripts/v8_fix_report.py --old_dir data/results/ --new_dir data/results_i
   D4_schema 0.8879, D4_instance 0.9049, D5 0.1808; F1 0.3062 / 0.6626 /
   0.5140 / 0.8090 / 0.8802 / 0.1730. Best MRR gain over B0: D1 +0.074 and
   D2 +0.085 (C4), D3 +0.043 (C1), D4_schema +0.033 (C3, C8 and C10 tie),
-  D4_instance +0.039 (C3). Counts below are from `baseline_comparison.md` as
-  regenerated in #165 (270 C-results: C12 retired in #142, V8 re-run in
-  #145, the sanity check C19 left out). Only about half the conditions beat
-  B0 on D1/D2 MRR (D1 7 of 14, D2 6 of 13). Better ranking need not mean better F1: on D3, 6 of 10
-  beat B0 on MRR but 1 of 10 on F1; on D4_instance 8 of 11 on MRR but none
+  D4_instance +0.041 (C4, run there in #163; C3 +0.039). Counts below are
+  from `baseline_comparison.md` as regenerated in #163 (277 C-results: C12
+  retired in #142, V8 re-run in #145, the #163 cells added, the sanity check
+  C19 left out). Only about half the conditions beat
+  B0 on D1/D2 MRR (D1 8 of 15, D2 7 of 15). Better ranking need not mean better F1: on D3, 6 of 10
+  beat B0 on MRR but 1 of 10 on F1; on D4_instance 9 of 12 on MRR but none
   on F1 (B0 0.8802 is the column's best F1, C20 0.8036 next). Every D5
   condition is below B0 on every metric (best C14 MRR −0.026);
   label/annotation-only conditions (C1, C2, C20) score MRR 0.042 and the
   V8 ones 0.034–0.049, near the 0.048 a random order of the same lists
   would get.
 - **Paired tests against B0 (#165)**: `paired_tests.run_baseline_tests` tests
-  every condition but C19 against B0 on each column it ran on (70 cells),
+  every condition but C19 against B0 on each column it ran on (77 cells
+  since #163; 70 before),
   condition − B0, with the #140 units, settings and sidecar/setup guards;
   `SidecarCache(results_dir, baseline_dir)` reads B0 from its own tree. MRR
   decision: Holm across every condition compared with B0 on one column (m =
-  the cells the registry assigns the column at the time of the run: D1 14,
-  D2 13, D3 10, D4 11 + 11, D5 11), an untested cell kept in its family with
+  the cells the registry assigns the column at the time of the run: D1 15,
+  D2 15, D3 10, D4 12 + 12, D5 13 since #163), an untested cell kept in its family with
   p = 1 (`apply_baseline_holm`); separate from the ablation-group families.
   Plan fixed on #165 before any test ran, including that a column gaining
   conditions (#163) grows its family and has its decisions recomputed.
   `aggregator.baseline_section_body` renders both the report section and
   the artifact, so the two never disagree.
-  Significantly above / below B0 on MRR: D1 5 / 6, D2 4 / 6, D3 1 / 2,
-  D4_schema 0 / 0, D4_instance 3 / 2, D5 0 / 11. Gains: D1 C4 +0.074, C3,
-  C17, C6, C16; D2 C4 +0.085, C17, C1, C3; D3 C1 +0.043; D4_instance C3
-  +0.039, C5, C7. The #163 cells (C4 D4/D5, C7 D1/D2/D5, C15 D2) join their
-  columns' families once run, so these counts are as of the 70-cell run.
+  Significantly above / below B0 on MRR (77 cells, #163): D1 5 / 6, D2 5 / 7,
+  D3 1 / 2, D4_schema 0 / 0, D4_instance 4 / 2, D5 0 / 13. Gains: D1 C4
+  +0.074, C3, C17, C6, C16; D2 C4 +0.085, C17, C1, C7, C3; D3 C1 +0.043;
+  D4_instance C4 +0.041, C3, C5, C7. Before #163 (70 cells): D2 4 / 6,
+  D4_instance 3 / 2, D5 0 / 11, the rest as now; no earlier decision flipped.
 - **Provenance** (`dataset_provenance.py`): every D1–D4 file is
   byte-identical to the OAEI MELT release (D1 = Bio-ML 2022
   `bio-ml-equiv-unsupervised/2022/snomed.body-fma.body`; SNOMED CT
@@ -1118,6 +1126,36 @@ python scripts/v8_fix_report.py --old_dir data/results/ --new_dir data/results_i
   full matching or all-target retrieval and not any OAEI/Bio-ML/OpenEA
   benchmark protocol; never compare these numbers head-to-head with
   published system scores.
+
+## Coverage (#163)
+
+- **Decision** (recorded on #163 before the runs): run C4 (V3/M2) on D4 and
+  D5, C7 (V6+V3/M2) on D1, D2 and D5, and C15 (V2+V8/M3) on D2 (Figure 2's
+  M3 bar). Every other gap is by design: M4 (C6, C11, C16, C17) is a
+  biomedical model, run on D1/D2; V4/V5 (C5, C8) are instance-oriented, run
+  on D4/D5; group D tests the no-budget M3 where texts are longest (C14 on
+  D5) and in Figure 2 (C15 on D1/D2); C19 is a sanity check on D1.
+  `scripts/coverage_table.py` writes the matrix with each reason
+  (`BY_DESIGN`) and raises on a gap that is neither registered nor justified.
+- **Analysis plan, fixed before the runs**: the registered comparison C10 vs
+  C15 (group D) and its PPAS-confound row cover D1 and D2 (group D on D2 is a
+  family of one); the B0 families grow as #165 fixed.
+- **Runs** (a6b5778, clean tree, MPS, pinned revisions, 3.6 h; 21:12–00:48
+  on the M4 Pro, ~2 h of it C4 on D4_instance), into
+  `data/results_issue163/`: the 7 new cells plus C4 on D2, which reproduces
+  the stored result exactly (metrics, counts and sidecar). Every new result
+  shares B0's candidates digest, protocol and population and passes
+  `check_sidecar`. The 7 new cells were copied into `data/results/`
+  (byte-identical; nothing replaced); the previous `report.md` is in
+  `data/results_pre163/`.
+- **Results (MRR, one pair per column)**: C4 D4_schema 0.9091, D4_instance
+  0.9455 (column best, C3 0.9443), D5 0.1147; C7 D1 0.7103, D2 0.8495, D5
+  0.1286; C15 D2 0.7252 (above M1/M2, below M4/M5 with V2+V8 fixed; Figure
+  2's claims stand). C4 and C7 now cover every D1–D4 column and get a Mean*
+  (MRR 0.8529, 0.8294). C7's former top summary mean came from covering D3/D4
+  only: on D1 it ties B0 (+0.005, n.s.) and on D2 trails C4 by 0.053.
+  Registered C10 vs C15 on D2 (group D, m = 1): MRR +0.027 [0.015, 0.040],
+  significant, as on D1 (+0.046); the Wilcoxon has 2 columns, not tested.
 
 ## Dataset provenance and benchmark protocols (#138)
 
@@ -1167,7 +1205,8 @@ python scripts/v8_fix_report.py --old_dir data/results/ --new_dir data/results_i
   (squash merges), so each carries an annotated `results/issue-*` tag on
   origin. Since #141 the 297 stored results (271 C, 26 B0) all come from
   `c6931db`, on `develop` and `main` and in both release tags
-  (`results_inventory.md`, regenerated in #168).
+  (`results_inventory.md`, regenerated in #168). #163 added 7 C-results
+  from `a6b5778` (304 in all; annotated tag `results/issue-163`).
 - **Reporting**: "controlled comparison under a re-ranking protocol", never
   benchmark results. No published score in our tables. Ranking and matching
   metrics are reported separately.

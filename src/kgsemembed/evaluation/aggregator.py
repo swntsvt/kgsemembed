@@ -215,6 +215,7 @@ class _PpasComparison:
 _PPAS_COMPARISONS = (
     _PpasComparison("C5", "C14", "D5", _CONFOUNDED_STRATEGY_AND_MODEL, _PPAS_NOT_ISOLATED),
     _PpasComparison("C10", "C15", "D1", _CONFOUNDED_MODEL, _PPAS_UNVARIED),
+    _PpasComparison("C10", "C15", "D2", _CONFOUNDED_MODEL, _PPAS_UNVARIED),
 )
 _NO_WARNING_CELL = ""
 

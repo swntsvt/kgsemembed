@@ -65,8 +65,8 @@ def test_artifacts_regenerate_byte_identically(tmp_path: Path) -> None:
 def test_markdown_lists_tested_cells_counts_and_untested_reasons(tmp_path: Path) -> None:
     text, rows = _run(tmp_path, "out")
     c1 = next(r for r in rows if r["condition_b"] == "C1" and r["dataset_id"] == "D1" and r["metric"] == "mrr")
-    assert c1["tested"] and c1["delta"] > 0 and c1["family_size"] == 14
-    assert "| D1 | 14 | 1 | 1 | 0 | 1 | 0 |" in text
+    assert c1["tested"] and c1["delta"] > 0 and c1["family_size"] == 15
+    assert "| D1 | 15 | 1 | 1 | 0 | 1 | 0 |" in text
     assert text.count("| C1 | V1 | M1 | D1 |") == 3
     assert "- C2 on D1: No results for C2/D1." in text
     assert text.endswith("\n") and not text.endswith("\n\n")

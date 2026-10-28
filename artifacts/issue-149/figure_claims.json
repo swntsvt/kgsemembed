@@ -1684,8 +1684,25 @@
       "p_value": 0.0999900009999,
       "n_units": 1198,
       "n_pairs": 1,
-      "family_size": 10,
+      "family_size": 15,
       "p_holm": 0.1999800019998
+    },
+    {
+      "dataset_id": "D2",
+      "condition_a": "C18",
+      "condition_b": "C15",
+      "metric": "mrr",
+      "tested": true,
+      "value_a": 0.6876659158908476,
+      "value_b": 0.7251735770209542,
+      "delta": 0.03750766113010662,
+      "ci_low": 0.025055892667898736,
+      "ci_high": 0.050101831736630575,
+      "p_value": 9.999000099990002e-05,
+      "n_units": 1198,
+      "n_pairs": 1,
+      "family_size": 15,
+      "p_holm": 0.0014998500149985003
     },
     {
       "dataset_id": "D2",
@@ -1701,8 +1718,8 @@
       "p_value": 9.999000099990002e-05,
       "n_units": 1198,
       "n_pairs": 1,
-      "family_size": 10,
-      "p_holm": 0.000999900009999
+      "family_size": 15,
+      "p_holm": 0.0014998500149985003
     },
     {
       "dataset_id": "D2",
@@ -1718,8 +1735,8 @@
       "p_value": 9.999000099990002e-05,
       "n_units": 1198,
       "n_pairs": 1,
-      "family_size": 10,
-      "p_holm": 0.000999900009999
+      "family_size": 15,
+      "p_holm": 0.0014998500149985003
     },
     {
       "dataset_id": "D2",
@@ -1735,8 +1752,25 @@
       "p_value": 9.999000099990002e-05,
       "n_units": 1198,
       "n_pairs": 1,
-      "family_size": 10,
-      "p_holm": 0.000999900009999
+      "family_size": 15,
+      "p_holm": 0.0014998500149985003
+    },
+    {
+      "dataset_id": "D2",
+      "condition_a": "C10",
+      "condition_b": "C15",
+      "metric": "mrr",
+      "tested": true,
+      "value_a": 0.6978307796695766,
+      "value_b": 0.7251735770209542,
+      "delta": 0.027342797351377568,
+      "ci_low": 0.014792972962322898,
+      "ci_high": 0.039974998909129145,
+      "p_value": 9.999000099990002e-05,
+      "n_units": 1198,
+      "n_pairs": 1,
+      "family_size": 15,
+      "p_holm": 0.0014998500149985003
     },
     {
       "dataset_id": "D2",
@@ -1752,8 +1786,8 @@
       "p_value": 9.999000099990002e-05,
       "n_units": 1198,
       "n_pairs": 1,
-      "family_size": 10,
-      "p_holm": 0.000999900009999
+      "family_size": 15,
+      "p_holm": 0.0014998500149985003
     },
     {
       "dataset_id": "D2",
@@ -1769,8 +1803,8 @@
       "p_value": 9.999000099990002e-05,
       "n_units": 1198,
       "n_pairs": 1,
-      "family_size": 10,
-      "p_holm": 0.000999900009999
+      "family_size": 15,
+      "p_holm": 0.0014998500149985003
     },
     {
       "dataset_id": "D2",
@@ -1786,8 +1820,59 @@
       "p_value": 9.999000099990002e-05,
       "n_units": 1198,
       "n_pairs": 1,
-      "family_size": 10,
-      "p_holm": 0.000999900009999
+      "family_size": 15,
+      "p_holm": 0.0014998500149985003
+    },
+    {
+      "dataset_id": "D2",
+      "condition_a": "C15",
+      "condition_b": "C11",
+      "metric": "mrr",
+      "tested": true,
+      "value_a": 0.7251735770209542,
+      "value_b": 0.7719022424197658,
+      "delta": 0.0467286653988116,
+      "ci_low": 0.03308149615515721,
+      "ci_high": 0.06035181660579588,
+      "p_value": 9.999000099990002e-05,
+      "n_units": 1198,
+      "n_pairs": 1,
+      "family_size": 15,
+      "p_holm": 0.0014998500149985003
+    },
+    {
+      "dataset_id": "D2",
+      "condition_a": "C15",
+      "condition_b": "C13",
+      "metric": "mrr",
+      "tested": true,
+      "value_a": 0.7251735770209542,
+      "value_b": 0.771717292490757,
+      "delta": 0.04654371546980285,
+      "ci_low": 0.03581089773478282,
+      "ci_high": 0.0573975154470393,
+      "p_value": 9.999000099990002e-05,
+      "n_units": 1198,
+      "n_pairs": 1,
+      "family_size": 15,
+      "p_holm": 0.0014998500149985003
+    },
+    {
+      "dataset_id": "D2",
+      "condition_a": "C15",
+      "condition_b": "C17",
+      "metric": "mrr",
+      "tested": true,
+      "value_a": 0.7251735770209542,
+      "value_b": 0.8605344285816645,
+      "delta": 0.13536085156071032,
+      "ci_low": 0.11470818481597762,
+      "ci_high": 0.15628379938619436,
+      "p_value": 9.999000099990002e-05,
+      "n_units": 1198,
+      "n_pairs": 1,
+      "family_size": 15,
+      "p_holm": 0.0014998500149985003
     },
     {
       "dataset_id": "D2",
@@ -1803,7 +1888,7 @@
       "p_value": 0.9754024597540246,
       "n_units": 1198,
       "n_pairs": 1,
-      "family_size": 10,
+      "family_size": 15,
       "p_holm": 0.9754024597540246
     },
     {
@@ -1820,8 +1905,8 @@
       "p_value": 9.999000099990002e-05,
       "n_units": 1198,
       "n_pairs": 1,
-      "family_size": 10,
-      "p_holm": 0.000999900009999
+      "family_size": 15,
+      "p_holm": 0.0014998500149985003
     },
     {
       "dataset_id": "D2",
@@ -1837,8 +1922,8 @@
       "p_value": 9.999000099990002e-05,
       "n_units": 1198,
       "n_pairs": 1,
-      "family_size": 10,
-      "p_holm": 0.000999900009999
+      "family_size": 15,
+      "p_holm": 0.0014998500149985003
     },
     {
       "dataset_id": "D2",
@@ -1852,6 +1937,21 @@
       "ci_low": -0.0033388981636059967,
       "ci_high": 0.03338898163606008,
       "p_value": 0.12288771122887711,
+      "n_units": 1198,
+      "n_pairs": 1
+    },
+    {
+      "dataset_id": "D2",
+      "condition_a": "C18",
+      "condition_b": "C15",
+      "metric": "hits_at_1",
+      "tested": true,
+      "value_a": 0.6193656093489148,
+      "value_b": 0.671118530884808,
+      "delta": 0.05175292153589317,
+      "ci_low": 0.03338898163606008,
+      "ci_high": 0.07011686143572615,
+      "p_value": 9.999000099990002e-05,
       "n_units": 1198,
       "n_pairs": 1
     },
@@ -1903,6 +2003,21 @@
     {
       "dataset_id": "D2",
       "condition_a": "C10",
+      "condition_b": "C15",
+      "metric": "hits_at_1",
+      "tested": true,
+      "value_a": 0.6343906510851419,
+      "value_b": 0.671118530884808,
+      "delta": 0.036727879799666074,
+      "ci_low": 0.017529215358931594,
+      "ci_high": 0.055926544240400666,
+      "p_value": 0.00029997000299970003,
+      "n_units": 1198,
+      "n_pairs": 1
+    },
+    {
+      "dataset_id": "D2",
+      "condition_a": "C10",
       "condition_b": "C11",
       "metric": "hits_at_1",
       "tested": true,
@@ -1941,6 +2056,51 @@
       "delta": 0.172787979966611,
       "ci_low": 0.1452420701168614,
       "ci_high": 0.20033388981636058,
+      "p_value": 9.999000099990002e-05,
+      "n_units": 1198,
+      "n_pairs": 1
+    },
+    {
+      "dataset_id": "D2",
+      "condition_a": "C15",
+      "condition_b": "C11",
+      "metric": "hits_at_1",
+      "tested": true,
+      "value_a": 0.671118530884808,
+      "value_b": 0.7045075125208681,
+      "delta": 0.03338898163606008,
+      "ci_low": 0.013355592654424098,
+      "ci_high": 0.05342237061769617,
+      "p_value": 0.0020997900209979003,
+      "n_units": 1198,
+      "n_pairs": 1
+    },
+    {
+      "dataset_id": "D2",
+      "condition_a": "C15",
+      "condition_b": "C13",
+      "metric": "hits_at_1",
+      "tested": true,
+      "value_a": 0.671118530884808,
+      "value_b": 0.7203672787979967,
+      "delta": 0.04924874791318867,
+      "ci_low": 0.03255425709515858,
+      "ci_high": 0.06594323873121877,
+      "p_value": 9.999000099990002e-05,
+      "n_units": 1198,
+      "n_pairs": 1
+    },
+    {
+      "dataset_id": "D2",
+      "condition_a": "C15",
+      "condition_b": "C17",
+      "metric": "hits_at_1",
+      "tested": true,
+      "value_a": 0.671118530884808,
+      "value_b": 0.8071786310517529,
+      "delta": 0.13606010016694492,
+      "ci_low": 0.10934891485809684,
+      "ci_high": 0.1636060100166945,
       "p_value": 9.999000099990002e-05,
       "n_units": 1198,
       "n_pairs": 1
@@ -2008,6 +2168,21 @@
     {
       "dataset_id": "D2",
       "condition_a": "C18",
+      "condition_b": "C15",
+      "metric": "f1",
+      "tested": true,
+      "value_a": 0.5948625506985128,
+      "value_b": 0.6076181734740707,
+      "delta": 0.012755622775557862,
+      "ci_low": -0.006648448881432457,
+      "ci_high": 0.03284367572820872,
+      "p_value": 0.2024797520247975,
+      "n_units": 1490,
+      "n_pairs": 1
+    },
+    {
+      "dataset_id": "D2",
+      "condition_a": "C18",
       "condition_b": "C11",
       "metric": "f1",
       "tested": true,
@@ -2053,6 +2228,21 @@
     {
       "dataset_id": "D2",
       "condition_a": "C10",
+      "condition_b": "C15",
+      "metric": "f1",
+      "tested": true,
+      "value_a": 0.575600565237871,
+      "value_b": 0.6076181734740707,
+      "delta": 0.0320176082361997,
+      "ci_low": 0.0111121213258831,
+      "ci_high": 0.052664350375283636,
+      "p_value": 0.0021997800219978004,
+      "n_units": 1469,
+      "n_pairs": 1
+    },
+    {
+      "dataset_id": "D2",
+      "condition_a": "C10",
       "condition_b": "C11",
       "metric": "f1",
       "tested": true,
@@ -2093,6 +2283,51 @@
       "ci_high": 0.1589898448306305,
       "p_value": 9.999000099990002e-05,
       "n_units": 1479,
+      "n_pairs": 1
+    },
+    {
+      "dataset_id": "D2",
+      "condition_a": "C15",
+      "condition_b": "C11",
+      "metric": "f1",
+      "tested": true,
+      "value_a": 0.6076181734740707,
+      "value_b": 0.6278625954198473,
+      "delta": 0.02024442194577669,
+      "ci_low": -0.0014913433156307995,
+      "ci_high": 0.04153981903077784,
+      "p_value": 0.0668933106689331,
+      "n_units": 1438,
+      "n_pairs": 1
+    },
+    {
+      "dataset_id": "D2",
+      "condition_a": "C15",
+      "condition_b": "C13",
+      "metric": "f1",
+      "tested": true,
+      "value_a": 0.6076181734740707,
+      "value_b": 0.6721687299403943,
+      "delta": 0.06455055646632368,
+      "ci_low": 0.04494133758163606,
+      "ci_high": 0.08391289396533723,
+      "p_value": 9.999000099990002e-05,
+      "n_units": 1463,
+      "n_pairs": 1
+    },
+    {
+      "dataset_id": "D2",
+      "condition_a": "C15",
+      "condition_b": "C17",
+      "metric": "f1",
+      "tested": true,
+      "value_a": 0.6076181734740707,
+      "value_b": 0.7081881533101045,
+      "delta": 0.10056997983603388,
+      "ci_low": 0.07537752664114393,
+      "ci_high": 0.12588351625465297,
+      "p_value": 9.999000099990002e-05,
+      "n_units": 1474,
       "n_pairs": 1
     },
     {

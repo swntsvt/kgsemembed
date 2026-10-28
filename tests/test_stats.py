@@ -431,6 +431,7 @@ def test_group_comparisons_pass_the_metric_through(tmp_path: Path) -> None:
 def test_registered_comparisons_list_every_group() -> None:
     comparisons = registered_comparisons()
     assert comparisons["E"] == (("C20", "C10", ("D1", "D2", "D3", "D4", "D5")),)
+    assert comparisons["D"][1] == ("C10", "C15", ("D1", "D2"))
     assert sum(len(c) for c in comparisons.values()) == 12
 
 
