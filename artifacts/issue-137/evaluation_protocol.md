@@ -37,12 +37,14 @@ construction:
 - threshold selection;
 - metric definitions and denominators.
 
-`baseline_comparison.md` checks this for every stored result: 278 of 278
-C-results match B0 on candidates, population block and protocol version.
+`baseline_comparison.md` checks this for every stored result: 277 of 277
+C-results (the sanity check C19 left out) match B0 on candidates, population
+block and protocol version.
 
 A condition's difference from B0 is therefore what embedding re-ranking adds
-or costs on identical inputs. Neither B0 nor the conditions can exceed the
-stage-1 candidate recall@20 (section 4).
+or costs on identical inputs. Neither B0 nor any condition can exceed the
+ceilings the stage-1 lists set (section 4): the ranking ceiling for MRR and
+Hits@k, candidate recall@20 for Recall@k.
 
 ## 2. Datasets and reference alignments
 
@@ -59,8 +61,9 @@ counterpart in a local copy of the OAEI MELT track repository
 (`oaei.webdatacommons.org/`). That covers the 4 D1 files, the 3 D2 files, all
 63 D3 files and the 3 D4 files; the SHA-256 values are in
 `dataset_provenance.md`. D5 is not distributed through that repository. Its
-files are recorded by SHA-256 only, and their identity with the OpenEA v2.0
-archive has not been rechecked here.
+eight files (triples, `ent_links` and the fold-1 splits) are byte-identical to
+`D_W_15K_V2/` in the OpenEA v2.0 archive, whose SHA-512 matches the digest
+pykeen pins for it (#138, `artifacts/issue-138/release_checks.md`).
 
 **D1 provenance.** All four local D1 files (`source.rdf`, `target.rdf`,
 `reference.rdf`, `input.rdf`) are byte-identical to
@@ -135,8 +138,8 @@ was a false positive.
 | D5 | 14,762 (with triples) | 14,992 Wikidata entities | 1,500 | 10,500 | 10,500 |
 
 D5 has 167 test links whose DBpedia source has no triples. Those sources are
-never ranked but stay in every denominator, contributing 0 to MRR and Recall@k
-and a false negative to F1.
+never ranked but stay in every denominator, contributing 0 to MRR, Hits@k and
+Recall@k and a false negative to F1.
 
 ## 4. Metrics
 
@@ -147,13 +150,22 @@ and a false negative to F1.
   several gold targets (1:N) is credited with the best one. A reference source
   with no ranked list, or with no gold target among its candidates, scores 0.
   Ranked sources without a reference are not in the mean.
+- **Hits@k** (k = 1, 5, 10; #139) is the fraction of test reference sources
+  with a gold target in their top k, with MRR's denominator and its credit for
+  a 1:N source. Hits@1 is the other primary metric; Recall@1 equals it on 1:1
+  references and is lower wherever a source has several gold targets (D1, D2,
+  one D3 pair).
 - **Recall@k** (k = 1, 5, 10) is the number of test reference *pairs* whose
   target appears in the source's top k, divided by the number of test
   references. Its denominator is therefore pairs, while MRR's is sources.
-- **Candidate recall@20** is Recall@20 of the stage-1 lists. It is the
-  ceiling no re-ranking can exceed. `candidate_recall_at_20` in every B0
-  result equals `scripts/compute_recall_at_20.py` (the same
-  `compute_recall_at_k`).
+- **Candidate recall@20** is Recall@20 of the stage-1 lists. It caps
+  Recall@k only. `candidate_recall_at_20` in every B0 result equals
+  `scripts/compute_recall_at_20.py` (the same `compute_recall_at_k`).
+- **Ranking ceiling** (`artifacts/issue-139/metric_ceilings.md`): the share
+  of test reference sources with a gold target in their list. It caps MRR and
+  Hits@k, and differs from candidate recall@20 under 1:N references (D1
+  0.8860 against 0.8578, D2 0.9499 against 0.9465). Every results table
+  prints its metric's ceiling row.
 
 **Pair-level matching metrics** (threshold-dependent):
 
@@ -205,9 +217,13 @@ B0 per column:
 | Metric | D1 | D2 | D3 | D4_schema | D4_instance | D5 |
 |---|---|---|---|---|---|---|
 | MRR | 0.7055 | 0.8175 | 0.7200 | 0.8879 | 0.9049 | 0.1808 |
-| Recall@1 | 0.5398 | 0.7446 | 0.6528 | 0.8636 | 0.8696 | 0.1544 |
+| Hits@1 | 0.6126 | 0.7546 | 0.6556 | 0.8636 | 0.8696 | 0.1544 |
 | F1 | 0.3062 | 0.6626 | 0.5140 | 0.8090 | 0.8802 | 0.1730 |
+| Ranking ceiling (MRR, Hits@1) | 0.8860 | 0.9499 | 0.8618 | 0.9318 | 0.9725 | 0.2667 |
 | Candidate recall@20 | 0.8578 | 0.9465 | 0.8621 | 0.9318 | 0.9725 | 0.2667 |
+
+Recall@1, a secondary table since #139, is in `baseline_comparison.md`; it
+equals Hits@1 except on D1 (0.5398), D2 (0.7446) and D3 (0.6528).
 
 The effect of re-ranking depends on the dataset.
 
@@ -218,7 +234,7 @@ out as in every results table):
 | Metric | D1 | D2 | D3 | D4_schema | D4_instance | D5 |
 |---|---|---|---|---|---|---|
 | MRR | 8 / 7 / 0 | 7 / 8 / 0 | 6 / 4 / 0 | 11 / 1 / 0 | 9 / 3 / 0 | 0 / 13 / 0 |
-| Recall@1 | 8 / 7 / 0 | 6 / 9 / 0 | 5 / 5 / 0 | 9 / 1 / 2 | 9 / 3 / 0 | 0 / 13 / 0 |
+| Hits@1 | 8 / 7 / 0 | 6 / 9 / 0 | 5 / 5 / 0 | 9 / 1 / 2 | 9 / 3 / 0 | 0 / 13 / 0 |
 | F1 | 9 / 6 / 0 | 8 / 7 / 0 | 1 / 9 / 0 | 10 / 1 / 1 | 0 / 12 / 0 | 0 / 13 / 0 |
 
 With paired intervals (#165, `artifacts/issue-165/baseline_paired_tests.md`;
@@ -263,7 +279,7 @@ conditions significantly above / below B0:
   as on the order. D3's validation sets are small (20% of 4–25 references per
   pair), and D4_instance's F1 counts only judgeable unmatched sources.
 - **Re-ranking reduces every metric on D5.** All 13 D5 conditions are below
-  B0 on MRR, Recall@1, Recall@10 and F1 (D5 section of
+  B0 on MRR, Hits@1, Recall@1, Recall@10 and F1 (D5 section of
   `baseline_comparison.md`).
 
 ### The D5 regression
@@ -319,11 +335,13 @@ only from Mean*, as before.
   test), so absolute D1 precision stays low. D1 results without
   `"n_train_refs": 726` in their population record predate the fix and are
   not comparable; the report, the results table and the ablation runners
-  refuse to combine them with post-fix results. The ablation and
-  serialization results of #122–#134 were not re-run, so their D1 numbers
-  remain on the pre-fix population.
-- **D5 release identity.** Checksums are recorded but not compared with the
-  OpenEA v2.0 archive.
+  refuse to combine them with post-fix results. The D1 runs of the #122,
+  #128 (and its validation follow-up) and #131 ablations were re-run on the
+  post-fix population in #164 (`data/results_issue164/`,
+  `artifacts/issue-164/`); the #134 serialization results were not, so their
+  D1 numbers remain on the pre-fix population.
+- **D5 release identity.** Verified in #138: every D5 file is byte-identical
+  to the OpenEA v2.0 archive (`artifacts/issue-138/release_checks.md`).
 - **One pair per column.** D1, D2, D4 and D5 are single pairs, and D3's 21
   pairs share seven ontologies. The intervals against B0 (#165) resample test
   sources within these pairs, so they describe these pairs, not other

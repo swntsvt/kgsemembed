@@ -9,7 +9,8 @@ writes a Markdown report of counts and metrics only (no entity text and no URIs)
   partial reference (D4) the ranked-source counts are left out of the check:
   an unmatched source is judged only when its top-ranked target is a
   reference target, so those counts depend on each method's ranking;
-- B0 per dataset column (MRR, Recall@1, Recall@10, F1, candidate recall@20)
+- B0 per dataset column (MRR, Hits@1, Recall@1, Recall@10, F1, candidate
+  recall@20)
   and its test-source gold-rank distribution from the B0 sidecars;
 - per metric, each condition's difference from B0 per dataset column, with
   counts above/below B0 and the best condition;
@@ -47,8 +48,10 @@ _LOGGER = logging.getLogger("kgsemembed.scripts.generate_baseline_comparison")
 
 _BASELINE_ID = "B0"
 _DATASETS = ("D1", "D2", "D3", "D4_schema", "D4_instance", "D5")
-_METRICS = ("mrr", "recall_at_1", "recall_at_10", "f1")
-_METRIC_NAMES = {"mrr": "MRR", "recall_at_1": "Recall@1", "recall_at_10": "Recall@10", "f1": "F1"}
+_METRICS = ("mrr", "hits_at_1", "recall_at_1", "recall_at_10", "f1")
+_METRIC_NAMES = {
+    "mrr": "MRR", "hits_at_1": "Hits@1", "recall_at_1": "Recall@1",
+    "recall_at_10": "Recall@10", "f1": "F1"}
 _MATCH_FIELDS = ("candidates_sha256", "population", "evaluation_protocol")
 _PREDICTION_DEPENDENT = ("n_val_ranked_sources", "n_test_ranked_sources")
 _RANK_BINS = (("1", 1, 1), ("2–5", 2, 5), ("6–10", 6, 10), ("11–20", 11, 20))
@@ -303,7 +306,7 @@ def _best(means: pd.DataFrame, conditions: List[str], dataset_id: str, metric: s
 
 
 def _d5_section(means: pd.DataFrame) -> List[str]:
-    rows = [[_BASELINE_ID, *(_fmt(_cell(means, _BASELINE_ID, "D5", m)) for m in _METRICS), *["—"] * 4]]
+    rows = [[_BASELINE_ID, *(_fmt(_cell(means, _BASELINE_ID, "D5", m)) for m in _METRICS), *["—"] * len(_METRICS)]]
     for c in _conditions(means):
         if _cell(means, c, "D5", "mrr") is None:
             continue
