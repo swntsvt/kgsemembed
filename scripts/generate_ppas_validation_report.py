@@ -28,6 +28,11 @@ python scripts/generate_ppas_validation_report.py \\
     --reference_dir data/results_ppas_controlled/ \\
     --results_dir data/results_ppas_validation/ \\
     --output data/results_ppas_validation/report.md
+
+# Post-#137 D1 re-run (#164)
+python scripts/generate_ppas_validation_report.py \\
+    --reference_dir data/results_issue164/ppas_controlled/ \\
+    --results_dir data/results_issue164/ppas_validation/
 """
 
 from __future__ import annotations
@@ -469,7 +474,7 @@ _READING = """## Reading this report
 - **Budgets share test sources.**  Differences between budgets are
   descriptive; no interval is given for them.
 - **The 48-token D1 rows are the #128 reference**, read from
-  `data/results_ppas_controlled/` and not rerun.
+  `{reference_dir}` and not rerun.
 - **Ranking metrics first.**  MRR and Recall@k do not depend on the
   validation-tuned threshold; F1, precision and recall do, and are tabulated
   separately.
@@ -557,7 +562,8 @@ def build_report(reference_dir: Path, results_dir: Path, figures_dir: Path, data
     figures_dir.mkdir(parents=True, exist_ok=True)
     prefix = _relative_prefix(figures_dir, results_dir)
     d1, d2 = groups_of(runs, "D1"), groups_of(runs, "D2")
-    sections = ["# Predicate-eligibility validation (#128 follow-up)", _READING,
+    reading = _READING.format(reference_dir=f"{reference_dir.as_posix().rstrip('/')}/")
+    sections = ["# Predicate-eligibility validation (#128 follow-up)", reading,
                 "## Execution record", completeness_section(runs), execution_record(runs),
                 "### Dataset versions", dataset_version_section(runs, data_dir),
                 "### Budget audit", budget_audit_section(runs)]

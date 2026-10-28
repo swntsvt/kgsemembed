@@ -431,6 +431,7 @@ if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
 import scripts.generate_ppas_ablation_report as report  # noqa: E402
+import scripts.generate_predicate_role_report as role_report  # noqa: E402
 
 
 def test_t_interval_matches_the_t_distribution():
@@ -641,8 +642,6 @@ def test_runs_with_different_signatures_are_never_combined(controlled_run):
 
 
 def test_role_report_reads_the_p1_link_run_from_the_given_tree(controlled_run, tmp_path):
-    import scripts.generate_predicate_role_report as role_report
-
     _, results_dir = controlled_run
     [link] = role_report.load_link_runs("D1", results_dir)
     assert link["condition_id"] == "PA-all-base-det-48"

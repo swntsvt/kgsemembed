@@ -29,6 +29,7 @@ one subtree per original tree, so the runners' known-pair check
 | `ppas_validation/` | `data/results_ppas_validation/` | 8: P1–P4 at 32 and 64 | D2 P1–P7 at 48 (7) |
 | `predicate_roles/` | `data/results_predicate_roles/` (#131) | 20: every D1 arm of `ROLE_MATRIX` | D2 (18) |
 
+The runs are `artifacts/issue-164/run_d1_reruns.sh` (refuses a dirty tree).
 Copied D2/D5 results and their sidecars are byte-identical to the originals.
 The original trees are kept unchanged as the pre-#137 record. The #131
 report reads the D1 P1@48 link run from `ppas_controlled/` and the D2 one from
