@@ -1,0 +1,58 @@
+% Token budgets and predicate-priority sampling: main-text section (#164).
+% Replaces the draft's description of PPAS as a novel contribution and its
+% future-work item "a genuine PPAS ablation" (done in #122/#128).
+% D1 numbers: post-#137 population (726 known pairs), re-run at 66aabc3,
+% artifacts/issue-164/reports/{ppas_ablation,ppas_controlled,ppas_validation}/.
+% D5 (#122, be06539) and D2 (#128 follow-up, 4a42227) are unaffected by #137.
+% Intervals: 95% paired bootstrap over the test reference sources of one pair
+% (2,000 resamples, seed 42); no significance test.
+
+\subsection{Token budgets and predicate-priority sampling}
+\label{sec:ppas}
+
+When an entity's key--value text (V3, V4, V6) exceeds the model's token
+budget, the verbaliser keeps triples greedily in a fixed predicate-tier
+order (for classes: lexical predicates such as labels, SKOS synonyms and
+definitions, then type and hierarchy, then a few structural predicates;
+predicates in no tier come last); we call this predicate-priority sampling
+(PPAS). Only C3, C4, C5 and C7 can
+invoke it, and at the budgets of the main conditions it rarely binds: in a
+controlled re-implementation with M2's real tokenizer, no D1 text exceeds
+420 tokens, and on D5 1.8\% of candidates do, with every selection policy
+reaching the full-text MRR ($0.178$). The main results therefore say little
+about PPAS, and we tested it separately.
+
+\paragraph{Controlled ablation.}
+One model (M2) and one key--value representation are held fixed and only the
+selection policy varies, under outcome-blind stress budgets set before any
+run (the pooled median full length, floored to a multiple of 8: 48 tokens on
+D1, 80 on D5). On D1 at 48 tokens PPAS reaches MRR $0.494$, above random
+selection ($0.406 \pm 0.001$ over five seeds), lexicographic deterministic
+selection ($0.357$) and even the untruncated text ($0.453$). On D5 at 80
+tokens PPAS cannot act: almost no D5 entity carries a tiered predicate, and
+PPAS equals deterministic selection ($0.150$; random $0.136$, full $0.178$).
+
+\paragraph{Eligibility, not priority.}
+PPAS does two things at once: it orders the tiered predicates and, since
+untiered predicates come last, it effectively excludes them under a tight
+budget. Seven policies separate the two on D1 at 48 tokens. Restricting
+selection to the tiered predicates explains the gain: with PPAS order in
+both arms, so that the label is kept in each, it adds $0.192$
+[$0.181$, $0.204$] MRR, and it adds $0.343$ [$0.330$, $0.355$] under
+lexicographic order. With the eligible set fixed, PPAS order is slightly
+\emph{worse} than lexicographic order ($-0.013$ [$-0.017$, $-0.010$]). The
+pattern holds at 32 and 64 tokens (eligibility $+0.229$ and $+0.215$;
+order $-0.014$ and $-0.002$) and on D2 at 48 tokens (eligibility $+0.093$
+[$0.076$, $0.111$]; there the two orders select identical texts, so the
+order effect is not identifiable). The apparent advantage of PPAS over
+lexicographic order with every predicate eligible ($+0.137$
+[$0.127$, $0.148$]) mostly reflects a weakness of the lexicographic
+baseline: FMA and oboInOwl predicates sort before \texttt{rdfs:label}, so
+under a tight budget lexicographic order drops the label of many
+candidates, while an order that simply puts label, type and superclass
+first, with no tiers, comes within $0.007$ of PPAS ($0.487$).
+
+We therefore do not present PPAS's tier ordering as a contribution. Under a
+tight budget, what matters is which predicates are eligible and that the
+label survives. These results come from one model and one pair per dataset,
+and we make no claim beyond them.

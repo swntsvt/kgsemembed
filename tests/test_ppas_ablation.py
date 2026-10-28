@@ -431,6 +431,7 @@ if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
 import scripts.generate_ppas_ablation_report as report  # noqa: E402
+import scripts.generate_predicate_role_report as role_report  # noqa: E402
 
 
 def test_t_interval_matches_the_t_distribution():
@@ -640,6 +641,14 @@ def test_runs_with_different_signatures_are_never_combined(controlled_run):
     assert "Missing policies: P2, P3, P4, P5, P6, P7" in text
 
 
+def test_role_report_reads_the_p1_link_run_from_the_given_tree(controlled_run, tmp_path):
+    _, results_dir = controlled_run
+    [link] = role_report.load_link_runs("D1", results_dir)
+    assert link["condition_id"] == "PA-all-base-det-48"
+    assert link["_source_dir"] == str(results_dir)
+    assert role_report.load_link_runs("D1", tmp_path / "absent") == []
+
+
 def test_duplicate_labels_within_one_signature_raise(controlled_run):
     _, results_dir = controlled_run
     runs = _controlled_runs(results_dir)
@@ -778,6 +787,16 @@ def test_validation_runs_cover_the_expected_matrix(validation_dirs):
     present = sorted((r["dataset_id"], r["token_budget"], report._label(r)) for r in runs)
     assert present == sorted(validation.expected_runs())
     assert len(present) == 3 * 4 + 7
+
+
+def test_validation_refuses_d1_budgets_from_different_populations(validation_dirs):
+    reference, results = validation_dirs
+    [path] = reference.glob("PA-all-base-det-48/D1/*_results.json")
+    stored = json.loads(path.read_text(encoding="utf-8"))
+    stored["population"]["n_train_refs"] = 726
+    path.write_text(json.dumps(stored), encoding="utf-8")
+    with pytest.raises(ValueError, match="known pairs"):
+        validation.collect_runs(reference, results)
 
 
 def test_validation_report_renders_both_analyses_separately(validation_dirs, tmp_path):
