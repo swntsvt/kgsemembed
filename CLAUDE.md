@@ -1206,7 +1206,7 @@ python scripts/v8_fix_report.py --old_dir data/results/ --new_dir data/results_i
   origin. Since #141 the 297 stored results (271 C, 26 B0) all come from
   `c6931db`, on `develop` and `main` and in both release tags
   (`results_inventory.md`, regenerated in #168). #163 added 7 C-results
-  from `a6b5778` (304 in all).
+  from `a6b5778` (304 in all; annotated tag `results/issue-163`).
 - **Reporting**: "controlled comparison under a re-ranking protocol", never
   benchmark results. No published score in our tables. Ranking and matching
   metrics are reported separately.
