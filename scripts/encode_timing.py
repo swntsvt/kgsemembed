@@ -286,7 +286,7 @@ def model_record(model: object, model_info: Dict[str, object], load_seconds: flo
     return {
         **model_info,
         "n_parameters": int(sum(parameter.numel() for parameter in model.parameters())),
-        "embedding_dimension": int(model.get_sentence_embedding_dimension()),
+        "embedding_dimension": int(model.get_embedding_dimension()),
         "load_seconds": load_seconds,
     }
 
