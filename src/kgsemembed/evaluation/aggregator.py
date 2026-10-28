@@ -733,8 +733,25 @@ def _cell(pivot: pd.DataFrame, condition_id: str, dataset_id: str) -> Optional[f
     return None if pd.isna(value) else float(value)
 
 
-def _tied_best(column: pd.Series) -> List[str]:
-    """Return every condition at the column's maximum, in registry order."""
+def tied_best(column: pd.Series) -> List[str]:
+    """
+    Return every condition at the column's maximum, in registry order.
+
+    Shared by ``report.md``'s summary and ``baseline_comparison.md`` (#179),
+    so both name the same tied conditions in the same order.
+
+    Parameters
+    ----------
+    column : pd.Series
+        Values indexed by condition ID, already rounded as printed and
+        without missing values.
+
+    Returns
+    -------
+    List[str]
+        Condition IDs at the maximum, in registry order; unregistered IDs
+        follow, sorted by ID.
+    """
     tied = column[column == column.max()].index
     return sorted(tied, key=lambda cid: (_REGISTRY_ORDER.get(cid, len(_REGISTRY_ORDER)), cid))
 
@@ -750,7 +767,7 @@ def _best_conditions(df: pd.DataFrame) -> List[tuple]:
     best: List[tuple] = []
     for dataset_id in breakdown.columns:
         column = breakdown[dataset_id].dropna()
-        best.extend((dataset_id, condition_id) for condition_id in _tied_best(column))
+        best.extend((dataset_id, condition_id) for condition_id in tied_best(column))
     return best
 
 

@@ -51,7 +51,7 @@ Every row ranks the same stored top-20 candidate lists for the same validation a
 | C18 | -0.0578 | -0.1299 | -0.0523 | +0.0212 | -0.0088 | -0.1470 |
 | C20 | -0.0844 | -0.0452 | +0.0264 | +0.0061 | +0.0061 | -0.1391 |
 | above / below / equal B0 | 8 / 7 / 0 | 7 / 8 / 0 | 6 / 4 / 0 | 11 / 1 / 0 | 9 / 3 / 0 | 0 / 13 / 0 |
-| best condition | C4 (0.7792) | C4 (0.9021) | C1 (0.7634) | C3 (0.9205) | C4 (0.9455) | C14 (0.1550) |
+| best condition | C4 (0.7792) | C4 (0.9021) | C1 (0.7634) | C3, C10, C8 (0.9205) | C4 (0.9455) | C14 (0.1550) |
 
 ## Hits@1: condition − B0
 
@@ -76,7 +76,7 @@ Every row ranks the same stored top-20 candidate lists for the same validation a
 | C18 | -0.0510 | -0.1352 | -0.0802 | +0.0227 | -0.0116 | -0.1482 |
 | C20 | -0.0773 | -0.0342 | +0.0384 | +0.0000 | +0.0152 | -0.1435 |
 | above / below / equal B0 | 8 / 7 / 0 | 6 / 9 / 0 | 5 / 5 / 0 | 9 / 1 / 2 | 9 / 3 / 0 | 0 / 13 / 0 |
-| best condition | C4 (0.7149) | C4 (0.8723) | C1 (0.7035) | C3 (0.9091) | C3 (0.9261) | C14 (0.1247) |
+| best condition | C4 (0.7149) | C4 (0.8723) | C1 (0.7035) | C3, C10, C8 (0.9091) | C3 (0.9261) | C14 (0.1247) |
 
 ## Recall@1: condition − B0
 
@@ -101,7 +101,7 @@ Every row ranks the same stored top-20 candidate lists for the same validation a
 | C18 | -0.0450 | -0.1334 | -0.0787 | +0.0227 | -0.0116 | -0.1482 |
 | C20 | -0.0681 | -0.0338 | +0.0387 | +0.0000 | +0.0152 | -0.1435 |
 | above / below / equal B0 | 8 / 7 / 0 | 6 / 9 / 0 | 5 / 5 / 0 | 9 / 1 / 2 | 9 / 3 / 0 | 0 / 13 / 0 |
-| best condition | C4 (0.6299) | C4 (0.8608) | C1 (0.7010) | C3 (0.9091) | C3 (0.9261) | C14 (0.1247) |
+| best condition | C4 (0.6299) | C4 (0.8608) | C1 (0.7010) | C3, C10, C8 (0.9091) | C3 (0.9261) | C14 (0.1247) |
 
 ## Recall@10: condition − B0
 
@@ -126,7 +126,7 @@ Every row ranks the same stored top-20 candidate lists for the same validation a
 | C18 | -0.0304 | -0.1129 | +0.0011 | +0.0227 | -0.0080 | -0.1476 |
 | C20 | -0.0343 | -0.0404 | +0.0160 | +0.0227 | +0.0000 | -0.1295 |
 | above / below / equal B0 | 9 / 6 / 0 | 6 / 9 / 0 | 7 / 3 / 0 | 11 / 1 / 0 | 9 / 2 / 1 | 0 / 13 / 0 |
-| best condition | C6 (0.8485) | C4 (0.9440) | C1 (0.8621) | C1 (0.9318) | C4 (0.9725) | C14 (0.2260) |
+| best condition | C6 (0.8485) | C4 (0.9440) | C1, C2 (0.8621) | C1, C2, C3, C10, C18, C4, C5, C7, C8, C13, C20 (0.9318) | C4 (0.9725) | C14 (0.2260) |
 
 ## F1: condition − B0
 

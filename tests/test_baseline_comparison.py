@@ -129,3 +129,16 @@ def test_column_mean_is_missing_when_counts_disagree_with_the_result() -> None:
     means = comparison.column_means([older], counts)
     assert comparison._cell(means, "C1", "D5", "hits_at_1") is None
     assert comparison._cell(means, "C1", "D5", "mrr") == 0.5
+
+
+def test_best_names_every_condition_tied_at_four_decimals() -> None:
+    payloads = [_payload("C10", 0.70001), _payload("C2", 0.6), _payload("C3", 0.7), _payload("C8", 0.69999)]
+    means = comparison.column_means(payloads)
+    conditions = comparison._conditions(means)
+    assert comparison._best(means, conditions, "D5", "mrr") == "C3, C10, C8 (0.7000)"
+
+
+def test_best_names_a_single_condition_without_a_tie() -> None:
+    means = comparison.column_means([_payload("C1", 0.5), _payload("C2", 0.6)])
+    assert comparison._best(means, comparison._conditions(means), "D5", "mrr") == "C2 (0.6000)"
+    assert comparison._best(means, comparison._conditions(means), "D1", "mrr") == "—"
