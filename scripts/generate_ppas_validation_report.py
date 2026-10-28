@@ -110,8 +110,9 @@ def collect_runs(reference_dir: Path, results_dir: Path) -> List[Run]:
     Raises
     ------
     ValueError
-        If the validation root holds a D1 run at the reference budget, or the
-        reference root holds anything but D1 at that budget.
+        If the validation root holds a D1 run at the reference budget, the
+        reference root holds anything but D1 at that budget, or the D1 runs
+        were scored with different numbers of known pairs (#137).
     """
     reference = _controlled_runs(reference_dir, str(reference_dir))
     validation = _controlled_runs(results_dir, str(results_dir))
@@ -119,7 +120,29 @@ def collect_runs(reference_dir: Path, results_dir: Path) -> List[Run]:
         raise ValueError(f"{reference_dir} holds runs other than D1 at {CONTROLLED_BUDGET} tokens.")
     if any(_is_reference(r) for r in validation):
         raise ValueError(f"{results_dir} holds D1 runs at {CONTROLLED_BUDGET}; that is the #128 reference.")
-    return [r for r in reference if base_report._label(r) in BASE_LABELS] + validation
+    runs = [r for r in reference if base_report._label(r) in BASE_LABELS] + validation
+    check_one_known_pair_count([r for r in runs if r["dataset_id"] == "D1"])
+    return runs
+
+
+def check_one_known_pair_count(runs: List[Run]) -> None:
+    """
+    Refuse D1 budget rows scored on different populations.
+
+    Parameters
+    ----------
+    runs : List[Run]
+        D1 reference and validation runs, shown side by side by budget.
+
+    Raises
+    ------
+    ValueError
+        If the runs record more than one ``population.n_train_refs``.
+    """
+    counts = sorted({r["population"].get("n_train_refs", 0) for r in runs})
+    if len(counts) > 1:
+        raise ValueError(f"D1 runs were scored with {counts} known pairs; pass a reference and "
+                         "validation tree from the same population.")
 
 
 def _is_reference(run: Run) -> bool:

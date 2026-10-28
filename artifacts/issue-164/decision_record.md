@@ -8,9 +8,9 @@ before #137 made D1's 726 Bio-ML validation mappings known pairs
 
 | Study | Issue(s) | Where | Reason |
 |---|---|---|---|
-| PPAS ablation and controlled policies | #122, #128, #128 follow-up | Main text, one short section | The draft calls PPAS a novel contribution and lists "a genuine PPAS ablation" as future work. Both need correcting with the evidence: the #122 gain is eligibility (excluding untiered predicates), not prioritisation (P4 − P3 ≈ 0 once eligibility is fixed), and P2 − P1 is mostly the lexicographic order dropping `rdfs:label`. |
+| PPAS ablation and controlled policies | #122, #128, #128 follow-up | Main text, one short section | The draft calls PPAS a novel contribution and lists "a genuine PPAS ablation" as future work. Both need correcting with the evidence: the #122 gain is eligibility (excluding untiered predicates), not prioritisation (P4 − P3 ≈ 0 once eligibility is fixed), and P2 − P1 is mostly the lexicographic order dropping `rdfs:label`. (Pre-#137 D1 numbers; re-checked on the re-run.) |
 | Predicate-role ablation | #131 | Appendix | Explains the #136 finding that synonyms and definitions added to V2 text hurt (C+syn, C+def), without adding a main-text claim. |
-| Serialization order | #134 | Follow-up paper; the paper cites none of its numbers | A large effect (D1 A0 MRR +0.19 under `label` vs `uri`) that needs its own treatment, and the C1–C20 conditions all use `uri` order. A D1 re-run would reopen the frozen test stage; not doing it keeps the freeze rules intact. |
+| Serialization order | #134 | Follow-up paper; the paper cites none of its numbers | A large effect (D1 A0 MRR +0.19 under `label` vs `uri`) that needs its own treatment, and none of the C1–C20 verbalisers uses the orders it compares. A D1 re-run would reopen the frozen test stage; not doing it keeps the freeze rules intact. |
 
 The draft's other future-work item, quantifying annotation density, is done
 in #149 (`artifacts/issue-149/`); the paper should cite it rather than

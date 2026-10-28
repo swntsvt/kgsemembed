@@ -789,6 +789,16 @@ def test_validation_runs_cover_the_expected_matrix(validation_dirs):
     assert len(present) == 3 * 4 + 7
 
 
+def test_validation_refuses_d1_budgets_from_different_populations(validation_dirs):
+    reference, results = validation_dirs
+    [path] = reference.glob("PA-all-base-det-48/D1/*_results.json")
+    stored = json.loads(path.read_text(encoding="utf-8"))
+    stored["population"]["n_train_refs"] = 726
+    path.write_text(json.dumps(stored), encoding="utf-8")
+    with pytest.raises(ValueError, match="known pairs"):
+        validation.collect_runs(reference, results)
+
+
 def test_validation_report_renders_both_analyses_separately(validation_dirs, tmp_path):
     reference, results = validation_dirs
     text = validation.build_report(reference, results, results / "figures", tmp_path)

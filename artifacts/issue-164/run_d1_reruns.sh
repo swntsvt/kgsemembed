@@ -22,4 +22,6 @@ run ppas_controlled PA-all-base-det-48 PA-all-base-ppas-48 PA-cov-base-det-48 \
 run ppas_validation PA-all-base-det-32 PA-all-base-ppas-32 PA-cov-base-det-32 \
     PA-cov-base-ppas-32 PA-all-base-det-64 PA-all-base-ppas-64 PA-cov-base-det-64 \
     PA-cov-base-ppas-64
-run predicate_roles $("$PY" -c "from kgsemembed.pipeline.ablation_conditions import ABLATION_CONDITIONS as A; print(' '.join(c.condition_id for c in A if c.is_role_ablation and 'D1' in c.datasets))")
+role_ids=$("$PY" -c "from kgsemembed.pipeline.ablation_conditions import ABLATION_CONDITIONS as A; print(' '.join(c.condition_id for c in A if c.is_role_ablation and 'D1' in c.datasets))")
+test -n "$role_ids" || { echo "No D1 predicate-role conditions found." >&2; exit 1; }
+run predicate_roles $role_ids
