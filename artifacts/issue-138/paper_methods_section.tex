@@ -1,9 +1,14 @@
 % Datasets, evaluation protocol and comparability: text for the paper (#138).
 % Citation keys are in artifacts/issue-138/references.bib. Every number is
-% taken from artifacts/issue-138/reference_statistics.md, release_checks.md
-% and artifacts/issue-137/evaluation_protocol.md; the per-benchmark detail
-% behind the last subsection is in benchmark_protocols.md.
-% Requires \usepackage{threeparttable} (already needed by Table 6).
+% taken from artifacts/issue-138/reference_statistics.md, release_checks.md,
+% artifacts/issue-139/metric_ceilings.md and
+% artifacts/issue-137/evaluation_protocol.md; the per-benchmark detail
+% behind the last subsection is in benchmark_protocols.md. The statistical
+% analysis subsection describes src/kgsemembed/evaluation/paired_tests.py
+% (#140, #165) and evaluation/stats.py, as report.md and
+% artifacts/issue-165/baseline_paired_tests.md apply them.
+% Requires \usepackage{threeparttable} (already needed by Table 6), and
+% \usepackage{url} (or hyperref) for the \url fields of references.bib.
 
 \subsection{Datasets and reference alignments}
 \label{sec:datasets}
@@ -31,7 +36,7 @@ OAEI track repository distributed through MELT~\cite{hertling2019melt}, D3's
 references additionally to the Conference track's ra1 archive (all 21 contain
 the same correspondences and ontology declarations; in one, the MELT copy
 moves a wrapper element that the original misplaces), and D5 to the
-OpenEA v2.0 archive, whose checksum matches the published one. Every
+OpenEA v2.0 archive, whose SHA-512 matches the digest PyKEEN pins for it. Every
 reference correspondence is an equivalence with confidence 1.0; none was
 filtered, normalised or deduplicated. The D4 schema/instance partition, by the
 source entity's \texttt{rdf:type}, reproduces the track's published sizes
@@ -48,18 +53,21 @@ sources have two or more gold targets.
 validation/test reference correspondences used here (D1--D4: the reference
 split 20/80 by source entity; D5: OpenEA fold~1). Test src: test sources
 with at least one reference. Targets: entities stage~1 ranks for every
-source. R@20: stage-1 candidate recall@20 on test references, the ceiling of
-every re-ranking result (D3: mean over 21 pairs).}
+source. R@20: stage-1 candidate recall@20 on test references (D3: mean over
+21 pairs), the ceiling of Recall@$k$. MRR and Hits@$k$ are capped instead by
+the share of test reference sources with a gold target among their
+candidates, which differs under one-to-many references (D1: 0.886); it is the
+ceiling row of the MRR and Hits@1 tables.}
 \label{tab:datasets}
 \begin{tabular}{llllrrrr}
 \hline
 \textbf{Col} & \textbf{Task} & \textbf{Release} & \textbf{Reference} & \textbf{Refs (val/test)} & \textbf{Test src} & \textbf{Targets} & \textbf{R@20} \\
 \hline
 D1 & SNOMED$\to$FMA, classes & Bio-ML 2022 & unsup.\ test, 6,530 & 1,304 / 5,226 & 4,605 & 64,726 & 0.858 \\
-D2 & MA$\to$NCI, classes & OAEI Anatomy & full, 1,516 & 302 / 1,214 & 1,198 & 3,304 & 0.947 \\
+D2 & MA$\to$NCI, classes & OAEI Anatomy & full, 1,516 & 302 / 1,214 & 1,198 & 3,304 & 0.946 \\
 D3 & 21 pairs, classes+props & OAEI Conference & ra1-M3, 305 & 54 / 251 & 250 & 74--181 & 0.862 \\
 D4$_{\mathrm{sc}}$ & memoryalpha$\to$stexp., schema & OAEI KG v4 & partial, 54 & 10 / 44 & 44 & 1,947 & 0.932 \\
-D4$_{\mathrm{in}}$ & memoryalpha$\to$stexp., instances & OAEI KG v4 & partial, 1,725 & 345 / 1,380 & 1,380 & 39,305 & 0.973 \\
+D4$_{\mathrm{in}}$ & memoryalpha$\to$stexp., instances & OAEI KG v4 & partial, 1,725 & 345 / 1,380 & 1,380 & 39,305 & 0.972 \\
 D5 & DBpedia$\to$Wikidata, instances & OpenEA v2.0 & fold 1, 15,000 & 1,500 / 10,500 & 10,500 & 14,992 & 0.267 \\
 \hline
 \end{tabular}
@@ -139,9 +147,62 @@ candidate lists, which miss every gold target of 525 test sources, the cap
 is 0.781. Each column reports one pair, except D3, which reports
 the unweighted mean over its 21 pairs; for F1 we also give the micro average
 (TP, FP and FN pooled over the pairs) and the validation and test reference
-counts behind each value. Statistical tests treat the dataset
-columns as observations, since D3's pairs share ontologies and are not
-independent.
+counts behind each value.
+
+\subsection{Statistical analysis}
+\label{sec:statistics}
+
+Every comparison is tested within each dataset column, on the units the
+metric counts. For MRR and Hits@1 the unit is a test reference source,
+credited once at its best-ranked gold target. For F1 the units are the test
+reference sources and every other test source that either method predicted
+(on D4, only predictions judged under its partial reference, i.e.\ those
+whose target is a reference target), each with its true positives, false
+positives and false negatives; F1 is recomputed from their sums. The statistic is the difference between the two
+methods' column values, as the tables report them (for D3, the mean of the
+21 pair values). Its 95\% interval is a percentile bootstrap that resamples
+units with replacement within each pair, so D3's pairs are strata and never
+pooled. Its $p$-value comes from a two-sided paired randomisation test that
+swaps the two methods' outcomes of each unit with probability $1/2$:
+$p = (1 + \#\{|\Delta^*| \geq |\Delta|\})/(R + 1)$. Both use $R = 10{,}000$
+replicates and seed 42. Two results are compared only if they share candidate
+lists, test references and gold targets, the evaluation protocol and the
+number of known pairs.
+
+Only MRR carries a significance decision. Its $p$-values are Holm-adjusted at
+$\alpha = 0.05$ within each family. For the twelve registered ablation
+comparisons, which fall into five groups, a family is one group on one
+column, and holds only the comparisons tested there (all of them were). Hits@1 is primary but largely determined by the first-rank term of
+MRR, and F1 is secondary; both are reported with their interval and
+unadjusted $p$-value and no decision, so that correlated tests do not each
+spend the full $\alpha$. Intervals are not adjusted.
+
+Every condition except the sanity check C19, which reproduces C10, is also
+compared with B0 on every column it was run on, with the same units and
+settings. Each column forms its own Holm family on
+MRR (15 conditions on D1 and D2, 10 on D3, 12 on each D4 pair and 13 on
+D5), separate from the ablation families. A comparison that could not be
+tested would enter its family with $p = 1$; every one was tested.
+
+As a summary of consistency across datasets, not a decision, each registered
+comparison is also given a two-sided Wilcoxon signed-rank test over the dataset
+columns on MRR and on F1 (zero differences dropped), with an exact sign-flip
+$p$-value and a Bonferroni
+correction within its ablation group. D3 enters as one column, since its
+pairs share seven ontologies and are not independent. Comparisons covering
+fewer than five columns are not tested. With six columns the smallest
+attainable $p$ is $2/2^6 = 0.031$, so only the group with a single comparison
+can reach significance.
+
+The figures rest on the same intervals and tests. Figure~1's overall
+comparison is a registered one, adjusted within its ablation group. The
+pairwise model comparisons behind Figure~2 are exploratory and form Holm
+families of their own, one per dataset, separate from the registered
+comparisons.
+
+All intervals resample test sources of the pairs studied. They describe
+uncertainty over sources within these pairs, not over other ontologies or
+knowledge graphs.
 
 \subsection{Relation to benchmark protocols}
 \label{sec:comparability}

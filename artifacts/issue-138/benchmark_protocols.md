@@ -46,7 +46,7 @@ what this permits.
 | MRR | test reference source | Σ 1 / rank of the source's best-ranked gold target | test reference sources | 1:N sources count once, credited with their best gold. A source whose gold is not in its list, or that has no list, scores 0. Ranked sources without a reference are ignored. |
 | Hits@k (1, 5, 10) (#139) | test reference source | sources with any gold target in their top k | test reference sources | Same unit and 1:N rule as MRR. Hits@1 and Recall@1 share their numerator (one rank-1 slot per source), so Hits@1 = Recall@1 × refs / sources exactly; results stored before #139 get it that way. |
 | Recall@k (1, 5, 10) | test reference pair | pairs whose target is in the source's top k | test reference pairs | Pairs, not sources: a 1:N source contributes one pair per gold target. |
-| Candidate recall@20 | test reference pair | pairs whose target is in the stage-1 list | test reference pairs | Ceiling for every re-ranking; equal for all conditions of a pair. |
+| Candidate recall@20 | test reference pair | pairs whose target is in the stage-1 list | test reference pairs | Ceiling of Recall@k; equal for all conditions of a pair. MRR and Hits@k are capped by the ranking ceiling instead (§1.2). |
 | Precision | prediction | correct predictions | test predictions | One prediction per test source: its top candidate if its score ≥ threshold. Includes unmatched sources (complete references) or only judgeable ones (D4). |
 | Recall | test reference pair | correct predictions | test reference pairs | Includes unreachable references (D5). A 1:N source can recover at most one of its pairs. |
 | F1 | — | — | — | Harmonic mean of the two above. |
@@ -60,21 +60,33 @@ Aggregation:
   same unweighted mean over the D3 pairs reporting each entity type, plus
   micro F1 pooled over them.
 - **Mean\*** averages D1–D4 (both D4 columns), never D5.
-- **Significance tests** treat dataset columns as observations; D3's pairs
-  share seven ontologies and are not independent. Every condition is also
-  tested against B0 per column with the #140 paired intervals (#165), on MRR
-  with Holm across the conditions compared with B0 on one column.
+- **Significance tests** (#140) are per-dataset paired tests within each
+  column: units are test reference sources (MRR, Hits@1; F1 adds other
+  predicted sources), 95% percentile bootstrap within pairs (D3's pairs are
+  strata), paired randomisation p, 10,000 replicates, seed 42
+  (`evaluation/paired_tests.py`). Only MRR gets a decision, Holm within each
+  ablation group × column; Hits@1 and F1 show interval and unadjusted p.
+  Every condition is also tested against B0 per column the same way (#165),
+  on MRR with Holm across the conditions compared with B0 on one column.
+- **Wilcoxon** over dataset columns (`evaluation/stats.py`) is a consistency
+  summary on MRR and F1, not the primary test: D3 is one column, since its
+  pairs share seven ontologies and are not independent.
 
 ### 1.2 Ceilings set by stage 1 and by one prediction per source
 
-| Column | Test refs | Test ref sources | Candidate recall@20 | Sources with no gold in list | Recall ceiling (top-1 rule) |
-|---|---|---|---|---|---|
-| D1 | 5,226 | 4,605 | 0.8578 | 525 | 0.7807 |
-| D2 | 1,214 | 1,198 | 0.9465 | 60 | 0.9374 |
-| D3 (21 pairs pooled) | 251 | 250 | 0.8566 | 36 | 0.8526 |
-| D4_schema | 44 | 44 | 0.9318 | 3 | 0.9318 |
-| D4_instance | 1,380 | 1,380 | 0.9725 | 38 | 0.9725 |
-| D5 | 10,500 | 10,500 | 0.2667 | 7,700 (167 with no list) | 0.2667 |
+| Column | Test refs | Test ref sources | Candidate recall@20 | Ranking ceiling | Sources with no gold in list | Recall ceiling (top-1 rule) |
+|---|---|---|---|---|---|---|
+| D1 | 5,226 | 4,605 | 0.8578 | 0.8860 | 525 | 0.7807 |
+| D2 | 1,214 | 1,198 | 0.9465 | 0.9499 | 60 | 0.9374 |
+| D3 (21 pairs pooled) | 251 | 250 | 0.8566 | 0.8560 | 36 | 0.8526 |
+| D4_schema | 44 | 44 | 0.9318 | 0.9318 | 3 | 0.9318 |
+| D4_instance | 1,380 | 1,380 | 0.9725 | 0.9725 | 38 | 0.9725 |
+| D5 | 10,500 | 10,500 | 0.2667 | 0.2667 | 7,700 (167 with no list) | 0.2667 |
+
+*Ranking ceiling* = test reference sources with a gold target in their list ÷
+test reference sources: the cap of MRR and Hits@k
+(`../issue-139/metric_ceilings.md`). Candidate recall@20 caps Recall@k only;
+the two differ under 1:N references (D1 0.8860 against 0.8578).
 
 *Recall ceiling* = test reference sources with at least one gold target in
 their list ÷ test references: the best recall any condition could reach with
@@ -84,7 +96,8 @@ per source alone caps recall at test reference sources ÷ test references
 gold targets are all missing (D1: 525), giving 0.781. On D1 the ceiling is
 0.077 below candidate recall@20 because 563 test sources have two or more gold
 targets but can predict only one. D3's column value is a mean of per-pair values (candidate recall@20
-0.8621), so its pooled figures here are for orientation only. Counts are from
+0.8621, ranking ceiling 0.8618), so its pooled figures here are for
+orientation only. Counts are from
 `reference_statistics.md` §4.
 
 ## 2. D1 — SNOMED CT ↔ FMA (body), Bio-ML
@@ -389,8 +402,9 @@ structure, subset, and one-prediction-per-source matching.
 
 **Implications.**
 
-- D5 MRR/Hits@1 are **within-candidate** ranking scores, capped by stage-1
-  recall@20. They cannot be compared with OpenEA's all-target Hits@1/MRR,
+- D5 MRR/Hits@1 are **within-candidate** ranking scores, capped by the
+  ranking ceiling (0.2667, equal to candidate recall@20 on D5's 1:1
+  reference). They cannot be compared with OpenEA's all-target Hits@1/MRR,
   which also come from supervised models.
 - Every embedding condition is below B0 on D5 (`baseline_comparison.md`).
 - D5 is excluded from Mean\*.
@@ -423,9 +437,10 @@ only transformations.
   BERTMapLt itself was not run, and nothing here is compared with its
   published scores.
 - Compare conditions only within a column and on matched populations;
-  `baseline_comparison.md` verifies 278/278 results share candidates,
-  population and protocol with B0.
-- Report ranking metrics (MRR, Recall@k: threshold-free, within candidates)
+  `baseline_comparison.md` verifies 277/277 results (the sanity check C19
+  left out) share candidates, population and protocol with B0.
+- Report ranking metrics (MRR and Hits@1, primary since #139, and Recall@k:
+  threshold-free, within candidates)
   and matching metrics (P/R/F1: top-1 above a validation-tuned threshold)
   separately; they can disagree (D3, D4_instance).
 - Report D5 and D4_schema with their caps and sizes (§1.2, §5).
