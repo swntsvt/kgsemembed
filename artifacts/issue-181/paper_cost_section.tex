@@ -44,8 +44,10 @@ to up to ten times as many. On D4$_{\mathrm{in}}$ the spread is 2.3M (V1) to
 often exceed the model's 512-token limit, because their budget is enforced
 on an estimate (1.3 tokens per word) rather than on the tokenizer's count.
 The model then truncates them: 14--28\% of the texts encoded by C3, C4, C5
-and C7 on D4$_{\mathrm{in}}$, and 24\% under C7 on D5. On D1, at most 83 texts
-in any condition exceed the limit.
+and C7 on D4$_{\mathrm{in}}$, and 24\% under C7 on D5. M4 (BioLORD) truncates
+at its own limit of 128 tokens, which cuts 13--22\% of the texts of C6 and
+C16 on D1 and D2 but almost none of C11 or C17. Apart from M4, at most 83
+texts on D1 exceed the limit in any condition.
 
 \paragraph{Wall-clock cost on D1.}
 Table~\ref{tab:cost_d1} times every condition registered on D1 in one

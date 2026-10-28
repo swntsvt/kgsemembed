@@ -4,7 +4,8 @@
     "condition_id": "C1",
     "strategy": "V1",
     "model_key": "M1",
-    "max_tokens": 256,
+    "max_seq_length": 256,
+    "registry_max_tokens": 256,
     "n_pairs": 1,
     "source": {
       "n_texts": 24182,
@@ -42,7 +43,8 @@
     "condition_id": "C2",
     "strategy": "V2",
     "model_key": "M1",
-    "max_tokens": 256,
+    "max_seq_length": 256,
+    "registry_max_tokens": 256,
     "n_pairs": 1,
     "source": {
       "n_texts": 24182,
@@ -80,7 +82,8 @@
     "condition_id": "C17",
     "strategy": "V1",
     "model_key": "M4",
-    "max_tokens": 512,
+    "max_seq_length": 128,
+    "registry_max_tokens": 512,
     "n_pairs": 1,
     "source": {
       "n_texts": 24182,
@@ -95,22 +98,22 @@
     "candidate": {
       "n_texts": 50103,
       "tokens": 859031,
-      "encoded_tokens": 859031,
+      "encoded_tokens": 858978,
       "mean": 17.14530068059797,
       "median": 14.0,
       "p95": 37.0,
       "max": 140,
-      "n_over_limit": 0
+      "n_over_limit": 9
     },
     "total": {
       "n_texts": 74285,
       "tokens": 1207707,
-      "encoded_tokens": 1207707,
+      "encoded_tokens": 1207654,
       "mean": 16.2577505552938,
       "median": 14.0,
       "p95": 35.0,
       "max": 140,
-      "n_over_limit": 0
+      "n_over_limit": 9
     }
   },
   {
@@ -118,7 +121,8 @@
     "condition_id": "C3",
     "strategy": "V2+V6",
     "model_key": "M2",
-    "max_tokens": 512,
+    "max_seq_length": 512,
+    "registry_max_tokens": 512,
     "n_pairs": 1,
     "source": {
       "n_texts": 24182,
@@ -156,7 +160,8 @@
     "condition_id": "C9",
     "strategy": "V8",
     "model_key": "M2",
-    "max_tokens": 512,
+    "max_seq_length": 512,
+    "registry_max_tokens": 512,
     "n_pairs": 1,
     "source": {
       "n_texts": 24182,
@@ -194,7 +199,8 @@
     "condition_id": "C10",
     "strategy": "V2+V8",
     "model_key": "M2",
-    "max_tokens": 512,
+    "max_seq_length": 512,
+    "registry_max_tokens": 512,
     "n_pairs": 1,
     "source": {
       "n_texts": 24182,
@@ -232,7 +238,8 @@
     "condition_id": "C18",
     "strategy": "V2+V8",
     "model_key": "M1",
-    "max_tokens": 256,
+    "max_seq_length": 256,
+    "registry_max_tokens": 256,
     "n_pairs": 1,
     "source": {
       "n_texts": 24182,
@@ -270,7 +277,8 @@
     "condition_id": "C4",
     "strategy": "V3",
     "model_key": "M2",
-    "max_tokens": 512,
+    "max_seq_length": 512,
+    "registry_max_tokens": 512,
     "n_pairs": 1,
     "source": {
       "n_texts": 24182,
@@ -308,37 +316,38 @@
     "condition_id": "C6",
     "strategy": "V2+V7",
     "model_key": "M4",
-    "max_tokens": 512,
+    "max_seq_length": 128,
+    "registry_max_tokens": 512,
     "n_pairs": 1,
     "source": {
       "n_texts": 24182,
       "tokens": 1213226,
-      "encoded_tokens": 1213156,
+      "encoded_tokens": 1201701,
       "mean": 50.17062277727235,
       "median": 44.0,
       "p95": 104.0,
       "max": 582,
-      "n_over_limit": 1
+      "n_over_limit": 464
     },
     "candidate": {
       "n_texts": 50103,
       "tokens": 4968043,
-      "encoded_tokens": 4968043,
+      "encoded_tokens": 4713705,
       "mean": 99.15659740933677,
       "median": 93.0,
       "p95": 164.0,
       "max": 425,
-      "n_over_limit": 0
+      "n_over_limit": 8865
     },
     "total": {
       "n_texts": 74285,
       "tokens": 6181269,
-      "encoded_tokens": 6181199,
+      "encoded_tokens": 5915406,
       "mean": 83.2101904826008,
       "median": 80.0,
       "p95": 155.0,
       "max": 582,
-      "n_over_limit": 1
+      "n_over_limit": 9329
     }
   },
   {
@@ -346,7 +355,8 @@
     "condition_id": "C7",
     "strategy": "V6+V3",
     "model_key": "M2",
-    "max_tokens": 512,
+    "max_seq_length": 512,
+    "registry_max_tokens": 512,
     "n_pairs": 1,
     "source": {
       "n_texts": 24182,
@@ -384,37 +394,38 @@
     "condition_id": "C11",
     "strategy": "V2+V8",
     "model_key": "M4",
-    "max_tokens": 512,
+    "max_seq_length": 128,
+    "registry_max_tokens": 512,
     "n_pairs": 1,
     "source": {
       "n_texts": 24182,
       "tokens": 753347,
-      "encoded_tokens": 753347,
+      "encoded_tokens": 753119,
       "mean": 31.153213133735836,
       "median": 28.0,
       "p95": 49.0,
       "max": 293,
-      "n_over_limit": 0
+      "n_over_limit": 4
     },
     "candidate": {
       "n_texts": 50103,
       "tokens": 1967994,
-      "encoded_tokens": 1967994,
+      "encoded_tokens": 1967239,
       "mean": 39.27896533141728,
       "median": 36.0,
       "p95": 63.0,
       "max": 186,
-      "n_over_limit": 0
+      "n_over_limit": 32
     },
     "total": {
       "n_texts": 74285,
       "tokens": 2721341,
-      "encoded_tokens": 2721341,
+      "encoded_tokens": 2720358,
       "mean": 36.633788786430635,
       "median": 34.0,
       "p95": 59.0,
       "max": 293,
-      "n_over_limit": 0
+      "n_over_limit": 36
     }
   },
   {
@@ -422,7 +433,8 @@
     "condition_id": "C13",
     "strategy": "V2+V8",
     "model_key": "M5",
-    "max_tokens": 512,
+    "max_seq_length": 512,
+    "registry_max_tokens": 512,
     "n_pairs": 1,
     "source": {
       "n_texts": 24182,
@@ -460,37 +472,38 @@
     "condition_id": "C16",
     "strategy": "V2+V8+V7",
     "model_key": "M4",
-    "max_tokens": 512,
+    "max_seq_length": 128,
+    "registry_max_tokens": 512,
     "n_pairs": 1,
     "source": {
       "n_texts": 24182,
       "tokens": 1512549,
-      "encoded_tokens": 1512465,
+      "encoded_tokens": 1492987,
       "mean": 62.54854850715408,
       "median": 56.0,
       "p95": 117.0,
       "max": 596,
-      "n_over_limit": 1
+      "n_over_limit": 780
     },
     "candidate": {
       "n_texts": 50103,
       "tokens": 5841805,
-      "encoded_tokens": 5841805,
+      "encoded_tokens": 5385677,
       "mean": 116.59591242041395,
       "median": 110.0,
       "p95": 180.0,
       "max": 441,
-      "n_over_limit": 0
+      "n_over_limit": 15258
     },
     "total": {
       "n_texts": 74285,
       "tokens": 7354354,
-      "encoded_tokens": 7354270,
+      "encoded_tokens": 6878664,
       "mean": 99.00187117183819,
       "median": 97.0,
       "p95": 172.0,
       "max": 596,
-      "n_over_limit": 1
+      "n_over_limit": 16038
     }
   },
   {
@@ -498,7 +511,8 @@
     "condition_id": "C15",
     "strategy": "V2+V8",
     "model_key": "M3",
-    "max_tokens": 8192,
+    "max_seq_length": 8192,
+    "registry_max_tokens": 8192,
     "n_pairs": 1,
     "source": {
       "n_texts": 24182,
@@ -536,7 +550,8 @@
     "condition_id": "C20",
     "strategy": "V2",
     "model_key": "M2",
-    "max_tokens": 512,
+    "max_seq_length": 512,
+    "registry_max_tokens": 512,
     "n_pairs": 1,
     "source": {
       "n_texts": 24182,
@@ -574,7 +589,8 @@
     "condition_id": "C1",
     "strategy": "V1",
     "model_key": "M1",
-    "max_tokens": 256,
+    "max_seq_length": 256,
+    "registry_max_tokens": 256,
     "n_pairs": 1,
     "source": {
       "n_texts": 2744,
@@ -612,7 +628,8 @@
     "condition_id": "C2",
     "strategy": "V2",
     "model_key": "M1",
-    "max_tokens": 256,
+    "max_seq_length": 256,
+    "registry_max_tokens": 256,
     "n_pairs": 1,
     "source": {
       "n_texts": 2744,
@@ -650,7 +667,8 @@
     "condition_id": "C17",
     "strategy": "V1",
     "model_key": "M4",
-    "max_tokens": 512,
+    "max_seq_length": 128,
+    "registry_max_tokens": 512,
     "n_pairs": 1,
     "source": {
       "n_texts": 2744,
@@ -665,22 +683,22 @@
     "candidate": {
       "n_texts": 3218,
       "tokens": 57364,
-      "encoded_tokens": 57364,
+      "encoded_tokens": 57362,
       "mean": 17.82597886886265,
       "median": 16.0,
       "p95": 34.149999999999636,
       "max": 130,
-      "n_over_limit": 0
+      "n_over_limit": 1
     },
     "total": {
       "n_texts": 5962,
       "tokens": 77942,
-      "encoded_tokens": 77942,
+      "encoded_tokens": 77940,
       "mean": 13.073129822207314,
       "median": 11.0,
       "p95": 29.0,
       "max": 130,
-      "n_over_limit": 0
+      "n_over_limit": 1
     }
   },
   {
@@ -688,7 +706,8 @@
     "condition_id": "C3",
     "strategy": "V2+V6",
     "model_key": "M2",
-    "max_tokens": 512,
+    "max_seq_length": 512,
+    "registry_max_tokens": 512,
     "n_pairs": 1,
     "source": {
       "n_texts": 2744,
@@ -726,7 +745,8 @@
     "condition_id": "C9",
     "strategy": "V8",
     "model_key": "M2",
-    "max_tokens": 512,
+    "max_seq_length": 512,
+    "registry_max_tokens": 512,
     "n_pairs": 1,
     "source": {
       "n_texts": 2744,
@@ -764,7 +784,8 @@
     "condition_id": "C10",
     "strategy": "V2+V8",
     "model_key": "M2",
-    "max_tokens": 512,
+    "max_seq_length": 512,
+    "registry_max_tokens": 512,
     "n_pairs": 1,
     "source": {
       "n_texts": 2744,
@@ -802,7 +823,8 @@
     "condition_id": "C18",
     "strategy": "V2+V8",
     "model_key": "M1",
-    "max_tokens": 256,
+    "max_seq_length": 256,
+    "registry_max_tokens": 256,
     "n_pairs": 1,
     "source": {
       "n_texts": 2744,
@@ -840,7 +862,8 @@
     "condition_id": "C4",
     "strategy": "V3",
     "model_key": "M2",
-    "max_tokens": 512,
+    "max_seq_length": 512,
+    "registry_max_tokens": 512,
     "n_pairs": 1,
     "source": {
       "n_texts": 2744,
@@ -878,7 +901,8 @@
     "condition_id": "C6",
     "strategy": "V2+V7",
     "model_key": "M4",
-    "max_tokens": 512,
+    "max_seq_length": 128,
+    "registry_max_tokens": 512,
     "n_pairs": 1,
     "source": {
       "n_texts": 2744,
@@ -893,22 +917,22 @@
     "candidate": {
       "n_texts": 3218,
       "tokens": 399584,
-      "encoded_tokens": 399344,
+      "encoded_tokens": 335259,
       "mean": 124.17153511497824,
       "median": 105.0,
       "p95": 252.0,
       "max": 642,
-      "n_over_limit": 6
+      "n_over_limit": 874
     },
     "total": {
       "n_texts": 5962,
       "tokens": 550403,
-      "encoded_tokens": 550163,
+      "encoded_tokens": 486078,
       "mean": 92.31851727608185,
       "median": 78.0,
       "p95": 205.94999999999982,
       "max": 642,
-      "n_over_limit": 6
+      "n_over_limit": 874
     }
   },
   {
@@ -916,7 +940,8 @@
     "condition_id": "C7",
     "strategy": "V6+V3",
     "model_key": "M2",
-    "max_tokens": 512,
+    "max_seq_length": 512,
+    "registry_max_tokens": 512,
     "n_pairs": 1,
     "source": {
       "n_texts": 2744,
@@ -954,7 +979,8 @@
     "condition_id": "C11",
     "strategy": "V2+V8",
     "model_key": "M4",
-    "max_tokens": 512,
+    "max_seq_length": 128,
+    "registry_max_tokens": 512,
     "n_pairs": 1,
     "source": {
       "n_texts": 2744,
@@ -969,22 +995,22 @@
     "candidate": {
       "n_texts": 3218,
       "tokens": 155718,
-      "encoded_tokens": 155718,
+      "encoded_tokens": 152257,
       "mean": 48.389683032939715,
       "median": 36.0,
       "p95": 111.14999999999964,
       "max": 265,
-      "n_over_limit": 0
+      "n_over_limit": 104
     },
     "total": {
       "n_texts": 5962,
       "tokens": 220479,
-      "encoded_tokens": 220479,
+      "encoded_tokens": 217018,
       "mean": 36.98071117074807,
       "median": 30.0,
       "p95": 90.94999999999982,
       "max": 265,
-      "n_over_limit": 0
+      "n_over_limit": 104
     }
   },
   {
@@ -992,7 +1018,8 @@
     "condition_id": "C13",
     "strategy": "V2+V8",
     "model_key": "M5",
-    "max_tokens": 512,
+    "max_seq_length": 512,
+    "registry_max_tokens": 512,
     "n_pairs": 1,
     "source": {
       "n_texts": 2744,
@@ -1030,7 +1057,8 @@
     "condition_id": "C16",
     "strategy": "V2+V8+V7",
     "model_key": "M4",
-    "max_tokens": 512,
+    "max_seq_length": 128,
+    "registry_max_tokens": 512,
     "n_pairs": 1,
     "source": {
       "n_texts": 2744,
@@ -1045,22 +1073,22 @@
     "candidate": {
       "n_texts": 3218,
       "tokens": 440858,
-      "encoded_tokens": 440534,
+      "encoded_tokens": 362996,
       "mean": 136.9975139838409,
       "median": 118.0,
       "p95": 264.0,
       "max": 654,
-      "n_over_limit": 6
+      "n_over_limit": 1181
     },
     "total": {
       "n_texts": 5962,
       "tokens": 626713,
-      "encoded_tokens": 626389,
+      "encoded_tokens": 548851,
       "mean": 105.1179134518618,
       "median": 90.0,
       "p95": 219.0,
       "max": 654,
-      "n_over_limit": 6
+      "n_over_limit": 1181
     }
   },
   {
@@ -1068,7 +1096,8 @@
     "condition_id": "C15",
     "strategy": "V2+V8",
     "model_key": "M3",
-    "max_tokens": 8192,
+    "max_seq_length": 8192,
+    "registry_max_tokens": 8192,
     "n_pairs": 1,
     "source": {
       "n_texts": 2744,
@@ -1106,7 +1135,8 @@
     "condition_id": "C20",
     "strategy": "V2",
     "model_key": "M2",
-    "max_tokens": 512,
+    "max_seq_length": 512,
+    "registry_max_tokens": 512,
     "n_pairs": 1,
     "source": {
       "n_texts": 2744,
@@ -1144,7 +1174,8 @@
     "condition_id": "C1",
     "strategy": "V1",
     "model_key": "M1",
-    "max_tokens": 256,
+    "max_seq_length": 256,
+    "registry_max_tokens": 256,
     "n_pairs": 21,
     "source": {
       "n_texts": 2291,
@@ -1182,7 +1213,8 @@
     "condition_id": "C2",
     "strategy": "V2",
     "model_key": "M1",
-    "max_tokens": 256,
+    "max_seq_length": 256,
+    "registry_max_tokens": 256,
     "n_pairs": 21,
     "source": {
       "n_texts": 2291,
@@ -1220,7 +1252,8 @@
     "condition_id": "C3",
     "strategy": "V2+V6",
     "model_key": "M2",
-    "max_tokens": 512,
+    "max_seq_length": 512,
+    "registry_max_tokens": 512,
     "n_pairs": 21,
     "source": {
       "n_texts": 2291,
@@ -1258,7 +1291,8 @@
     "condition_id": "C9",
     "strategy": "V8",
     "model_key": "M2",
-    "max_tokens": 512,
+    "max_seq_length": 512,
+    "registry_max_tokens": 512,
     "n_pairs": 21,
     "source": {
       "n_texts": 2291,
@@ -1296,7 +1330,8 @@
     "condition_id": "C10",
     "strategy": "V2+V8",
     "model_key": "M2",
-    "max_tokens": 512,
+    "max_seq_length": 512,
+    "registry_max_tokens": 512,
     "n_pairs": 21,
     "source": {
       "n_texts": 2291,
@@ -1334,7 +1369,8 @@
     "condition_id": "C18",
     "strategy": "V2+V8",
     "model_key": "M1",
-    "max_tokens": 256,
+    "max_seq_length": 256,
+    "registry_max_tokens": 256,
     "n_pairs": 21,
     "source": {
       "n_texts": 2291,
@@ -1372,7 +1408,8 @@
     "condition_id": "C4",
     "strategy": "V3",
     "model_key": "M2",
-    "max_tokens": 512,
+    "max_seq_length": 512,
+    "registry_max_tokens": 512,
     "n_pairs": 21,
     "source": {
       "n_texts": 2291,
@@ -1410,7 +1447,8 @@
     "condition_id": "C7",
     "strategy": "V6+V3",
     "model_key": "M2",
-    "max_tokens": 512,
+    "max_seq_length": 512,
+    "registry_max_tokens": 512,
     "n_pairs": 21,
     "source": {
       "n_texts": 2291,
@@ -1448,7 +1486,8 @@
     "condition_id": "C13",
     "strategy": "V2+V8",
     "model_key": "M5",
-    "max_tokens": 512,
+    "max_seq_length": 512,
+    "registry_max_tokens": 512,
     "n_pairs": 21,
     "source": {
       "n_texts": 2291,
@@ -1486,7 +1525,8 @@
     "condition_id": "C20",
     "strategy": "V2",
     "model_key": "M2",
-    "max_tokens": 512,
+    "max_seq_length": 512,
+    "registry_max_tokens": 512,
     "n_pairs": 21,
     "source": {
       "n_texts": 2291,
@@ -1524,7 +1564,8 @@
     "condition_id": "C1",
     "strategy": "V1",
     "model_key": "M1",
-    "max_tokens": 256,
+    "max_seq_length": 256,
+    "registry_max_tokens": 256,
     "n_pairs": 1,
     "source": {
       "n_texts": 4131,
@@ -1562,7 +1603,8 @@
     "condition_id": "C2",
     "strategy": "V2",
     "model_key": "M1",
-    "max_tokens": 256,
+    "max_seq_length": 256,
+    "registry_max_tokens": 256,
     "n_pairs": 1,
     "source": {
       "n_texts": 4131,
@@ -1600,7 +1642,8 @@
     "condition_id": "C3",
     "strategy": "V2+V6",
     "model_key": "M2",
-    "max_tokens": 512,
+    "max_seq_length": 512,
+    "registry_max_tokens": 512,
     "n_pairs": 1,
     "source": {
       "n_texts": 4131,
@@ -1638,7 +1681,8 @@
     "condition_id": "C9",
     "strategy": "V8",
     "model_key": "M2",
-    "max_tokens": 512,
+    "max_seq_length": 512,
+    "registry_max_tokens": 512,
     "n_pairs": 1,
     "source": {
       "n_texts": 4131,
@@ -1676,7 +1720,8 @@
     "condition_id": "C10",
     "strategy": "V2+V8",
     "model_key": "M2",
-    "max_tokens": 512,
+    "max_seq_length": 512,
+    "registry_max_tokens": 512,
     "n_pairs": 1,
     "source": {
       "n_texts": 4131,
@@ -1714,7 +1759,8 @@
     "condition_id": "C18",
     "strategy": "V2+V8",
     "model_key": "M1",
-    "max_tokens": 256,
+    "max_seq_length": 256,
+    "registry_max_tokens": 256,
     "n_pairs": 1,
     "source": {
       "n_texts": 4131,
@@ -1752,7 +1798,8 @@
     "condition_id": "C4",
     "strategy": "V3",
     "model_key": "M2",
-    "max_tokens": 512,
+    "max_seq_length": 512,
+    "registry_max_tokens": 512,
     "n_pairs": 1,
     "source": {
       "n_texts": 4131,
@@ -1790,7 +1837,8 @@
     "condition_id": "C5",
     "strategy": "V4",
     "model_key": "M2",
-    "max_tokens": 512,
+    "max_seq_length": 512,
+    "registry_max_tokens": 512,
     "n_pairs": 1,
     "source": {
       "n_texts": 4131,
@@ -1828,7 +1876,8 @@
     "condition_id": "C7",
     "strategy": "V6+V3",
     "model_key": "M2",
-    "max_tokens": 512,
+    "max_seq_length": 512,
+    "registry_max_tokens": 512,
     "n_pairs": 1,
     "source": {
       "n_texts": 4131,
@@ -1866,7 +1915,8 @@
     "condition_id": "C8",
     "strategy": "V5",
     "model_key": "M2",
-    "max_tokens": 512,
+    "max_seq_length": 512,
+    "registry_max_tokens": 512,
     "n_pairs": 1,
     "source": {
       "n_texts": 4131,
@@ -1904,7 +1954,8 @@
     "condition_id": "C13",
     "strategy": "V2+V8",
     "model_key": "M5",
-    "max_tokens": 512,
+    "max_seq_length": 512,
+    "registry_max_tokens": 512,
     "n_pairs": 1,
     "source": {
       "n_texts": 4131,
@@ -1942,7 +1993,8 @@
     "condition_id": "C20",
     "strategy": "V2",
     "model_key": "M2",
-    "max_tokens": 512,
+    "max_seq_length": 512,
+    "registry_max_tokens": 512,
     "n_pairs": 1,
     "source": {
       "n_texts": 4131,
@@ -1980,7 +2032,8 @@
     "condition_id": "C1",
     "strategy": "V1",
     "model_key": "M1",
-    "max_tokens": 256,
+    "max_seq_length": 256,
+    "registry_max_tokens": 256,
     "n_pairs": 1,
     "source": {
       "n_texts": 156581,
@@ -2018,7 +2071,8 @@
     "condition_id": "C2",
     "strategy": "V2",
     "model_key": "M1",
-    "max_tokens": 256,
+    "max_seq_length": 256,
+    "registry_max_tokens": 256,
     "n_pairs": 1,
     "source": {
       "n_texts": 156581,
@@ -2056,7 +2110,8 @@
     "condition_id": "C3",
     "strategy": "V2+V6",
     "model_key": "M2",
-    "max_tokens": 512,
+    "max_seq_length": 512,
+    "registry_max_tokens": 512,
     "n_pairs": 1,
     "source": {
       "n_texts": 156581,
@@ -2094,7 +2149,8 @@
     "condition_id": "C9",
     "strategy": "V8",
     "model_key": "M2",
-    "max_tokens": 512,
+    "max_seq_length": 512,
+    "registry_max_tokens": 512,
     "n_pairs": 1,
     "source": {
       "n_texts": 156581,
@@ -2132,7 +2188,8 @@
     "condition_id": "C10",
     "strategy": "V2+V8",
     "model_key": "M2",
-    "max_tokens": 512,
+    "max_seq_length": 512,
+    "registry_max_tokens": 512,
     "n_pairs": 1,
     "source": {
       "n_texts": 156581,
@@ -2170,7 +2227,8 @@
     "condition_id": "C18",
     "strategy": "V2+V8",
     "model_key": "M1",
-    "max_tokens": 256,
+    "max_seq_length": 256,
+    "registry_max_tokens": 256,
     "n_pairs": 1,
     "source": {
       "n_texts": 156581,
@@ -2208,7 +2266,8 @@
     "condition_id": "C4",
     "strategy": "V3",
     "model_key": "M2",
-    "max_tokens": 512,
+    "max_seq_length": 512,
+    "registry_max_tokens": 512,
     "n_pairs": 1,
     "source": {
       "n_texts": 156581,
@@ -2246,7 +2305,8 @@
     "condition_id": "C5",
     "strategy": "V4",
     "model_key": "M2",
-    "max_tokens": 512,
+    "max_seq_length": 512,
+    "registry_max_tokens": 512,
     "n_pairs": 1,
     "source": {
       "n_texts": 156581,
@@ -2284,7 +2344,8 @@
     "condition_id": "C7",
     "strategy": "V6+V3",
     "model_key": "M2",
-    "max_tokens": 512,
+    "max_seq_length": 512,
+    "registry_max_tokens": 512,
     "n_pairs": 1,
     "source": {
       "n_texts": 156581,
@@ -2322,7 +2383,8 @@
     "condition_id": "C8",
     "strategy": "V5",
     "model_key": "M2",
-    "max_tokens": 512,
+    "max_seq_length": 512,
+    "registry_max_tokens": 512,
     "n_pairs": 1,
     "source": {
       "n_texts": 156581,
@@ -2360,7 +2422,8 @@
     "condition_id": "C13",
     "strategy": "V2+V8",
     "model_key": "M5",
-    "max_tokens": 512,
+    "max_seq_length": 512,
+    "registry_max_tokens": 512,
     "n_pairs": 1,
     "source": {
       "n_texts": 156581,
@@ -2398,7 +2461,8 @@
     "condition_id": "C20",
     "strategy": "V2",
     "model_key": "M2",
-    "max_tokens": 512,
+    "max_seq_length": 512,
+    "registry_max_tokens": 512,
     "n_pairs": 1,
     "source": {
       "n_texts": 156581,
@@ -2436,7 +2500,8 @@
     "condition_id": "C1",
     "strategy": "V1",
     "model_key": "M1",
-    "max_tokens": 256,
+    "max_seq_length": 256,
+    "registry_max_tokens": 256,
     "n_pairs": 1,
     "source": {
       "n_texts": 14762,
@@ -2474,7 +2539,8 @@
     "condition_id": "C2",
     "strategy": "V2",
     "model_key": "M1",
-    "max_tokens": 256,
+    "max_seq_length": 256,
+    "registry_max_tokens": 256,
     "n_pairs": 1,
     "source": {
       "n_texts": 14762,
@@ -2512,7 +2578,8 @@
     "condition_id": "C3",
     "strategy": "V2+V6",
     "model_key": "M2",
-    "max_tokens": 512,
+    "max_seq_length": 512,
+    "registry_max_tokens": 512,
     "n_pairs": 1,
     "source": {
       "n_texts": 14762,
@@ -2550,7 +2617,8 @@
     "condition_id": "C9",
     "strategy": "V8",
     "model_key": "M2",
-    "max_tokens": 512,
+    "max_seq_length": 512,
+    "registry_max_tokens": 512,
     "n_pairs": 1,
     "source": {
       "n_texts": 14762,
@@ -2588,7 +2656,8 @@
     "condition_id": "C10",
     "strategy": "V2+V8",
     "model_key": "M2",
-    "max_tokens": 512,
+    "max_seq_length": 512,
+    "registry_max_tokens": 512,
     "n_pairs": 1,
     "source": {
       "n_texts": 14762,
@@ -2626,7 +2695,8 @@
     "condition_id": "C18",
     "strategy": "V2+V8",
     "model_key": "M1",
-    "max_tokens": 256,
+    "max_seq_length": 256,
+    "registry_max_tokens": 256,
     "n_pairs": 1,
     "source": {
       "n_texts": 14762,
@@ -2664,7 +2734,8 @@
     "condition_id": "C4",
     "strategy": "V3",
     "model_key": "M2",
-    "max_tokens": 512,
+    "max_seq_length": 512,
+    "registry_max_tokens": 512,
     "n_pairs": 1,
     "source": {
       "n_texts": 14762,
@@ -2702,7 +2773,8 @@
     "condition_id": "C5",
     "strategy": "V4",
     "model_key": "M2",
-    "max_tokens": 512,
+    "max_seq_length": 512,
+    "registry_max_tokens": 512,
     "n_pairs": 1,
     "source": {
       "n_texts": 14762,
@@ -2740,7 +2812,8 @@
     "condition_id": "C7",
     "strategy": "V6+V3",
     "model_key": "M2",
-    "max_tokens": 512,
+    "max_seq_length": 512,
+    "registry_max_tokens": 512,
     "n_pairs": 1,
     "source": {
       "n_texts": 14762,
@@ -2778,7 +2851,8 @@
     "condition_id": "C8",
     "strategy": "V5",
     "model_key": "M2",
-    "max_tokens": 512,
+    "max_seq_length": 512,
+    "registry_max_tokens": 512,
     "n_pairs": 1,
     "source": {
       "n_texts": 14762,
@@ -2816,7 +2890,8 @@
     "condition_id": "C13",
     "strategy": "V2+V8",
     "model_key": "M5",
-    "max_tokens": 512,
+    "max_seq_length": 512,
+    "registry_max_tokens": 512,
     "n_pairs": 1,
     "source": {
       "n_texts": 14762,
@@ -2854,7 +2929,8 @@
     "condition_id": "C14",
     "strategy": "V4+V6",
     "model_key": "M3",
-    "max_tokens": 8192,
+    "max_seq_length": 8192,
+    "registry_max_tokens": 8192,
     "n_pairs": 1,
     "source": {
       "n_texts": 14762,
@@ -2892,7 +2968,8 @@
     "condition_id": "C20",
     "strategy": "V2",
     "model_key": "M2",
-    "max_tokens": 512,
+    "max_seq_length": 512,
+    "registry_max_tokens": 512,
     "n_pairs": 1,
     "source": {
       "n_texts": 14762,
