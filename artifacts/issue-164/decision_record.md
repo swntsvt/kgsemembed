@@ -22,7 +22,7 @@ Every D1 run of the kept studies is re-run into `data/results_issue164/`,
 one subtree per original tree, so the runners' known-pair check
 (`check_known_pairs`) never sees two populations in one directory:
 
-| Subtree | Replaces D1 of | D1 conditions | Copied unchanged |
+| Subtree | Supersedes D1 of | D1 conditions | Copied unchanged |
 |---|---|---|---|
 | `ppas_ablation/` | `data/results_ppas_ablation/` (#122) | 8: `PA-det-48`, `PA-ppas-48`, `PA-rand-48-s0`…`s4`, `PA-full` | D5 (15 results) |
 | `ppas_controlled/` | `data/results_ppas_controlled/` (#128) | 7: P1–P7 at 48 | — |
@@ -30,6 +30,15 @@ one subtree per original tree, so the runners' known-pair check
 | `predicate_roles/` | `data/results_predicate_roles/` (#131) | 20: every D1 arm of `ROLE_MATRIX` | D2 (18) |
 
 The runs are `artifacts/issue-164/run_d1_reruns.sh` (refuses a dirty tree).
+
+The candidates are unchanged (`candidates_sha256` `a65eb2480a75…` in every
+old D1 ablation result, B0 and the C-results), so old and new D1 runs differ
+only in the population. Each new D1 result must record
+`population.n_train_refs == 726`, `n_test_refs == 5226` (as B0),
+that candidates digest, the commit the script started at and
+`git_dirty: false`. Ablation results record digests of the D1 files for
+source, target and reference only; `input.rdf` (the known pairs) is
+`a1754cc474a3…`, equal to `artifacts/issue-137/dataset_provenance.md`.
 Copied D2/D5 results and their sidecars are byte-identical to the originals.
 The original trees are kept unchanged as the pre-#137 record. The #131
 report reads the D1 P1@48 link run from `ppas_controlled/` and the D2 one from
