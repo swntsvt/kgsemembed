@@ -65,12 +65,43 @@ def _record() -> dict:
 
 
 def test_stage2_row_takes_the_median_encoding_pass():
-    row = cost.stage2_row(_record(), {"C1": {"total": {"encoded_tokens": 1234}}})
+    row = cost.stage2_row(_record(), {"C1": {"total": {"n_texts": 40, "encoded_tokens": 1234}}})
     assert row["encode"] == 7.0
     assert row["encode_range"] == (6.0, 11.5)
     assert row["stage2"] == 1.0 + 7.0 + 0.5
     assert row["n_texts"] == 40
     assert row["encoded_tokens"] == 1234
+
+
+def test_stage2_row_refuses_a_different_text_count():
+    with pytest.raises(ValueError, match="40 texts"):
+        cost.stage2_row(_record(), {"C1": {"total": {"n_texts": 41, "encoded_tokens": 1234}}})
+
+
+def test_warmup_sample_spreads_over_the_texts():
+    texts = [str(index) for index in range(1024)]
+    sample = timing.warmup_sample(texts)
+    assert len(sample) == timing.WARMUP_TEXTS
+    assert sample[0] == "0" and sample[-1] == "1020"
+    assert timing.warmup_sample(texts[:10]) == texts[:10]
+
+
+def _rendered(column: str) -> tuple:
+    row = cost.stage2_row(_record(), {"C1": {"total": {"n_texts": 40, "encoded_tokens": 1_234_567}}})
+    b0 = {"stage1": 0.21, "stage1_range": (0.2, 0.3), "mrr": 0.75, "n_sources": 10}
+    context = {"column": column, "note": "Apple M4 Pro, 48 GB, device mps", "repeats": 3}
+    return cost.render_markdown([row], b0, context), cost.render_latex([row], b0, context)
+
+
+def test_render_shows_rows_against_b0():
+    markdown, latex = _rendered("D1")
+    assert "| C1 | V1 | M1 | 23 | 40 | 1.23 | 1.0 | 7.0 (6.0–11.5) | 8.5 | 1.0× | 0.7000 | -0.0500 |" in markdown
+    assert r"C1 & V1 & M1 & 23 & 1.23 & 0.1 & 1.0 & 0.700 & $-$0.050 \\" in latex
+    assert "median of 3 passes" in latex and r"\label{tab:cost_d1}" in latex
+
+
+def test_render_latex_escapes_the_column_in_the_caption():
+    assert r"stage~2 on D4\_instance" in _rendered("D4_instance")[1]
 
 
 def _provenance(**changes: object) -> dict:

@@ -3,7 +3,8 @@
 One model per process.  For every compared condition of ``--model`` registered
 on ``--dataset`` (C19, the sanity check, left out), this re-runs the pipeline's
 stage 2 exactly as ``run_experiment._process_pair`` does and times its parts:
-verbalisation (once), source and candidate encoding (an untimed warm-up, then
+verbalisation (once), source and candidate encoding (an untimed warm-up on an
+even sample of the texts, then
 ``--repeats`` timed passes over every text), and ranking plus evaluation.  The
 run must reproduce the stored result's metrics exactly, and every repeat must
 return bitwise-identical embeddings, or nothing is written.  ``--stage1``
@@ -163,6 +164,27 @@ def verbalise_pair(
     return sources, uris, texts
 
 
+def warmup_sample(texts: List[str]) -> List[str]:
+    """
+    Pick about ``WARMUP_TEXTS`` texts spread evenly over the list.
+
+    The encoder sets one batch size per call from the average estimated
+    length, so an even spread gets the batch size of the full list and covers
+    its range of lengths, where the first texts alone may not.
+
+    Parameters
+    ----------
+    texts : List[str]
+        Texts of one role.
+
+    Returns
+    -------
+    List[str]
+        Every ``len(texts) // WARMUP_TEXTS``-th text (all of them if fewer).
+    """
+    return texts[:: max(1, len(texts) // WARMUP_TEXTS)]
+
+
 def timed_encodes(
     encoder: EmbeddingEncoder, texts: List[str], role: str, repeats: int
 ) -> Tuple[np.ndarray, List[float]]:
@@ -190,7 +212,7 @@ def timed_encodes(
     TimingCheckError
         If a pass returns embeddings that differ from the first.
     """
-    encoder.encode_batch(texts[:WARMUP_TEXTS], role=role, show_progress=False)
+    encoder.encode_batch(warmup_sample(texts), role=role, show_progress=False)
     first, seconds = None, []
     for _ in range(repeats):
         embeddings, elapsed = timed(lambda: encoder.encode_batch(texts, role=role, show_progress=True))
