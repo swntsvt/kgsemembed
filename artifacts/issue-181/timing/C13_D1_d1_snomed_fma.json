@@ -1,0 +1,58 @@
+{
+  "condition_id": "C13",
+  "strategy": "V2+V8",
+  "model_key": "M5",
+  "column": "D1",
+  "pair_name": "d1_snomed_fma",
+  "n_source_texts": 24182,
+  "n_candidate_texts": 50103,
+  "verbalise_seconds": 2.614026916009607,
+  "source_encode_seconds": [
+    1044.8130705830117,
+    1030.4277655000042,
+    1032.1172990420018
+  ],
+  "candidate_encode_seconds": [
+    2207.108718333009,
+    2212.2869175829983,
+    2219.0954667919723
+  ],
+  "rank_evaluate_seconds": 0.4969581670011394,
+  "metrics": {
+    "mrr": 0.7131967130390401,
+    "hits_at_1": 0.6290988056460369,
+    "f1": 0.4020541350165828,
+    "precision": 0.455957291919437,
+    "recall": 0.35954841178721775,
+    "threshold": 0.7
+  },
+  "reproduces_stored": true,
+  "git_commit": "bf8d7f6760573610abb4547bb9c1cf71ad950884",
+  "machine": {
+    "chip": "Apple M4 Pro",
+    "memory_bytes": 68719476736,
+    "platform": "macOS-27.2-arm64-arm-64bit",
+    "versions": {
+      "python": "3.12.15",
+      "torch": "2.11.0",
+      "transformers": "5.5.4",
+      "sentence_transformers": "5.4.0",
+      "numpy": "2.5.3",
+      "scipy": "1.18.1",
+      "rdflib": "7.6.0"
+    }
+  },
+  "model": {
+    "model_key": "M5",
+    "model_id": "dunzhang/stella_en_1.5B_v5",
+    "device": "mps",
+    "hf_revision": "7817065102fd9e1b031fe874e910c01f40b2f001",
+    "hf_revision_pinned": "7817065102fd9e1b031fe874e910c01f40b2f001",
+    "device_override": false,
+    "n_parameters": 1544842752,
+    "embedding_dimension": 1024,
+    "load_seconds": 7.314473708014702
+  },
+  "dataset_load_seconds": 33.46874450001633,
+  "repeats": 3
+}
