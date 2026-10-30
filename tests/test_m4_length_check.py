@@ -32,11 +32,11 @@ def test_validation_pair_refuses_a_source_in_both_splits() -> None:
 
 def test_m4_limit_sets_the_budget_and_restores_the_registry() -> None:
     before = get_model_config("M4")
-    with check.m4_limit(512):
-        assert get_model_config("M4").max_tokens == 512
-        assert budget_tokens("M4") == 420
+    with check.m4_limit(128):
+        assert get_model_config("M4").max_tokens == 128
+        assert budget_tokens("M4") == 128
     assert get_model_config("M4") is before
-    assert budget_tokens("M4") == 128
+    assert budget_tokens("M4") == 420
 
 
 def _row(high: float) -> dict:

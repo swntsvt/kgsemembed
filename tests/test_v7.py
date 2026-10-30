@@ -536,7 +536,7 @@ def test_context_fits_what_earlier_components_left(word_budget) -> None:
 
 def test_budget_is_the_models_in_tokens() -> None:
     assert _v("M2").budget.tokens == 420
-    assert _v("M4").budget.tokens == 128
+    assert _v("M4").budget.tokens == 420
     assert _v("M3").budget is None
 
 

@@ -122,10 +122,12 @@ MODEL_REGISTRY: Dict[str, ModelConfig] = {
         model_key="M4",
         model_id="FremyCompany/BioLORD-2023",
         revision="167aab527b238a50ca65224e6319215d2ff4fc9f",
-        # The model's own sentence_bert_config.json sets 128, which every
-        # stored M4 result was encoded at (#183); 512 is its architectural
-        # limit, decided by the #183 validation experiment.
-        max_tokens=128,
+        # The model's own sentence_bert_config.json sets 128, which every M4
+        # result before #183 was encoded at.  512 is its architectural limit
+        # (514 positions, offset by 2), registered by the rule fixed on #183
+        # before scripts/m4_length_check.py compared the two on validation
+        # sources only (artifacts/issue-183/m4_length_check.md).
+        max_tokens=512,
         ppas_budget=420,
         query_prefix=None,
         doc_prefix=None,

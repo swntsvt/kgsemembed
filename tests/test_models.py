@@ -33,7 +33,7 @@ EXPECTED_MAX_TOKENS = {
     "M2": 512,
     "M2_uncapped": 512,
     "M3": 8192,
-    "M4": 128,
+    "M4": 512,
     "M5": 512,
 }
 

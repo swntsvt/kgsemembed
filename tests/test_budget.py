@@ -109,7 +109,7 @@ def test_budget_is_the_ppas_budget_capped_at_the_input_limit() -> None:
     for key in MODEL_REGISTRY:
         expected = None if PPAS_BUDGETS[key] is None else min(PPAS_BUDGETS[key], get_model_config(key).max_tokens)
         assert budget_tokens(key) == expected
-    assert budget_tokens("M4") == 128
+    assert budget_tokens("M4") == 420
 
 
 @pytest.mark.parametrize(
