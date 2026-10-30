@@ -77,6 +77,38 @@ def annotation_predicates_digest() -> str:
     return hashlib.sha256(encoded).hexdigest()
 
 
+_INLINED_DATATYPE = re.compile(r'^"(.*)"\^\^<[^>]*>$', re.DOTALL)
+
+
+def literal_text(literal: Literal) -> str:
+    """Return a literal's text without an inlined OpenEA datatype suffix.
+
+    OpenEA triple files (D5) store a typed literal as one string,
+    ``"2008-10-29"^^<http://www.w3.org/2001/XMLSchema#date>``, which the loader
+    keeps as a plain literal.  The suffix is boilerplate shared by nearly
+    every entity, so it is removed before any token counting (#183), with the
+    same pattern stage 1 uses (``candidates.ngram._literal_text``).  Only a
+    plain literal whose whole text has that shape is changed, and the quoted
+    value is returned verbatim (no unescaping); a literal with an rdflib
+    datatype or language tag, and any other text, is returned as it is.
+
+    Parameters
+    ----------
+    literal : Literal
+        The literal to render.
+
+    Returns
+    -------
+    str
+        The literal's text, the inlined suffix and its quotes removed.
+    """
+    text = str(literal)
+    if literal.datatype is not None or literal.language is not None:
+        return text
+    match = _INLINED_DATATYPE.match(text)
+    return match.group(1) if match else text
+
+
 def is_english_or_untagged(literal: Literal) -> bool:
     """
     Return whether ``literal`` is untagged or tagged English (``en``, ``en-*``).
@@ -400,7 +432,7 @@ class VerbaliserBase(ABC):
         key = "type" if is_type else self._resolve_predicate_from_graph(graph, pred)
 
         if isinstance(obj, Literal):
-            value = str(obj)
+            value = literal_text(obj)
         elif isinstance(obj, URIRef):
             value = self.get_label_or_local(graph, obj)
         else:
