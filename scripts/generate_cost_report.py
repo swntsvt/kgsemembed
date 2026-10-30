@@ -51,6 +51,8 @@ MODEL_NAMES = {
 }
 _REGISTRY_ORDER = [condition.condition_id for condition in EXPERIMENT_CONDITIONS]
 _INK, _MUTED, _GRID = "#1f1f1e", "#6b6a64", "#e4e3de"
+LABEL_PLACEMENT = {"C7": ((-5, -11), "right"), "C13": ((0, 6), "center")}
+B0_LABEL_X = 0.12
 
 
 def read_json(path: Path) -> object:
@@ -363,7 +365,7 @@ def plot(rows: List[Dict[str, object]], b0: Dict[str, object], column: str, stem
     figure, axes = plt.subplots(figsize=(6.4, 4.0))
     _style_axes(axes, column)
     axes.axhline(b0["mrr"], color=_MUTED, linestyle="--", linewidth=1.2)
-    axes.annotate(f"B0, stage 1 only ({b0['stage1']:.3g} s)", (0.01, b0["mrr"]), xycoords=("axes fraction", "data"),
+    axes.annotate(f"B0, stage 1 only ({b0['stage1']:.3g} s)", (B0_LABEL_X, b0["mrr"]), xycoords=("axes fraction", "data"),
                   xytext=(0, 4), textcoords="offset points", color=_MUTED, fontsize=8)
     for key, (colour, marker) in MODEL_STYLE.items():
         own = [row for row in rows if row["model_key"] == key]
@@ -372,7 +374,8 @@ def plot(rows: List[Dict[str, object]], b0: Dict[str, object], column: str, stem
         axes.scatter([r["stage2"] for r in own], [r["mrr"] for r in own], s=46, color=colour, marker=marker,
                      edgecolors="white", linewidths=1.5, label=MODEL_NAMES[key], zorder=3)
         for row in own:
-            axes.annotate(row["condition_id"], (row["stage2"], row["mrr"]), xytext=(5, 3),
+            offset, align = LABEL_PLACEMENT.get(row["condition_id"], ((5, 3), "left"))
+            axes.annotate(row["condition_id"], (row["stage2"], row["mrr"]), xytext=offset, ha=align,
                           textcoords="offset points", fontsize=7.5, color=_INK)
     axes.legend(frameon=False, fontsize=8, loc="best")
     figure.tight_layout()

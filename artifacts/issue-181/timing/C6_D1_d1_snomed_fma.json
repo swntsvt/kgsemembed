@@ -1,0 +1,58 @@
+{
+  "condition_id": "C6",
+  "strategy": "V2+V7",
+  "model_key": "M4",
+  "column": "D1",
+  "pair_name": "d1_snomed_fma",
+  "n_source_texts": 24182,
+  "n_candidate_texts": 50103,
+  "verbalise_seconds": 10.276581915997667,
+  "source_encode_seconds": [
+    100.0650495410082,
+    99.9205221660086,
+    100.01772608299507
+  ],
+  "candidate_encode_seconds": [
+    297.5674939590099,
+    297.55982683299226,
+    297.55638033300056
+  ],
+  "rank_evaluate_seconds": 0.4828040409774985,
+  "metrics": {
+    "mrr": 0.754846890418007,
+    "hits_at_1": 0.6783930510314875,
+    "f1": 0.44131832797427656,
+    "precision": 0.46466356326703345,
+    "recall": 0.42020665901262916,
+    "threshold": 0.87
+  },
+  "reproduces_stored": true,
+  "git_commit": "bf8d7f6760573610abb4547bb9c1cf71ad950884",
+  "machine": {
+    "chip": "Apple M4 Pro",
+    "memory_bytes": 68719476736,
+    "platform": "macOS-27.2-arm64-arm-64bit",
+    "versions": {
+      "python": "3.12.15",
+      "torch": "2.11.0",
+      "transformers": "5.5.4",
+      "sentence_transformers": "5.4.0",
+      "numpy": "2.5.3",
+      "scipy": "1.18.1",
+      "rdflib": "7.6.0"
+    }
+  },
+  "model": {
+    "model_key": "M4",
+    "model_id": "FremyCompany/BioLORD-2023",
+    "device": "mps",
+    "hf_revision": "167aab527b238a50ca65224e6319215d2ff4fc9f",
+    "hf_revision_pinned": "167aab527b238a50ca65224e6319215d2ff4fc9f",
+    "device_override": false,
+    "n_parameters": 109486464,
+    "embedding_dimension": 768,
+    "load_seconds": 2.124667750002118
+  },
+  "dataset_load_seconds": 33.777803959004814,
+  "repeats": 3
+}
