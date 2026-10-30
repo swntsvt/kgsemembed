@@ -1,12 +1,13 @@
 \begin{table}[t]
 \centering
-\small
+\footnotesize
+\setlength{\tabcolsep}{4pt}
 \begin{threeparttable}
-\caption{Computational cost of stage~2 on D1, one run per condition. Tokens: total encoded tokens (sources and unique candidates, each capped at the model's limit). Time: verbalisation, encoding (median of 3 passes) and ranking, in minutes; $\times$: relative to the cheapest condition. Stage~1, shared by every condition and B0's whole cost, takes 22\,s.}
+\caption{Computational cost of stage~2 on D1, one run per condition. Params: model parameters, in millions. Tokens: total encoded tokens, in millions (sources and unique candidates, each capped at the model's limit). Min.: verbalisation, encoding (median of 3 passes) and ranking, in minutes; $\times$: relative to the cheapest condition. Stage~1, shared by every condition and B0's whole cost, takes 22\,s.}
 \label{tab:cost_d1}
 \begin{tabular}{lllrrrrrr}
 \hline
-\textbf{Cond.} & \textbf{Text} & \textbf{Model} & \textbf{Params (M)} & \textbf{Tokens (M)} & \textbf{Time (min)} & $\times$ & \textbf{MRR} & $\Delta$\textbf{B0} \\
+\textbf{Cond.} & \textbf{Text} & \textbf{Model} & \textbf{Params} & \textbf{Tokens} & \textbf{Min.} & $\times$ & \textbf{MRR} & $\Delta$\textbf{B0} \\
 \hline
 B0 & -- & -- & -- & -- & -- & -- & 0.705 & -- \\
 C1 & V1 & M1 & 23 & 1.21 & 0.7 & 1.0 & 0.719 & +0.013 \\

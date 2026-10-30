@@ -315,15 +315,16 @@ def render_latex(rows: List[Dict[str, object]], b0: Dict[str, object], context: 
     """
     cheapest = min(row["stage2"] for row in rows)
     head = [
-        r"\begin{table}[t]", r"\centering", r"\small", r"\begin{threeparttable}",
-        rf"\caption{{Computational cost of stage~2 on {_latex_text(context['column'])}, one run per condition. Tokens: "
-        r"total encoded tokens (sources and unique candidates, each capped at the model's limit). "
-        rf"Time: verbalisation, encoding (median of {context['repeats']} passes) and ranking, in minutes; "
+        r"\begin{table}[t]", r"\centering", r"\footnotesize", r"\setlength{\tabcolsep}{4pt}",
+        r"\begin{threeparttable}",
+        rf"\caption{{Computational cost of stage~2 on {_latex_text(context['column'])}, one run per condition. Params: "
+        r"model parameters, in millions. Tokens: total encoded tokens, in millions (sources and unique candidates, each capped at the model's limit). "
+        rf"Min.: verbalisation, encoding (median of {context['repeats']} passes) and ranking, in minutes; "
         r"$\times$: relative to the cheapest condition. Stage~1, shared by every condition and "
         rf"B0's whole cost, takes {b0['stage1']:.3g}\,s.}}",
         rf"\label{{tab:cost_{context['column'].lower()}}}", r"\begin{tabular}{lllrrrrrr}", r"\hline",
-        r"\textbf{Cond.} & \textbf{Text} & \textbf{Model} & \textbf{Params (M)} & \textbf{Tokens (M)} "
-        r"& \textbf{Time (min)} & $\times$ & \textbf{MRR} & $\Delta$\textbf{B0} \\", r"\hline",
+        r"\textbf{Cond.} & \textbf{Text} & \textbf{Model} & \textbf{Params} & \textbf{Tokens} "
+        r"& \textbf{Min.} & $\times$ & \textbf{MRR} & $\Delta$\textbf{B0} \\", r"\hline",
         rf"B0 & -- & -- & -- & -- & -- & -- & {b0['mrr']:.3f} & -- \\",
     ]
     tail = [r"\hline", r"\end{tabular}", r"\begin{tablenotes}\footnotesize",
