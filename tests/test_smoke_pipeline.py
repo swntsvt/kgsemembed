@@ -8,6 +8,7 @@ synthetic doubles.
 
 import dataclasses
 import json
+from types import SimpleNamespace
 import logging
 import platform
 import sys
@@ -88,6 +89,9 @@ class _FakeEncoder:
     def encode_batch(self, texts, role="candidate", show_progress=True):
         return np.array([_ALL_VECTORS[text] for text in texts], dtype=np.float32)
 
+    def truncation_summary(self, texts, role):
+        return {"n_inputs": len(texts), "n_truncated": 0, "tokens_discarded": 0, "max_length": 3}
+
 
 def _make_pair(dataset_id="D2", pair_name="d2_pair"):
     return AlignmentPair(
@@ -147,7 +151,7 @@ def fakes(monkeypatch):
 
     def fake_load_model(model_key):
         calls["models"].append(model_key)
-        return object(), {
+        return SimpleNamespace(max_seq_length=256), {
             "model_key": model_key,
             "model_id": f"fake/{model_key}",
             "device": "mps",
@@ -170,7 +174,7 @@ def fakes(monkeypatch):
     monkeypatch.setattr(runner, "EmbeddingEncoder", fake_encoder)
     monkeypatch.setattr(runner, "load_dataset", fake_load_dataset)
     monkeypatch.setattr(runner, "load_candidates", fake_load_candidates)
-    monkeypatch.setattr(runner, "build_verbaliser", lambda _s, _m: _FakeVerbaliser())
+    monkeypatch.setattr(runner, "build_verbaliser", lambda _s, _m, _role: _FakeVerbaliser())
     return calls
 
 
@@ -234,6 +238,7 @@ def test_result_json_matches_required_schema(fakes, tmp_path):
         "candidates_sha256",
         "annotation_predicates_sha256",
         "v8_exclusions_sha256",
+        "encoder_input",
         "hf_revision",
         "hf_revision_pinned",
         "device",
@@ -251,6 +256,11 @@ def test_result_json_matches_required_schema(fakes, tmp_path):
     assert payload["apply_ppas"] is True
     assert payload["ppas_effective"] is False
     assert payload["token_budget"] == 200
+    assert payload["encoder_input"]["token_budget"] is None
+    assert payload["encoder_input"]["max_seq_length"] == 256
+    assert set(payload["encoder_input"]["source"]) == {
+        "n_inputs", "n_truncated", "tokens_discarded", "max_length", "n_budget_cut", "budget_tokens_cut"
+    }
     assert payload["evaluation_protocol"] == runner.EVALUATION_PROTOCOL_VERSION
     assert set(payload["counts"]) == {"tp", "fp", "fn"}
     assert set(payload["metrics"]) == {
@@ -373,7 +383,7 @@ def test_result_records_the_device_without_override(fakes, tmp_path):
 def _load_on_cpu(fakes, monkeypatch):
     monkeypatch.setattr(
         runner, "load_sentence_transformer",
-        lambda key: (object(), {"model_key": key, "device": "cpu", "hf_revision": "r"}),
+        lambda key: (SimpleNamespace(max_seq_length=256), {"model_key": key, "device": "cpu", "hf_revision": "r"}),
     )
 
 
@@ -405,7 +415,7 @@ def test_cli_passes_the_allowed_device(monkeypatch):
 
 def test_hf_revision_is_unknown_when_the_loader_reports_none(fakes, monkeypatch, tmp_path):
     monkeypatch.setattr(
-        runner, "load_sentence_transformer", lambda _key: (object(), {"device": "mps"})
+        runner, "load_sentence_transformer", lambda _key: (SimpleNamespace(max_seq_length=256), {"device": "mps"})
     )
     payload = _run_and_read_payload(tmp_path)
     assert payload["hf_revision"] == "unknown"
@@ -1268,17 +1278,14 @@ def test_run_condition_over_sample_pair_with_mocked_encoder(monkeypatch, tmp_pat
     pair = _sample_pair()
     dimension = 4
 
-    class _SampleEncoder:
-        def __init__(self, model_key, model):
-            self.model_key = model_key
-
+    class _SampleEncoder(_FakeEncoder):
         def encode_batch(self, texts, role="candidate", show_progress=True):
             return np.ones((len(texts), dimension), dtype=np.float32)
 
     monkeypatch.setattr(
         runner,
         "load_sentence_transformer",
-        lambda _key: (object(), {"device": "mps", "hf_revision": "sample-revision"}),
+        lambda _key: (SimpleNamespace(max_seq_length=256), {"device": "mps", "hf_revision": "sample-revision"}),
     )
     monkeypatch.setattr(runner, "EmbeddingEncoder", _SampleEncoder)
     monkeypatch.setattr(runner, "load_dataset", lambda _d, _dir: [pair])

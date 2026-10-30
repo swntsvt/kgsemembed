@@ -201,43 +201,37 @@ def test_correct_tier_list_selected_per_entity_type() -> None:
     assert resolve("predicate") is PREDICATE_TIER_LIST
 
 
-def test_ppas_applied_before_sentence_generation(monkeypatch) -> None:
-    """ppas_sample is invoked with the correct tier list before rendering."""
-    calls: list[tuple] = []
-    real_ppas = v3_module.ppas_sample
+def test_tier_order_applied_before_sentence_generation(monkeypatch) -> None:
+    """Triples are tier-ordered with the instance tier list before rendering."""
+    calls: list = []
+    real_order = v3_module.tier_order
 
-    def spy(triples, tier_list, budget, fn):
-        calls.append((tier_list, budget))
-        return real_ppas(triples, tier_list, budget, fn)
+    def spy(triples, tier_list):
+        calls.append(tier_list)
+        return real_order(triples, tier_list)
 
-    monkeypatch.setattr(v3_module, "ppas_sample", spy)
-
-    g = Graph()
-    _label(g, _ENT, "Heart")
-    g.add((_ENT, RDF.type, URIRef("http://example.org/ont#Organ")))
-
-    _v().verbalise(g, _ENT, "instance")
-
-    assert len(calls) == 1
-    tier_list, budget = calls[0]
-    # The instance tier list (with the appended untiered tier) drives selection.
-    assert tier_list[0] == v3_module.INSTANCE_TIER_LIST[0]
-    assert budget == PPAS_BUDGETS["M2"]
-
-
-def test_rendering_uses_ppas_selection(monkeypatch) -> None:
-    """Only triples returned by ppas_sample are rendered as sentences."""
-
-    def only_type(triples, tier_list, budget, fn):
-        return [triple for triple in triples if triple[1] == RDF.type]
-
-    monkeypatch.setattr(v3_module, "ppas_sample", only_type)
+    monkeypatch.setattr(v3_module, "tier_order", spy)
 
     g = Graph()
     _label(g, _ENT, "Heart")
     g.add((_ENT, RDF.type, URIRef("http://example.org/ont#Organ")))
 
-    result = _v().verbalise(g, _ENT, "instance")
+    verbaliser = _v()
+    verbaliser.verbalise(g, _ENT, "instance")
+
+    assert calls == [v3_module.INSTANCE_TIER_LIST]
+    assert verbaliser.budget.tokens == PPAS_BUDGETS["M2"]
+
+
+def test_sentences_kept_in_tier_order_while_they_fit(word_budget) -> None:
+    """A budget that fits one sentence keeps the highest-tier one."""
+    g = Graph()
+    _label(g, _ENT, "Heart")
+    g.add((_ENT, RDF.type, URIRef("http://example.org/ont#Organ")))
+
+    verbaliser = _v()
+    verbaliser.budget = word_budget(4)
+    result = verbaliser.verbalise(g, _ENT, "instance")
 
     assert result == "Heart is a Organ."
     assert "is called" not in result
@@ -250,27 +244,14 @@ def _many_literals(count: int) -> Graph:
     return g
 
 
-def test_selected_triples_respect_budget(monkeypatch) -> None:
-    """The triples ppas_sample returns fit within the model token budget."""
-    from kgsemembed.verbalisation.ppas import estimate_tokens
-
-    captured: list = []
-    real_ppas = v3_module.ppas_sample
-
-    def capture(triples, tier_list, budget, fn):
-        selected = real_ppas(triples, tier_list, budget, fn)
-        captured.append(selected)
-        return selected
-
-    monkeypatch.setattr(v3_module, "ppas_sample", capture)
-
+def test_selected_sentences_respect_budget(word_budget) -> None:
+    """The kept sentences fit the budget, and some but not all are kept."""
     verbaliser = _v("M1")
-    verbaliser.verbalise(_many_literals(200), _ENT, "instance")
+    verbaliser.budget = word_budget(50)
+    result = verbaliser.verbalise(_many_literals(200), _ENT, "instance")
 
-    selected = captured[0]
-    cost = sum(estimate_tokens(verbaliser._verbalise_triple(*t)) for t in selected)
-    assert cost <= PPAS_BUDGETS["M1"]
-    assert 0 < len(selected) < 200
+    assert len(result.split()) <= 50
+    assert 0 < result.count(".") < 200
 
 
 def test_budgeted_model_respects_token_budget() -> None:

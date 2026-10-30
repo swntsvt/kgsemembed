@@ -1,17 +1,17 @@
 """Composite verbalisation strategy.
 
 Runs several verbalisation strategies in sequence and concatenates their
-non-empty outputs into a single description.  Composition is purely
-structural: each component strategy is invoked exactly as it was configured
-and its result is combined without altering the component's own behaviour.
+non-empty outputs into a single description.  Each component is given the
+text of the components before it, so a budgeted component fits what they left
+of the budget (#183: components are filled in their registered order).
 """
 
 from rdflib import Graph, URIRef
 
 from kgsemembed.verbalisation.base import VerbaliserBase
+from kgsemembed.verbalisation.budget import join_parts
 
 _MIN_STRATEGIES = 2
-_SEPARATOR = "\n"
 
 
 class CombinedVerbaliser(VerbaliserBase):
@@ -68,9 +68,8 @@ class CombinedVerbaliser(VerbaliserBase):
             Non-empty component outputs joined with a single newline, or an
             empty string when every component produces no output.
         """
-        parts = [
-            stripped
-            for strategy in self.strategies
-            if (stripped := strategy.verbalise(graph, entity_uri, entity_type).strip())
-        ]
-        return _SEPARATOR.join(parts)
+        parts: list[str] = []
+        for strategy in self.strategies:
+            preceding = join_parts(parts)
+            parts.append(strategy.verbalise_after(graph, entity_uri, entity_type, preceding))
+        return join_parts(parts)

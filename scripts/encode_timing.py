@@ -155,12 +155,13 @@ def verbalise_pair(
     Tuple[List[str], List[str], List[str]]
         Source texts, candidate URIs and candidate texts.
     """
-    verbaliser = build_verbaliser(condition.strategy_name, condition.model_key)
+    source_verbaliser = build_verbaliser(condition.strategy_name, condition.model_key, "source")
+    candidate_verbaliser = build_verbaliser(condition.strategy_name, condition.model_key, "candidate")
     sources = _verbalise_uris(
-        verbaliser, pair.source_graph, pair.source_entities, pair.entity_type, "source verbalisation"
+        source_verbaliser, pair.source_graph, pair.source_entities, pair.entity_type, "source verbalisation"
     )
     uris = _unique_candidate_uris(pair, candidates)
-    texts = _verbalise_uris(verbaliser, pair.target_graph, uris, pair.entity_type, "candidate verbalisation")
+    texts = _verbalise_uris(candidate_verbaliser, pair.target_graph, uris, pair.entity_type, "candidate verbalisation")
     return sources, uris, texts
 
 

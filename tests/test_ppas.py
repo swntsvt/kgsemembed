@@ -21,6 +21,8 @@ from kgsemembed.verbalisation.ppas import (
     ppas_sample,
     should_apply_ppas,
     estimate_tokens,
+    tier_order,
+    untiered_predicates,
 )
 
 
@@ -474,16 +476,16 @@ def test_ppas_keeps_highest_priority_triples_under_tight_budget() -> None:
 
 
 def test_verbaliser_passes_sorted_triples_to_ppas() -> None:
-    """The sorted collection, not raw graph order, is what PPAS receives."""
+    """The sorted collection, not raw graph order, is what tier ordering receives."""
     graph = _unordered_graph()
     graph.add((_ENTITY, URIRef("http://www.w3.org/2000/01/rdf-schema#label"), Literal("Ent")))
     captured: list[list] = []
 
-    def _capture(triples, tier_list, budget, fn):
+    def _capture(triples, tier_list):
         captured.append(list(triples))
         return triples
 
-    with patch("kgsemembed.verbalisation.v3.ppas_sample", side_effect=_capture):
+    with patch("kgsemembed.verbalisation.v3.tier_order", side_effect=_capture):
         TemplateNLVerbaliser(model_key="M2").verbalise(graph, _ENTITY, "instance")
 
     keys = [(str(s), str(p), str(o)) for s, p, o in captured[0]]
@@ -497,9 +499,16 @@ def test_verbaliser_passes_sorted_triples_to_ppas() -> None:
 def test_sampling_components_are_exactly_the_tier_priority_selectors(component):
     module = importlib.import_module(f"kgsemembed.verbalisation.{component.lower()}")
     source = inspect.getsource(module)
-    budgeted = "PPAS_BUDGETS" in source
-    tier_selection = "ppas_sample(" in source or "_TIER_LIST" in source
+    budgeted = "token_budget(" in source
+    tier_selection = "tier_order(" in source or "_TIER_LIST" in source
     assert (budgeted and tier_selection) is (component in PPAS_SAMPLING_COMPONENTS)
+
+
+def test_tier_order_matches_an_unbudgeted_ppas_sample():
+    triples = [(_ENTITY, URIRef(f"http://ex/p{i % 3}"), Literal(str(i))) for i in range(7)]
+    tier_list = [["http://ex/p2"], [], ["http://ex/p0"]]
+    augmented = tier_list + [untiered_predicates(triples, tier_list)]
+    assert tier_order(triples, tier_list) == ppas_sample(triples, augmented, 10**6, lambda *t: "x")
 
 
 @pytest.mark.parametrize(

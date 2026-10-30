@@ -5,20 +5,26 @@ always curating triples in schema-aware predicate-tier priority order.
 
 Unlike V4, tier ordering is applied unconditionally -- it is never gated on
 triple count -- and the model token budget (when one exists) is applied only
-after the tier ordering has been established.  Models without a budget (e.g.
-``"M3"``) retain every tier-ordered triple.
+after the tier ordering has been established: rendered pairs are kept in tier
+order while they fit, counted with the model's tokenizer (#183).  Models
+without a budget (e.g. ``"M3"``) retain every tier-ordered triple.
 """
+
+from functools import cached_property
+from typing import Optional
 
 from rdflib import Graph, URIRef
 
 from kgsemembed.verbalisation.base import VerbaliserBase
+from kgsemembed.verbalisation.budget import TokenBudget, fit_items, token_budget
 from kgsemembed.verbalisation.ppas import (
     CLASS_TIER_LIST,
     INSTANCE_TIER_LIST,
-    PPAS_BUDGETS,
     PREDICATE_TIER_LIST,
-    estimate_tokens,
+    tier_order,
 )
+
+_PAIR_SEPARATOR = " | "
 
 _TIER_LISTS: dict[str, list[list[str]]] = {
     "class": CLASS_TIER_LIST,
@@ -40,14 +46,23 @@ class SchemaAwareVerbaliser(VerbaliserBase):
     to fit; models without a budget retain every ordered triple.
     """
 
-    def __init__(self, model_key: str = "M2") -> None:
+    def __init__(self, model_key: str = "M2", role: str = "candidate") -> None:
         """
         Parameters
         ----------
         model_key : str
             Model key used to look up the token budget (e.g. "M1", "M2").
+        role : str
+            ``"source"`` or ``"candidate"``: the encoder role whose input the
+            budget counts.
         """
         self.model_key = model_key
+        self.role = role
+
+    @cached_property
+    def budget(self) -> Optional[TokenBudget]:
+        """The model's token budget for this role, or ``None`` when uncapped."""
+        return token_budget(self.model_key, self.role)
 
     def verbalise(
         self, graph: Graph, entity_uri: URIRef, entity_type: str
@@ -75,21 +90,34 @@ class SchemaAwareVerbaliser(VerbaliserBase):
         ValueError
             If *entity_type* is not a supported entity type.
         """
+        return self.verbalise_after(graph, entity_uri, entity_type, "")
+
+    def verbalise_after(
+        self, graph: Graph, entity_uri: URIRef, entity_type: str, preceding: str
+    ) -> str:
+        """
+        Render tier-ordered pairs that fit what ``preceding`` left of the budget.
+
+        Parameters
+        ----------
+        graph : Graph
+            RDF graph containing entity triples.
+        entity_uri : URIRef
+            URI of the entity to verbalise.
+        entity_type : str
+            One of ``"class"``, ``"instance"``, ``"predicate"``.
+        preceding : str
+            Joined text of the earlier components of a composite, or ``""``.
+
+        Returns
+        -------
+        str
+            The kept pairs joined with `` | ``.
+        """
         tier_list = self._tier_list_for(entity_type)
-        triples = self._collect_triples(graph, entity_uri)
-        ordered = self._tier_order(triples, tier_list)
-
-        budget = PPAS_BUDGETS.get(self.model_key)
-        if budget is not None:
-            ordered = self._apply_budget(ordered, budget)
-
-        pairs: list[str] = []
-        for _subj, pred, obj in ordered:
-            pair = self._format_pair(graph, pred, obj)
-            if pair:
-                pairs.append(pair)
-
-        return " | ".join(pairs)
+        ordered = self._tier_order(self._collect_triples(graph, entity_uri), tier_list)
+        pairs = [pair for _subj, pred, obj in ordered if (pair := self._format_pair(graph, pred, obj))]
+        return _PAIR_SEPARATOR.join(fit_items(pairs, _PAIR_SEPARATOR, self.budget, preceding))
 
     @staticmethod
     def _tier_list_for(entity_type: str) -> list[list[str]]:
@@ -106,32 +134,4 @@ class SchemaAwareVerbaliser(VerbaliserBase):
         triples: list[tuple], tier_list: list[list[str]]
     ) -> list[tuple]:
         """Order triples by predicate tier, appending untiered ones last."""
-        ordered: list[tuple] = []
-        selected: set[int] = set()
-        for tier in tier_list:
-            if not tier:
-                continue
-            tier_predicates = set(tier)
-            for index, triple in enumerate(triples):
-                if index not in selected and str(triple[1]) in tier_predicates:
-                    ordered.append(triple)
-                    selected.add(index)
-        ordered.extend(
-            triple
-            for index, triple in enumerate(triples)
-            if index not in selected
-        )
-        return ordered
-
-    def _apply_budget(
-        self, triples: list[tuple], budget: int
-    ) -> list[tuple]:
-        """Greedily keep tier-ordered triples that fit within *budget*."""
-        selected: list[tuple] = []
-        tokens_used = 0
-        for triple in triples:
-            cost = estimate_tokens(self._verbalise_triple(*triple))
-            if tokens_used + cost <= budget:
-                selected.append(triple)
-                tokens_used += cost
-        return selected
+        return tier_order(triples, tier_list)

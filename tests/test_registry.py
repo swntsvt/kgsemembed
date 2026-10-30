@@ -17,6 +17,7 @@ from kgsemembed.verbalisation import (
     VerbaliserBase,
     build_verbaliser,
 )
+from kgsemembed.verbalisation.budget import BudgetedVerbaliser, strategy_is_budgeted
 
 # ---------------------------------------------------------------------------
 # Test doubles
@@ -42,6 +43,20 @@ class StubVerbaliser(VerbaliserBase):
 
 def _stub(output: str, call_log: list[str], name: str = "stub") -> StubVerbaliser:
     return StubVerbaliser(output, call_log, name)
+
+
+class PrecedingRecorder(StubVerbaliser):
+    """Record the ``preceding`` text a composite hands each component."""
+
+    def verbalise_after(
+        self, graph: Graph, entity_uri: URIRef, entity_type: str, preceding: str
+    ) -> str:
+        self.call_log.append(preceding)
+        return self.output
+
+
+def _unwrapped(verbaliser: VerbaliserBase) -> VerbaliserBase:
+    return verbaliser.inner if isinstance(verbaliser, BudgetedVerbaliser) else verbaliser
 
 
 # Expected component structure of every registry strategy. Individual
@@ -108,7 +123,9 @@ def test_build_verbaliser_constructs_expected_structure(
     strategy_name: str,
 ) -> None:
     expected = _EXPECTED_STRUCTURE[strategy_name]
-    verbaliser = build_verbaliser(strategy_name)
+    built = build_verbaliser(strategy_name)
+    assert isinstance(built, BudgetedVerbaliser) == strategy_is_budgeted(strategy_name, "M2")
+    verbaliser = _unwrapped(built)
 
     if len(expected) == 1:
         assert not isinstance(verbaliser, CombinedVerbaliser)
@@ -126,7 +143,7 @@ def test_build_verbaliser_constructs_expected_structure(
 
 @pytest.mark.parametrize("strategy_name", VALID_STRATEGY_NAMES)
 def test_model_aware_components_receive_model_key(strategy_name: str) -> None:
-    verbaliser = build_verbaliser(strategy_name, model_key="M4")
+    verbaliser = _unwrapped(build_verbaliser(strategy_name, model_key="M4"))
     components = (
         verbaliser.strategies
         if isinstance(verbaliser, CombinedVerbaliser)
@@ -144,8 +161,24 @@ def test_model_independent_components_have_no_model_key() -> None:
 
 
 def test_default_model_key_is_m2() -> None:
-    verbaliser = build_verbaliser("V3")
+    verbaliser = _unwrapped(build_verbaliser("V3"))
     assert verbaliser.model_key == "M2"
+
+
+@pytest.mark.parametrize("role", ["source", "candidate"])
+def test_role_reaches_every_budgeted_component(role: str) -> None:
+    verbaliser = build_verbaliser("V6+V3", "M2", role)
+    assert verbaliser.budget.count is not None
+    assert [component.role for component in _unwrapped(verbaliser).strategies] == [role, role]
+
+
+def test_default_role_is_candidate() -> None:
+    assert _unwrapped(build_verbaliser("V6")).role == "candidate"
+
+
+def test_unbudgeted_strategies_and_models_are_not_wrapped() -> None:
+    assert not isinstance(build_verbaliser("V2+V8", "M2"), BudgetedVerbaliser)
+    assert not isinstance(build_verbaliser("V4+V6", "M3"), BudgetedVerbaliser)
 
 
 def test_arbitrary_model_key_is_forwarded() -> None:
@@ -193,6 +226,15 @@ def test_combined_preserves_strategy_order() -> None:
     )
     combined.verbalise(Graph(), _ENTITY, "class")
     assert call_log == ["a", "b", "c"]
+
+
+def test_combined_hands_each_component_the_text_before_it() -> None:
+    seen: list[str] = []
+    combined = CombinedVerbaliser(
+        [PrecedingRecorder("alpha", seen, "a"), PrecedingRecorder("", seen, "b"), PrecedingRecorder("gamma", seen, "c")]
+    )
+    assert combined.verbalise(Graph(), _ENTITY, "class") == "alpha\ngamma"
+    assert seen == ["", "alpha", "alpha"]
 
 
 def test_combined_joins_with_single_newline() -> None:
