@@ -1,0 +1,20 @@
+% Limitations paragraph on the verbalised text (#183).
+% Numbers: artifacts/issue-183/text_limitations.md (scripts/text_limitations.py,
+% tokenizer only, 2,000 sources and 2,000 candidates per column, seed 183).
+
+\paragraph{Properties of the verbalised text.}
+Two properties of the input text are kept by design rather than cleaned
+per dataset. First, OpenEA removed the labels of D5's entities, so an object
+without a label is written as its opaque identifier (a DBpedia
+\texttt{E\ldots} or Wikidata \texttt{Q\ldots} number). The two graphs share
+none of their roughly 8{,}000 object identifiers each, so these tokens carry
+no signal across the graphs; they make up 9--63\% of the tokens of the
+key--value, template and walk conditions on D5, depending on condition and
+side, and all of a source's label (V1). Removing them would require a
+dataset-specific rule after results were known, so we report D5 with them
+and treat its results accordingly. Second, V3, V4 and V6 write every
+predicate of an entity, including those we exclude from V8 as annotation or
+page metadata; on D4$_{\mathrm{in}}$ these supply 34--52\% of the tokens,
+most of it the wiki page's abstract and link text. Literal values on D5 are
+written without OpenEA's inlined datatype, as in stage~1, which also drops
+the currency unit of 6{,}554 monetary values.

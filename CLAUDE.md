@@ -19,7 +19,7 @@ Phase 2 datasets: D1 (SNOMED-FMA Body), D2 (Anatomy MA-NCI), D3 (Conference,
 21 pairs), D4 (memoryalpha-stexpanded, schema and instance), D5
 (DBpedia-Wikidata 15K EN, OpenEA). Five datasets total.
 
-**Current focus**: Issue #181 — a descriptive computational cost report for the reviewers' efficiency concern, effectiveness remaining the paper's aim (see "Computational cost (#181)"): encoded input size of every condition on every column (tokenizer only) and one controlled wall-clock run of every D1 condition and stage 1, with the paper's "Computational cost" subsection and a response-letter paragraph (`artifacts/issue-181/`); truncation findings split off to #183. Previously #179 — `generate_baseline_comparison.py`'s "best condition" row names every condition tied at four decimal places, in registry order (the #167 tie rule of `report.md`), so `baseline_comparison.md` shows C3, C10, C8 on D4_schema MRR/Hits@1/Recall@1 and the Recall@10 ties on D3 and D4_schema. Previously #169 — the paper's methods text and protocol notes corrected against the code: `paper_methods_section.tex` gains a "Statistical analysis" subsection (#140 paired tests, Holm on MRR only, B0 families of #165, the Wilcoxon as a consistency summary), its `tab:datasets` caption says R@20 caps Recall@k only (MRR/Hits@k have the ranking ceiling) and two R@20 values are re-rounded (D2 0.946, D4_in 0.972); `evaluation_protocol.md` records D5's verification against OpenEA v2.0 and shows B0's Hits@1, which `baseline_comparison.md` now reports. Previously #164 — paper scope of the #122–#134 ablations decided (`artifacts/issue-164/decision_record.md`): PPAS (#122/#128 and follow-up) as a short main-text section that drops the "novel contribution" claim (the gain is eligibility, not tier order), #131 as an appendix, #134 left to a follow-up paper; their 43 D1 runs re-run on the post-#137 population at 66aabc3 into `data/results_issue164/` (see the D1 population note under "Controlled PPAS ablation (#122)"), reports and paper text in `artifacts/issue-164/`. Previously #163 — the condition × dataset gaps filled or justified: C4 (V3/M2) now runs on D1–D5, C7 (V6+V3/M2) on D1–D5 and C15 (V2+V8/M3) on D1/D2 (7 new cells at a6b5778, see "Coverage (#163)"); every other gap is by design (`artifacts/issue-163/coverage.md`). Previously #143 — CLAUDE.md corrected against the code and stored results (#134 test results, tags, dependencies, directory structure, padding drift) and README.md rewritten around the Phase 2 pipeline (install, data, run, reproduce; legacy Hydra scaffold as a short note). Previously #149 — Figure 1 and Figure 2 claims judged against #140 paired intervals under MRR (`scripts/figure_claims.py`, `artifacts/issue-149/`): Figure 1 kept with its claim reframed (no V8 advantage on D3; C3's lead sits on the non-CMT/EDAS pairs; CMT/EDAS are not the sparsest ontologies), Figure 2 kept with its claim restated (M5 leads on D1, ties M4 on D2; C17 above every V2+V8 model). Previously #141's release — the C1–C20 and B0 re-run at c6931db (sidecars, Hits@k, device, pinned revisions; every metric equal to the stored one), regenerated tables, tag `v0.2.0-phase2-results` and its data archive (see "Release (#141)"). Previously #140 — per-dataset paired tests (bootstrap intervals, randomisation p-values, on MRR, Hits@1 and F1, with a Holm decision within group × column on MRR only) from new per-source sidecars; Wilcoxon kept as a cross-dataset consistency summary on MRR; `report.md` leads with MRR. Previously #141 — pinned model revisions, device check and recording (`--allow_device`), and `requirements-lock.txt`. Previously #142 — retire C12 (duplicate of C9; IDs not renumbered), move C19 to a sanity-check group and section, correct stale condition descriptions and PPAS labels, and average the report's summary table over dataset columns. Previously #145 — V8 excludes annotation predicates (FMA, oboInOwl, OWL axiom annotations, DBkWik page text, description/name vocabularies) instead of listing them as relationships; text inventory, per-predicate classification and V8 re-runs (`artifacts/issue-145/`). Previously #139 — re-ranking MRR and source-level Hits@1 as the paper's primary metrics (F1 secondary), one definition of each metric's unit, ceiling and 1:N handling, and tables that show the top-20 ceiling, D3 micro F1 and F1's reference counts (`artifacts/issue-139/`). Previously #138 — dataset and reference-alignment provenance, each dataset's protocol against its benchmark's official one, and the paper's datasets/protocol text (`artifacts/issue-138/`); #137 — stage-1 n-gram ranking baseline (B0) and the written evaluation protocol (`artifacts/issue-137/`); #136 — V1/V2 read the synonym and definition predicates D1/D2 actually use; #134 — text-serialization-order experiment on D1 and D2 (effect of item order with the selected set held fixed; order frozen on D2 validation before any test evaluation); #128, #130 and #131 merged (Phase 2)
+**Current focus**: Issue #183 — token budgets enforced on the encoder input and the full C1–C20 and B0 re-run that follows (see "Token budgets and encoder input (#183)"): budgets counted with each model's tokenizer, M4 at 512, V7's annotation written once, D5 datatype suffixes removed, per-entity input lengths in the sidecars; the re-run and the regeneration of every report, table and figure are pending. Previously #181 — a descriptive computational cost report for the reviewers' efficiency concern, effectiveness remaining the paper's aim (see "Computational cost (#181)"): encoded input size of every condition on every column (tokenizer only) and one controlled wall-clock run of every D1 condition and stage 1, with the paper's "Computational cost" subsection and a response-letter paragraph (`artifacts/issue-181/`); truncation findings split off to #183. Previously #179 — `generate_baseline_comparison.py`'s "best condition" row names every condition tied at four decimal places, in registry order (the #167 tie rule of `report.md`), so `baseline_comparison.md` shows C3, C10, C8 on D4_schema MRR/Hits@1/Recall@1 and the Recall@10 ties on D3 and D4_schema. Previously #169 — the paper's methods text and protocol notes corrected against the code: `paper_methods_section.tex` gains a "Statistical analysis" subsection (#140 paired tests, Holm on MRR only, B0 families of #165, the Wilcoxon as a consistency summary), its `tab:datasets` caption says R@20 caps Recall@k only (MRR/Hits@k have the ranking ceiling) and two R@20 values are re-rounded (D2 0.946, D4_in 0.972); `evaluation_protocol.md` records D5's verification against OpenEA v2.0 and shows B0's Hits@1, which `baseline_comparison.md` now reports. Previously #164 — paper scope of the #122–#134 ablations decided (`artifacts/issue-164/decision_record.md`): PPAS (#122/#128 and follow-up) as a short main-text section that drops the "novel contribution" claim (the gain is eligibility, not tier order), #131 as an appendix, #134 left to a follow-up paper; their 43 D1 runs re-run on the post-#137 population at 66aabc3 into `data/results_issue164/` (see the D1 population note under "Controlled PPAS ablation (#122)"), reports and paper text in `artifacts/issue-164/`. Previously #163 — the condition × dataset gaps filled or justified: C4 (V3/M2) now runs on D1–D5, C7 (V6+V3/M2) on D1–D5 and C15 (V2+V8/M3) on D1/D2 (7 new cells at a6b5778, see "Coverage (#163)"); every other gap is by design (`artifacts/issue-163/coverage.md`). Previously #143 — CLAUDE.md corrected against the code and stored results (#134 test results, tags, dependencies, directory structure, padding drift) and README.md rewritten around the Phase 2 pipeline (install, data, run, reproduce; legacy Hydra scaffold as a short note). Previously #149 — Figure 1 and Figure 2 claims judged against #140 paired intervals under MRR (`scripts/figure_claims.py`, `artifacts/issue-149/`): Figure 1 kept with its claim reframed (no V8 advantage on D3; C3's lead sits on the non-CMT/EDAS pairs; CMT/EDAS are not the sparsest ontologies), Figure 2 kept with its claim restated (M5 leads on D1, ties M4 on D2; C17 above every V2+V8 model). Previously #141's release — the C1–C20 and B0 re-run at c6931db (sidecars, Hits@k, device, pinned revisions; every metric equal to the stored one), regenerated tables, tag `v0.2.0-phase2-results` and its data archive (see "Release (#141)"). Previously #140 — per-dataset paired tests (bootstrap intervals, randomisation p-values, on MRR, Hits@1 and F1, with a Holm decision within group × column on MRR only) from new per-source sidecars; Wilcoxon kept as a cross-dataset consistency summary on MRR; `report.md` leads with MRR. Previously #141 — pinned model revisions, device check and recording (`--allow_device`), and `requirements-lock.txt`. Previously #142 — retire C12 (duplicate of C9; IDs not renumbered), move C19 to a sanity-check group and section, correct stale condition descriptions and PPAS labels, and average the report's summary table over dataset columns. Previously #145 — V8 excludes annotation predicates (FMA, oboInOwl, OWL axiom annotations, DBkWik page text, description/name vocabularies) instead of listing them as relationships; text inventory, per-predicate classification and V8 re-runs (`artifacts/issue-145/`). Previously #139 — re-ranking MRR and source-level Hits@1 as the paper's primary metrics (F1 secondary), one definition of each metric's unit, ceiling and 1:N handling, and tables that show the top-20 ceiling, D3 micro F1 and F1's reference counts (`artifacts/issue-139/`). Previously #138 — dataset and reference-alignment provenance, each dataset's protocol against its benchmark's official one, and the paper's datasets/protocol text (`artifacts/issue-138/`); #137 — stage-1 n-gram ranking baseline (B0) and the written evaluation protocol (`artifacts/issue-137/`); #136 — V1/V2 read the synonym and definition predicates D1/D2 actually use; #134 — text-serialization-order experiment on D1 and D2 (effect of item order with the selected set held fixed; order frozen on D2 validation before any test evaluation); #128, #130 and #131 merged (Phase 2)
 
 ## Git Workflow
 
@@ -244,6 +244,17 @@ python scripts/encoded_input_size.py --data_dir data/ --output_dir artifacts/iss
 python scripts/encode_timing.py --stage1 --dataset D1
 python scripts/encode_timing.py --model M2 --dataset D1     # M1..M5 in turn
 python scripts/generate_cost_report.py --column D1
+
+# Token budgets (#183): M4 input-limit check (validation sources only, loads
+# M4 twice, ~15 min), the retained text characteristics (tokenizer only,
+# ~2 min), and the re-run check (stored vs new trees; fails on any change in
+# a cell no #183 correction touches, a budgeted text over budget, a missing
+# input record, or C19 != C10).
+python scripts/m4_length_check.py --data_dir data/ --output_dir artifacts/issue-183/
+python scripts/text_limitations.py --data_dir data/ --output_dir artifacts/issue-183/
+python scripts/rerun_comparison.py --new_dir data/results_issue183/ \
+    --new_baseline_dir data/results_ngram_baseline_issue183/ \
+    --output artifacts/issue-183/rerun_comparison.md
 
 # Padded vs unpadded embedding drift (#143; loads each model, one per
 # process; M3 needs --n 32) into artifacts/issue-143/padding_drift.{json,md}
@@ -1146,6 +1157,55 @@ python scripts/v8_fix_report.py --old_dir data/results/ --new_dir data/results_i
   benchmark protocol; never compare these numbers head-to-head with
   published system scores.
 
+## Token budgets and encoder input (#183)
+
+- **Decision** (recorded on #183 before any run): correct the implementation,
+  not only document it. Budgets keep their values (M1 200; M2, M4, M5 420)
+  but are counted on the text the encoder receives, with the model's
+  tokenizer at its pinned revision, special tokens and M5's source prefix
+  included; budget = `min(PPAS_BUDGETS[model], max_tokens)`.
+- **Enforcement** (`verbalisation/budget.py`, digest
+  `budget_enforcement_digest()` in every result): every entity of a budgeted
+  strategy (V3–V7 components) is held to the budget whatever its triple
+  count; items are kept in priority order while their individual counts fit,
+  then the joined text is checked exactly and items dropped from the end;
+  composites fill components in registered order (each fits what earlier
+  ones left; `verbalise_after`); a text still over budget is cut at its last
+  whole word (`BudgetedVerbaliser`, counted). Verbalisers are built per role
+  (`build_verbaliser(strategy, model, role)`), since the budget counts M5's
+  source prefix.
+- **Input limit**: `ModelConfig.max_tokens` is the encoder limit; the loader
+  sets `max_seq_length` from it and refuses one beyond the position capacity
+  (`position_capacity`; the tokenizer's limit cannot serve, sentence-
+  transformers lowers it to the configured length). **M4 is 512** (its own
+  config says 128, at which every M4 result before #183 was encoded), by the
+  rule fixed on #183 and `scripts/m4_length_check.py` on validation sources
+  only (`artifacts/issue-183/m4_length_check.md`).
+- **Guards** (`pipeline/encoder_inputs.py`, before encoding): a model at
+  another limit than the registry's, or a budgeted condition with a text
+  over its budget or truncated, raises `EncoderInputError`. Every result
+  records `encoder_input` (limit, budget, per role inputs truncated, tokens
+  discarded, texts over budget, budget cuts, prompt overhead); every sidecar
+  records `inputs` (per entity `[length, tokens_discarded]`). Unbudgeted
+  strategies (V1, V2, V8) may still be truncated at the limit, now recorded.
+- **Also fixed**: V2+V7 and V2+V8+V7 wrote the annotation twice since #45
+  (V7 starts with it); inside a composite with V2, V7 now adds only its
+  hierarchy. On D5, V3/V4/V6 wrote OpenEA's inlined datatype suffix (49% of
+  V6's D5 tokens); `base.literal_text()` removes it.
+- **Retained by decision, documented as limitations**
+  (`artifacts/issue-183/text_limitations.md`): D5 opaque identifiers (the two
+  graphs share none of their ~8k object identifiers; 9–63% of budgeted
+  conditions' tokens) and every predicate in V3/V4/V6 on D4_instance
+  (34–52% of tokens from predicates #145 excludes from V8, mostly
+  `dbkwik_page`, which includes the wiki abstract). No dataset-specific
+  cleaning.
+- **Checks**: `artifacts/issue-183/encoded_input_size.md` (no budgeted text
+  over budget or truncated in any of 28 budgeted cells); D2 dry run of every
+  condition plus C10/C19 on D1 and B0 (`dryrun_comparison.md`, via
+  `scripts/rerun_comparison.py`): every unaffected cell reproduces exactly,
+  C19 = C10. `artifacts/issue-183/change_inventory.md` lists every affected
+  cell. Stored results stay as the reference until the re-run replaces them.
+
 ## Computational cost (#181)
 
 - **Scope**: descriptive cost of an effectiveness study, no efficiency or
@@ -1663,9 +1723,15 @@ example output before trusting any result (see M5, #123).
 
 estimate_tokens() (words x 1.3) is not a tokenizer count. On D5 the real
 bge-large length is 2.6-3.5x the estimate, so V4/V6 under the "420" budget
-emitted texts over 512 tokens (53 D5 sources, 124 candidates under V6) that
-the model silently truncated. Use make_token_counter() in selection.py when
-a budget must hold for the encoded input.
+emitted texts over 512 tokens that the model silently truncated. Since #183
+the main pipeline counts budgets with verbalisation/budget.py (the model's
+tokenizer on the encoder input); estimate_tokens() survives only inside
+ppas_sample(), which no verbaliser calls. Use make_token_counter() in
+selection.py for the ablation runners.
+
+Do not write raw literal text on D5: str(Literal) carries OpenEA's inlined
+"..."^^<datatype>. Verbalisers use base.literal_text() (#183), stage 1
+candidates.ngram._literal_text(); both strip it the same way.
 
 Threshold is tuned on the validation population only.
 Never pass test-population pairs to tune_threshold(); pass

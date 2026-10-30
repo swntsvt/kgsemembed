@@ -64,12 +64,8 @@ from kgsemembed.utils.errors import DataError
 from kgsemembed.utils.logging import RunContext, get_logger, init_logging
 from kgsemembed.verbalisation.base import VerbaliserBase, annotation_predicates_digest
 from kgsemembed.verbalisation.v8 import v8_exclusions_digest
-from kgsemembed.verbalisation.budget import (
-    BudgetedVerbaliser,
-    budget_enforcement_digest,
-    budget_tokens,
-    strategy_is_budgeted,
-)
+from kgsemembed.verbalisation.budget import budget_tokens
+from kgsemembed.pipeline.encoder_inputs import encoder_input_record
 from kgsemembed.verbalisation.ppas import strategy_uses_ppas
 from kgsemembed.verbalisation.registry import build_verbaliser
 
@@ -85,6 +81,7 @@ _FAILURE_KEY = "n_failed_pairs"
 _PER_ENTITY_TYPE_KEY = "per_entity_type"
 _POPULATION_KEY = "population"
 _ENCODER_INPUT_KEY = "encoder_input"
+_INPUTS_KEY = "inputs"
 PER_SOURCE_KEY = "per_source"
 _COUNT_KEYS = ("tp", "fp", "fn")
 _VAL = "val"
@@ -551,6 +548,10 @@ def _process_pair(
         pair.entity_type,
         "candidate verbalisation",
     )
+    record, inputs = encoder_input_record(condition, encoder, {
+        "source": (source_verbaliser, pair.source_entities, source_texts),
+        "candidate": (candidate_verbaliser, candidate_uris, candidate_texts),
+    })
     source_embeddings = encoder.encode_batch(source_texts, role="source", show_progress=True)
     candidate_embeddings = encoder.encode_batch(
         candidate_texts, role="candidate", show_progress=True
@@ -560,68 +561,9 @@ def _process_pair(
         pair, source_embeddings, candidates, candidate_index, candidate_embeddings
     )
     result = with_per_source(pair, ranked_lists, _evaluate_pair(pair, ranked_lists))
-    result[_ENCODER_INPUT_KEY] = _encoder_input_record(
-        condition, encoder, {"source": (source_verbaliser, source_texts), "candidate": (candidate_verbaliser, candidate_texts)}
-    )
+    result[_ENCODER_INPUT_KEY] = record
+    result[PER_SOURCE_KEY][_INPUTS_KEY] = inputs
     return result
-
-
-def _budget_cuts(verbaliser: VerbaliserBase) -> Dict[str, int]:
-    """
-    Return how many texts a verbaliser cut to its budget, and the tokens cut.
-
-    Parameters
-    ----------
-    verbaliser : VerbaliserBase
-        A verbaliser after use; only a :class:`BudgetedVerbaliser` cuts.
-
-    Returns
-    -------
-    Dict[str, int]
-        ``n_budget_cut`` and ``budget_tokens_cut``.
-    """
-    if not isinstance(verbaliser, BudgetedVerbaliser):
-        return {"n_budget_cut": 0, "budget_tokens_cut": 0}
-    return {"n_budget_cut": verbaliser.budget.n_cut, "budget_tokens_cut": verbaliser.budget.tokens_cut}
-
-
-def _encoder_input_record(
-    condition: ExperimentCondition,
-    encoder: EmbeddingEncoder,
-    roles: Dict[str, Tuple[VerbaliserBase, List[str]]],
-) -> Dict[str, object]:
-    """
-    Record the input limit, the budget and what each enforced on the texts (#183).
-
-    Parameters
-    ----------
-    condition : ExperimentCondition
-        The condition run.
-    encoder : EmbeddingEncoder
-        Encoder of the loaded model.
-    roles : Dict[str, Tuple[VerbaliserBase, List[str]]]
-        Per role, the verbaliser used and the texts it produced.
-
-    Returns
-    -------
-    Dict[str, object]
-        ``max_seq_length``, ``token_budget`` (``None`` for a strategy
-        without one), ``budget_enforcement_sha256`` and, per role,
-        truncation by the encoder and cuts by the budget.
-    """
-    return {
-        "max_seq_length": encoder.model.max_seq_length,
-        "token_budget": (
-            budget_tokens(condition.model_key)
-            if strategy_is_budgeted(condition.strategy_name, condition.model_key)
-            else None
-        ),
-        "budget_enforcement_sha256": budget_enforcement_digest(),
-        **{
-            role: {**encoder.truncation_summary(texts, role), **_budget_cuts(verbaliser)}
-            for role, (verbaliser, texts) in roles.items()
-        },
-    }
 
 
 def _evaluate_pair(
