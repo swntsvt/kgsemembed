@@ -40,7 +40,9 @@ class ModelConfig:
         stored result was produced with, so a new upstream commit cannot
         change a re-run.
     max_tokens : int
-        Maximum input sequence length supported by the model.
+        Encoder input limit in tokens, special tokens and prompt prefix
+        included: the loader sets ``SentenceTransformer.max_seq_length`` to it
+        (#183), so the model truncates every longer input there.
     ppas_budget : Optional[int]
         Verbalisation token budget for PPAS, or ``None`` when uncapped.
     query_prefix : Optional[str]
@@ -119,7 +121,10 @@ MODEL_REGISTRY: Dict[str, ModelConfig] = {
         model_key="M4",
         model_id="FremyCompany/BioLORD-2023",
         revision="167aab527b238a50ca65224e6319215d2ff4fc9f",
-        max_tokens=512,
+        # The model's own sentence_bert_config.json sets 128, which every
+        # stored M4 result was encoded at (#183); 512 is its architectural
+        # limit, decided by the #183 validation experiment.
+        max_tokens=128,
         ppas_budget=420,
         query_prefix=None,
         doc_prefix=None,
@@ -308,6 +313,30 @@ def bucket_sequence_padding(model: SentenceTransformer) -> None:
     model[0].processing_kwargs = {"text": {"pad_to_multiple_of": PAD_TO_MULTIPLE_OF}}
 
 
+def set_input_limit(model: SentenceTransformer, config: ModelConfig) -> None:
+    """
+    Set the encoder's input limit to the registered one (#183).
+
+    Parameters
+    ----------
+    model : SentenceTransformer
+        The loaded model.
+    config : ModelConfig
+        Its registry entry; ``max_tokens`` is the limit.
+
+    Raises
+    ------
+    ConfigurationError
+        If the tokenizer cannot take inputs of that length.
+    """
+    tokenizer_limit = model.tokenizer.model_max_length
+    if config.max_tokens > tokenizer_limit:
+        raise ConfigurationError(
+            f"{config.model_key}: max_tokens {config.max_tokens} exceeds the tokenizer's limit {tokenizer_limit}"
+        )
+    model.max_seq_length = config.max_tokens
+
+
 def load_sentence_transformer(
     model_key: str,
 ) -> Tuple[SentenceTransformer, Dict[str, str]]:
@@ -324,7 +353,8 @@ def load_sentence_transformer(
     Tuple[SentenceTransformer, Dict[str, str]]
         The model placed on the selected device, and provenance metadata
         holding ``model_key``, ``model_id``, ``device``, ``hf_revision`` (as
-        loaded) and ``hf_revision_pinned``.
+        loaded), ``hf_revision_pinned`` and ``max_seq_length`` (the input
+        limit set from the registry).
 
     Raises
     ------
@@ -335,6 +365,7 @@ def load_sentence_transformer(
     device = _select_device()
     print(f"Loading model {config.model_id}@{config.revision[:12]} on device {device}")
     model = SentenceTransformer(config.model_id, device=device, revision=config.revision)
+    set_input_limit(model, config)
     bucket_sequence_padding(model)
     if config.bidirectional_attention:
         enable_bidirectional_attention(model)
@@ -346,5 +377,6 @@ def load_sentence_transformer(
         "device": device,
         "hf_revision": revision,
         "hf_revision_pinned": config.revision,
+        "max_seq_length": model.max_seq_length,
     }
     return model, model_info

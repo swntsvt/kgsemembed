@@ -36,3 +36,18 @@ def pytest_collection_modifyitems(
     for item in items:
         if "slow" in item.keywords:
             item.add_marker(skip_slow)
+
+
+@pytest.fixture
+def word_budget():
+    """Build a token budget that counts whitespace-separated words (#183).
+
+    Budgeted verbalisers take their budget from the model's tokenizer; tests
+    replace it with this one so a budget of ``n`` keeps exactly ``n`` words.
+    """
+    from kgsemembed.verbalisation.budget import TokenBudget
+
+    def words(text: str) -> int:
+        return len(text.split())
+
+    return lambda tokens: TokenBudget(tokens, words, words)

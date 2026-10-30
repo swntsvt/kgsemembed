@@ -33,7 +33,7 @@ EXPECTED_MAX_TOKENS = {
     "M2": 512,
     "M2_uncapped": 512,
     "M3": 8192,
-    "M4": 512,
+    "M4": 128,
     "M5": 512,
 }
 
@@ -178,6 +178,7 @@ def _patch_cpu_and_mock_transformer(
     monkeypatch.setattr(models.torch.backends.mps, "is_available", lambda: False)
     monkeypatch.setattr(models.torch.cuda, "is_available", lambda: False)
     fake = MagicMock(name="SentenceTransformer")
+    fake.return_value.tokenizer.model_max_length = 8192
     monkeypatch.setattr(models, "SentenceTransformer", fake)
     return fake
 
@@ -221,6 +222,7 @@ def test_factory_selects_mps_over_cuda(
     monkeypatch.setattr(models.torch.backends.mps, "is_available", lambda: True)
     monkeypatch.setattr(models.torch.cuda, "is_available", lambda: True)
     fake = MagicMock(name="SentenceTransformer")
+    fake.return_value.tokenizer.model_max_length = 512
     monkeypatch.setattr(models, "SentenceTransformer", fake)
     load_sentence_transformer("M2")
     fake.assert_called_once_with(
@@ -247,7 +249,10 @@ class _FakeModel:
 
 def _model_with_commit_hash(commit_hash: str) -> _FakeModel:
     config = SimpleNamespace(_commit_hash=commit_hash)
-    return _FakeModel(module=SimpleNamespace(auto_model=SimpleNamespace(config=config)))
+    return _FakeModel(
+        module=SimpleNamespace(auto_model=SimpleNamespace(config=config)),
+        tokenizer=SimpleNamespace(model_max_length=512),
+    )
 
 
 def _load_with_model(monkeypatch: pytest.MonkeyPatch, model: _FakeModel):
@@ -269,6 +274,7 @@ def test_loader_returns_model_and_metadata_tuple(
         "device": "cpu",
         "hf_revision": "abc123",
         "hf_revision_pinned": MODEL_REGISTRY["M1"].revision,
+        "max_seq_length": 256,
     }
 
 
@@ -277,8 +283,19 @@ def test_metadata_holds_exactly_the_expected_keys(
 ) -> None:
     _, model_info = _load_with_model(monkeypatch, _model_with_commit_hash("abc123"))
     assert set(model_info) == {
-        "model_key", "model_id", "device", "hf_revision", "hf_revision_pinned"
+        "model_key", "model_id", "device", "hf_revision", "hf_revision_pinned", "max_seq_length"
     }
+
+
+def test_loader_sets_the_registered_input_limit(monkeypatch: pytest.MonkeyPatch) -> None:
+    model, model_info = _load_with_model(monkeypatch, _model_with_commit_hash("abc123"))
+    assert model.max_seq_length == MODEL_REGISTRY["M1"].max_tokens == model_info["max_seq_length"]
+
+
+def test_input_limit_beyond_the_tokenizer_is_refused() -> None:
+    model = SimpleNamespace(tokenizer=SimpleNamespace(model_max_length=256))
+    with pytest.raises(ConfigurationError, match="exceeds the tokenizer's limit 256"):
+        models.set_input_limit(model, MODEL_REGISTRY["M2"])
 
 
 def test_metadata_records_selected_device(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -391,7 +408,7 @@ def test_load_sentence_transformer_returns_instance() -> None:
     model, model_info = load_sentence_transformer("M1")
     assert isinstance(model, SentenceTransformer)
     assert set(model_info) == {
-        "model_key", "model_id", "device", "hf_revision", "hf_revision_pinned"
+        "model_key", "model_id", "device", "hf_revision", "hf_revision_pinned", "max_seq_length"
     }
     assert model_info["hf_revision"] == MODEL_REGISTRY["M1"].revision
 

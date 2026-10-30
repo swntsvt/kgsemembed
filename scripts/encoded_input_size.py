@@ -7,9 +7,9 @@ column the registry assigns it, this verbalises the texts the pipeline encodes
 model's own tokenizer at its pinned revision.  Counts are taken on the text the
 encoder receives (M5's source prefix included, special tokens included) before
 the model's cut; the encoded count caps each text there.  The cut is the
-model's own ``max_seq_length`` (its ``sentence_bert_config.json`` at the pinned
-revision), which is what ``SentenceTransformer.encode`` truncates at; it is
-not the registry's ``max_tokens`` (M4: 128 against 512).
+registry's ``max_tokens``, which the loader sets as the encoder's
+``max_seq_length`` (#183); the model's own ``sentence_bert_config.json`` value
+is recorded beside it.
 
 Token counts drive the encoder's cost and do not depend on hardware, so they
 are the reproducible half of the cost report; the D1 wall-clock half is
@@ -29,7 +29,7 @@ import json
 import random
 import sys
 from pathlib import Path
-from typing import Callable, Dict, List
+from typing import Callable, Dict, List, Optional
 
 import numpy as np
 from huggingface_hub import hf_hub_download
@@ -50,6 +50,7 @@ from kgsemembed.pipeline.run_experiment import (  # noqa: E402
     _unique_candidate_uris,
     _verbalise_uris,
 )
+from kgsemembed.verbalisation.budget import budget_tokens, strategy_is_budgeted  # noqa: E402
 from kgsemembed.verbalisation.registry import build_verbaliser  # noqa: E402
 
 DATASETS = ("D1", "D2", "D3", "D4", "D5")
@@ -107,9 +108,9 @@ def token_length_counter(model_key: str) -> TokenLengths:
     return lengths
 
 
-def max_seq_length(model_key: str) -> int:
+def config_max_seq_length(model_key: str) -> int:
     """
-    Return the length the model truncates at, from its pinned configuration.
+    Return the model's own ``max_seq_length``, from its pinned configuration.
 
     Parameters
     ----------
@@ -147,20 +148,20 @@ def encoder_inputs(
         Texts per role, every source and every unique candidate.
     """
     candidates = load_candidates(pair.dataset_id, pair.pair_name, data_dir)
-    verbaliser = build_verbaliser(condition.strategy_name, condition.model_key)
+    verbalisers = {role: build_verbaliser(condition.strategy_name, condition.model_key, role) for role in ROLES}
     uris = {"source": pair.source_entities, "candidate": _unique_candidate_uris(pair, candidates)}
     graphs = {"source": pair.source_graph, "candidate": pair.target_graph}
     prefixer = EmbeddingEncoder(condition.model_key, None)
     return {
         role: [
             prefixer._apply_prefix(text, role)
-            for text in _verbalise_uris(verbaliser, graphs[role], uris[role], pair.entity_type, role)
+            for text in _verbalise_uris(verbalisers[role], graphs[role], uris[role], pair.entity_type, role)
         ]
         for role in ROLES
     }
 
 
-def length_summary(lengths: List[int], max_tokens: int) -> Dict[str, float]:
+def length_summary(lengths: List[int], max_tokens: int, budget: Optional[int] = None) -> Dict[str, float]:
     """
     Summarise token lengths of one role on one column.
 
@@ -170,16 +171,19 @@ def length_summary(lengths: List[int], max_tokens: int) -> Dict[str, float]:
         Full encoded length of every text.
     max_tokens : int
         The model's token limit; longer texts are truncated by the model.
+    budget : Optional[int]
+        The strategy's token budget, or ``None`` when it has none.
 
     Returns
     -------
     Dict[str, float]
         Text count, total and encoded (capped) tokens, mean, median, p95 and
-        maximum length, and the number of texts over the limit.
+        maximum length, and the numbers of texts over the limit and over the
+        budget (0 without a budget).
     """
     values = np.asarray(lengths, dtype=np.int64)
     if values.size == 0:
-        return {"n_texts": 0, "tokens": 0, "encoded_tokens": 0, "n_over_limit": 0}
+        return {"n_texts": 0, "tokens": 0, "encoded_tokens": 0, "n_over_limit": 0, "n_over_budget": 0}
     return {
         "n_texts": int(values.size),
         "tokens": int(values.sum()),
@@ -189,6 +193,7 @@ def length_summary(lengths: List[int], max_tokens: int) -> Dict[str, float]:
         "p95": float(np.percentile(values, 95)),
         "max": int(values.max()),
         "n_over_limit": int((values > max_tokens).sum()),
+        "n_over_budget": 0 if budget is None else int((values > budget).sum()),
     }
 
 
@@ -240,20 +245,23 @@ def condition_record(
     Returns
     -------
     Dict[str, object]
-        Condition identity, the model's truncation length (and the registry's
-        ``max_tokens`` beside it) and a summary per role and in total.
+        Condition identity, the encoder's input limit (the registry's
+        ``max_tokens``, with the model's own configured value beside it), the
+        strategy's token budget and a summary per role and in total.
     """
-    limit = max_seq_length(condition.model_key)
+    limit = get_model_config(condition.model_key).max_tokens
+    budget = budget_tokens(condition.model_key) if strategy_is_budgeted(condition.strategy_name, condition.model_key) else None
     every = pooled["source"] + pooled["candidate"]
     return {
         "condition_id": condition.condition_id,
         "strategy": condition.strategy_name,
         "model_key": condition.model_key,
         "max_seq_length": limit,
-        "registry_max_tokens": get_model_config(condition.model_key).max_tokens,
+        "config_max_seq_length": config_max_seq_length(condition.model_key),
+        "token_budget": budget,
         "n_pairs": n_pairs,
-        **{role: length_summary(pooled[role], limit) for role in ROLES},
-        "total": length_summary(every, limit),
+        **{role: length_summary(pooled[role], limit, budget) for role in ROLES},
+        "total": length_summary(every, limit, budget),
     }
 
 
@@ -298,6 +306,7 @@ def _row(record: Dict[str, object]) -> str:
         f"{total['n_texts']:,}", f"{source['mean']:.1f}", f"{candidate['mean']:.1f}",
         f"{total['median']:.0f}", f"{total['p95']:.0f}", f"{total['max']:,}",
         f"{total['encoded_tokens']:,}", f"{total['n_over_limit']:,} / {record['max_seq_length']}",
+        "—" if record["token_budget"] is None else f"{total['n_over_budget']:,} / {record['token_budget']}",
     ]
     return "| " + " | ".join(str(cell) for cell in cells) + " |"
 
@@ -322,14 +331,15 @@ def render_markdown(records: List[Dict[str, object]]) -> str:
         "Generated by `scripts/encoded_input_size.py` (tokenizer only). Texts: every source "
         "and every unique candidate the pipeline encodes, as the encoder receives them "
         "(M5 source prefix and special tokens included). Mean/median/p95/max are full "
-        "lengths before the model's limit, its own `max_seq_length` (M4 BioLORD: 128, not "
-        "the registry's 512); *encoded tokens* caps each text at that limit; "
-        "*over limit* counts texts the model truncates. D3 pools its 21 pairs. "
-        "C19 (sanity check, identical to C10) is left out.",
+        "lengths before the encoder's input limit (the registry's `max_tokens`, which the "
+        "loader sets as the model's `max_seq_length`); *encoded tokens* caps each text at that "
+        "limit; *over limit* counts texts the encoder truncates; *over budget* counts texts of "
+        "a budgeted strategy above its token budget (#183), and is a dash for strategies "
+        "without one. D3 pools its 21 pairs. C19 (sanity check, identical to C10) is left out.",
         "",
         "| Column | Cond. | Strategy | Model | Texts | Mean src | Mean cand | Median | P95 | Max "
-        "| Encoded tokens | Over limit / limit |",
-        "|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|",
+        "| Encoded tokens | Over limit / limit | Over budget / budget |",
+        "|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
     ]
     return "\n".join(header + [_row(record) for record in records]) + "\n"
 

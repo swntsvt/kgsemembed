@@ -9,7 +9,7 @@ verbalisation logic.
 """
 
 import logging
-from typing import List
+from typing import Dict, List
 
 import numpy as np
 from sentence_transformers import SentenceTransformer
@@ -161,6 +161,56 @@ class EmbeddingEncoder:
             One-dimensional embedding of dtype ``float32``.
         """
         return self._encode_one(text, "candidate")
+
+    def input_lengths(self, texts: List[str], role: str) -> List[int]:
+        """
+        Count each text's encoder input under the loaded model's tokenizer.
+
+        The count is taken on the prefixed text with special tokens and
+        without truncation, so a length above the model's ``max_seq_length``
+        is a text the encoder truncates (#183).
+
+        Parameters
+        ----------
+        texts : List[str]
+            Verbalised texts of one role.
+        role : str
+            Either ``"source"`` or ``"candidate"``.
+
+        Returns
+        -------
+        List[int]
+            Full encoder-input length of every text.
+        """
+        prefixed = [self._apply_prefix(text, role) for text in texts]
+        encoded = self.model.tokenizer(prefixed, add_special_tokens=True, truncation=False, verbose=False)
+        return [len(ids) for ids in encoded["input_ids"]]
+
+    def truncation_summary(self, texts: List[str], role: str) -> Dict[str, int]:
+        """
+        Summarise what the encoder's input limit cuts from ``texts`` (#183).
+
+        Parameters
+        ----------
+        texts : List[str]
+            Verbalised texts of one role.
+        role : str
+            Either ``"source"`` or ``"candidate"``.
+
+        Returns
+        -------
+        Dict[str, int]
+            ``n_inputs``, ``n_truncated`` (inputs over the limit),
+            ``tokens_discarded`` and ``max_length`` (before truncation).
+        """
+        limit = self.model.max_seq_length
+        lengths = self.input_lengths(texts, role)
+        return {
+            "n_inputs": len(lengths),
+            "n_truncated": sum(length > limit for length in lengths),
+            "tokens_discarded": sum(max(0, length - limit) for length in lengths),
+            "max_length": max(lengths, default=0),
+        }
 
     def _effective_batch_size(self, texts: List[str]) -> int:
         """

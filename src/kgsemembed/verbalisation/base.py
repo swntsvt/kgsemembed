@@ -124,6 +124,32 @@ class VerbaliserBase(ABC):
             Empty string only for entities with no retrievable info.
         """
 
+    def verbalise_after(
+        self, graph: Graph, entity_uri: URIRef, entity_type: str, preceding: str
+    ) -> str:
+        """Verbalise as a component that follows ``preceding`` in a composite.
+
+        Budgeted strategies fit their text into what ``preceding`` left of
+        the budget (#183); every other strategy ignores it.
+
+        Parameters
+        ----------
+        graph : Graph
+            RDF graph containing entity triples.
+        entity_uri : URIRef
+            URI of the entity to verbalise.
+        entity_type : str
+            One of ``"class"``, ``"instance"``, ``"predicate"``.
+        preceding : str
+            Joined text of the earlier components, or ``""``.
+
+        Returns
+        -------
+        str
+            The component's text.
+        """
+        return self.verbalise(graph, entity_uri, entity_type)
+
     def get_label(self, graph: Graph, entity_uri: URIRef) -> Optional[str]:
         """Return the first English or untagged label from LABEL_PREDICATES.
 

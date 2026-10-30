@@ -64,7 +64,13 @@ from kgsemembed.utils.errors import DataError
 from kgsemembed.utils.logging import RunContext, get_logger, init_logging
 from kgsemembed.verbalisation.base import VerbaliserBase, annotation_predicates_digest
 from kgsemembed.verbalisation.v8 import v8_exclusions_digest
-from kgsemembed.verbalisation.ppas import PPAS_BUDGETS, strategy_uses_ppas
+from kgsemembed.verbalisation.budget import (
+    BudgetedVerbaliser,
+    budget_enforcement_digest,
+    budget_tokens,
+    strategy_is_budgeted,
+)
+from kgsemembed.verbalisation.ppas import strategy_uses_ppas
 from kgsemembed.verbalisation.registry import build_verbaliser
 
 _CONFIG_DIR = Path(__file__).resolve().parents[3] / "configs"
@@ -78,6 +84,7 @@ _RANDOM_SEED = 42
 _FAILURE_KEY = "n_failed_pairs"
 _PER_ENTITY_TYPE_KEY = "per_entity_type"
 _POPULATION_KEY = "population"
+_ENCODER_INPUT_KEY = "encoder_input"
 PER_SOURCE_KEY = "per_source"
 _COUNT_KEYS = ("tp", "fp", "fn")
 _VAL = "val"
@@ -527,9 +534,10 @@ def _process_pair(
     encoder: EmbeddingEncoder,
     candidates: Dict[str, List[str]],
 ) -> Dict[str, object]:
-    verbaliser = build_verbaliser(condition.strategy_name, condition.model_key)
+    source_verbaliser = build_verbaliser(condition.strategy_name, condition.model_key, "source")
+    candidate_verbaliser = build_verbaliser(condition.strategy_name, condition.model_key, "candidate")
     source_texts = _verbalise_uris(
-        verbaliser,
+        source_verbaliser,
         pair.source_graph,
         pair.source_entities,
         pair.entity_type,
@@ -537,7 +545,7 @@ def _process_pair(
     )
     candidate_uris = _unique_candidate_uris(pair, candidates)
     candidate_texts = _verbalise_uris(
-        verbaliser,
+        candidate_verbaliser,
         pair.target_graph,
         candidate_uris,
         pair.entity_type,
@@ -551,7 +559,69 @@ def _process_pair(
     ranked_lists = _build_ranked_lists(
         pair, source_embeddings, candidates, candidate_index, candidate_embeddings
     )
-    return with_per_source(pair, ranked_lists, _evaluate_pair(pair, ranked_lists))
+    result = with_per_source(pair, ranked_lists, _evaluate_pair(pair, ranked_lists))
+    result[_ENCODER_INPUT_KEY] = _encoder_input_record(
+        condition, encoder, {"source": (source_verbaliser, source_texts), "candidate": (candidate_verbaliser, candidate_texts)}
+    )
+    return result
+
+
+def _budget_cuts(verbaliser: VerbaliserBase) -> Dict[str, int]:
+    """
+    Return how many texts a verbaliser cut to its budget, and the tokens cut.
+
+    Parameters
+    ----------
+    verbaliser : VerbaliserBase
+        A verbaliser after use; only a :class:`BudgetedVerbaliser` cuts.
+
+    Returns
+    -------
+    Dict[str, int]
+        ``n_budget_cut`` and ``budget_tokens_cut``.
+    """
+    if not isinstance(verbaliser, BudgetedVerbaliser):
+        return {"n_budget_cut": 0, "budget_tokens_cut": 0}
+    return {"n_budget_cut": verbaliser.budget.n_cut, "budget_tokens_cut": verbaliser.budget.tokens_cut}
+
+
+def _encoder_input_record(
+    condition: ExperimentCondition,
+    encoder: EmbeddingEncoder,
+    roles: Dict[str, Tuple[VerbaliserBase, List[str]]],
+) -> Dict[str, object]:
+    """
+    Record the input limit, the budget and what each enforced on the texts (#183).
+
+    Parameters
+    ----------
+    condition : ExperimentCondition
+        The condition run.
+    encoder : EmbeddingEncoder
+        Encoder of the loaded model.
+    roles : Dict[str, Tuple[VerbaliserBase, List[str]]]
+        Per role, the verbaliser used and the texts it produced.
+
+    Returns
+    -------
+    Dict[str, object]
+        ``max_seq_length``, ``token_budget`` (``None`` for a strategy
+        without one), ``budget_enforcement_sha256`` and, per role,
+        truncation by the encoder and cuts by the budget.
+    """
+    return {
+        "max_seq_length": encoder.model.max_seq_length,
+        "token_budget": (
+            budget_tokens(condition.model_key)
+            if strategy_is_budgeted(condition.strategy_name, condition.model_key)
+            else None
+        ),
+        "budget_enforcement_sha256": budget_enforcement_digest(),
+        **{
+            role: {**encoder.truncation_summary(texts, role), **_budget_cuts(verbaliser)}
+            for role, (verbaliser, texts) in roles.items()
+        },
+    }
 
 
 def _evaluate_pair(
@@ -870,7 +940,7 @@ def _write_result(
         "model_id": MODEL_REGISTRY[condition.model_key].model_id,
         "apply_ppas": condition.apply_ppas,
         "ppas_effective": _effective_ppas(condition),
-        "token_budget": PPAS_BUDGETS.get(condition.model_key),
+        "token_budget": budget_tokens(condition.model_key),
         "metrics": {key: metrics[key] for key in _METRIC_KEYS},
         "counts": {key: metrics[key] for key in _COUNT_KEYS},
         "per_entity_type": metrics.get(_PER_ENTITY_TYPE_KEY, {}),
@@ -880,6 +950,7 @@ def _write_result(
         "candidates_sha256": _candidate_digest(candidates),
         "annotation_predicates_sha256": annotation_predicates_digest(),
         "v8_exclusions_sha256": v8_exclusions_digest(),
+        "encoder_input": metrics.get(_ENCODER_INPUT_KEY),
         **_provenance(model_info),
     }
     sidecar = link_to_result(metrics[PER_SOURCE_KEY], payload)

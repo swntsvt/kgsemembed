@@ -12,19 +12,22 @@ template and remaining URI-valued triples use the generic fallback template.
 Blank-node objects and non-English literals produce no output.
 """
 
+from functools import cached_property
+from typing import Optional
+
 from rdflib import Graph, Literal, URIRef
 from rdflib.namespace import OWL, RDF, RDFS
 
 from kgsemembed.verbalisation.base import VerbaliserBase
+from kgsemembed.verbalisation.budget import TokenBudget, fit_items, token_budget
 from kgsemembed.verbalisation.ppas import (
     CLASS_TIER_LIST,
     INSTANCE_TIER_LIST,
-    PPAS_BUDGETS,
     PREDICATE_TIER_LIST,
-    estimate_tokens,
-    ppas_sample,
-    untiered_predicates,
+    tier_order,
 )
+
+_SENTENCE_SEPARATOR = " "
 
 _TIER_LISTS: dict[str, list[list[str]]] = {
     "class": CLASS_TIER_LIST,
@@ -56,20 +59,29 @@ class TemplateNLVerbaliser(VerbaliserBase):
 
         <Entity> is a subclass of <Parent>. <Entity> is called <Label>.
 
-    Triples are selected in schema-aware predicate-tier order and capped to the
-    model token budget (models without a budget, e.g. ``"M3"``, retain every
-    tier-ordered triple), then each surviving triple is rendered with its
-    predicate-specific template.
+    Triples are rendered in schema-aware predicate-tier order (untiered
+    predicates last) and the sentences are kept in that order while they fit
+    the model token budget, counted with the model's tokenizer (#183); models
+    without a budget, e.g. ``"M3"``, retain every sentence.
     """
 
-    def __init__(self, model_key: str = "M2") -> None:
+    def __init__(self, model_key: str = "M2", role: str = "candidate") -> None:
         """
         Parameters
         ----------
         model_key : str
             Model key used to look up the token budget (e.g. "M1", "M2").
+        role : str
+            ``"source"`` or ``"candidate"``: the encoder role whose input the
+            budget counts.
         """
         self.model_key = model_key
+        self.role = role
+
+    @cached_property
+    def budget(self) -> Optional[TokenBudget]:
+        """The model's token budget for this role, or ``None`` when uncapped."""
+        return token_budget(self.model_key, self.role)
 
     def verbalise(
         self, graph: Graph, entity_uri: URIRef, entity_type: str
@@ -97,17 +109,39 @@ class TemplateNLVerbaliser(VerbaliserBase):
         ValueError
             If *entity_type* is not a supported entity type.
         """
-        tier_list = self._tier_list_for(entity_type)
-        triples = self._collect_triples(graph, entity_uri)
-        selected = self._select_triples(triples, tier_list)
+        return self.verbalise_after(graph, entity_uri, entity_type, "")
 
+    def verbalise_after(
+        self, graph: Graph, entity_uri: URIRef, entity_type: str, preceding: str
+    ) -> str:
+        """
+        Render tier-ordered sentences that fit what ``preceding`` left of the budget.
+
+        Parameters
+        ----------
+        graph : Graph
+            RDF graph containing entity triples.
+        entity_uri : URIRef
+            URI of the entity to verbalise.
+        entity_type : str
+            One of ``"class"``, ``"instance"``, ``"predicate"``.
+        preceding : str
+            Joined text of the earlier components of a composite, or ``""``.
+
+        Returns
+        -------
+        str
+            The kept sentences joined with single spaces.
+        """
+        tier_list = self._tier_list_for(entity_type)
+        ordered = tier_order(self._collect_triples(graph, entity_uri), tier_list)
         entity = self.get_label_or_local(graph, entity_uri)
         sentences = [
             sentence
-            for _subj, pred, obj in selected
+            for _subj, pred, obj in ordered
             if (sentence := self._render(graph, entity, pred, obj))
         ]
-        return " ".join(sentences)
+        return _SENTENCE_SEPARATOR.join(fit_items(sentences, _SENTENCE_SEPARATOR, self.budget, preceding))
 
     @staticmethod
     def _tier_list_for(entity_type: str) -> list[list[str]]:
@@ -118,25 +152,6 @@ class TemplateNLVerbaliser(VerbaliserBase):
                 "'class', 'instance', 'predicate'."
             )
         return _TIER_LISTS[entity_type]
-
-    def _select_triples(
-        self, triples: list[tuple], tier_list: list[list[str]]
-    ) -> list[tuple]:
-        """Order triples by predicate tier and cap them to the model budget."""
-        if not triples:
-            return []
-        augmented = tier_list + [untiered_predicates(triples, tier_list)]
-        budget = PPAS_BUDGETS.get(self.model_key)
-        if budget is None:
-            budget = self._total_cost(triples)
-        return ppas_sample(triples, augmented, budget, self._verbalise_triple)
-
-    def _total_cost(self, triples: list[tuple]) -> int:
-        """Return the summed token cost of *triples* for the uncapped path."""
-        return sum(
-            estimate_tokens(self._verbalise_triple(*triple))
-            for triple in triples
-        )
 
     def _render(
         self,

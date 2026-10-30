@@ -8,7 +8,7 @@ from rdflib.namespace import RDF, RDFS
 
 from kgsemembed.verbalisation import HierarchicalContextVerbaliser
 from kgsemembed.verbalisation import v7 as v7_module
-from kgsemembed.verbalisation.ppas import PPAS_BUDGETS, estimate_tokens
+from kgsemembed.verbalisation.ppas import PPAS_BUDGETS
 from kgsemembed.verbalisation.v7 import MAX_ANCESTOR_DEPTH, MAX_SIBLINGS
 
 # ---------------------------------------------------------------------------
@@ -496,42 +496,48 @@ def test_m3_includes_full_hierarchy() -> None:
 
 def test_m2_budget_never_exceeded() -> None:
     g, heart = _budget_graph()
-    out = _v("M2").verbalise(g, heart, "class")
-    assert estimate_tokens(out) <= PPAS_BUDGETS["M2"]
+    verbaliser = _v("M2")
+    out = verbaliser.verbalise(g, heart, "class")
+    assert verbaliser.budget.count(out) <= PPAS_BUDGETS["M2"]
 
 
-def test_siblings_removed_before_ancestors() -> None:
+def _budgeted(budget) -> HierarchicalContextVerbaliser:
+    verbaliser = _v("M2")
+    verbaliser.budget = budget
+    return verbaliser
+
+
+def test_siblings_removed_before_ancestors(word_budget) -> None:
     g, heart = _budget_graph()
-    with patch.dict(v7_module.PPAS_BUDGETS, {"M2": 15}):
-        out = _v("M2").verbalise(g, heart, "class")
+    out = _budgeted(word_budget(8)).verbalise(g, heart, "class")
     assert _parents_line(out) == "Parents: Organ -> Body -> Thing."
     assert _related_line(out) is None
 
 
-def test_ancestor_chain_shortened_when_needed() -> None:
+def test_ancestor_chain_shortened_when_needed(word_budget) -> None:
     g, heart = _budget_graph()
-    with patch.dict(v7_module.PPAS_BUDGETS, {"M2": 9}):
-        out = _v("M2").verbalise(g, heart, "class")
+    out = _budgeted(word_budget(7)).verbalise(g, heart, "class")
     assert _parents_line(out) == "Parents: Organ -> Body."
     assert "Thing" not in out
     assert _related_line(out) is None
 
 
-def test_annotation_never_truncated() -> None:
+def test_annotation_never_truncated(word_budget) -> None:
     g, heart = _budget_graph()
-    with patch.dict(v7_module.PPAS_BUDGETS, {"M2": 1}):
-        out = _v("M2").verbalise(g, heart, "class")
+    out = _budgeted(word_budget(1)).verbalise(g, heart, "class")
     assert out == "Label: Heart."
 
 
-def test_budget_uses_estimate_tokens() -> None:
+def test_context_fits_what_earlier_components_left(word_budget) -> None:
     g, heart = _budget_graph()
-    with patch.dict(v7_module.PPAS_BUDGETS, {"M2": 9}):
-        with patch.object(
-            v7_module, "estimate_tokens", wraps=v7_module.estimate_tokens
-        ) as spy:
-            _v("M2").verbalise(g, heart, "class")
-    assert spy.called
+    out = _budgeted(word_budget(9)).verbalise_after(g, heart, "class", "Label: Heart.")
+    assert _parents_line(out) == "Parents: Organ -> Body."
+
+
+def test_budget_is_the_models_in_tokens() -> None:
+    assert _v("M2").budget.tokens == 420
+    assert _v("M4").budget.tokens == 128
+    assert _v("M3").budget is None
 
 
 # ---------------------------------------------------------------------------

@@ -21,14 +21,19 @@ keeping the chain linear and deterministic across graph re-parses.  When the
 combined output exceeds the model token budget,
 siblings are dropped first and the ancestor chain is then shortened from its
 most distant end; the V2 annotation text is never truncated (models without a
-budget, e.g. ``"M3"``, retain the full hierarchy).
+budget, e.g. ``"M3"``, retain the full hierarchy).  The budget is counted with
+the model's tokenizer on the encoder input (#183); a text whose annotation
+alone exceeds it is cut by :class:`~kgsemembed.verbalisation.budget.BudgetedVerbaliser`.
 """
+
+from functools import cached_property
+from typing import Optional
 
 from rdflib import Graph, URIRef
 from rdflib.namespace import RDF, RDFS
 
 from kgsemembed.verbalisation.base import VerbaliserBase
-from kgsemembed.verbalisation.ppas import PPAS_BUDGETS, estimate_tokens
+from kgsemembed.verbalisation.budget import TokenBudget, token_budget
 from kgsemembed.verbalisation.v2 import AnnotationVerbaliser
 
 MAX_ANCESTOR_DEPTH = 3
@@ -56,14 +61,23 @@ class HierarchicalContextVerbaliser(VerbaliserBase):
     budget without ever truncating the annotation text.
     """
 
-    def __init__(self, model_key: str = "M2") -> None:
+    def __init__(self, model_key: str = "M2", role: str = "candidate") -> None:
         """
         Parameters
         ----------
         model_key : str
             Model key used to look up the token budget (e.g. "M1", "M2").
+        role : str
+            ``"source"`` or ``"candidate"``: the encoder role whose input the
+            budget counts.
         """
         self.model_key = model_key
+        self.role = role
+
+    @cached_property
+    def budget(self) -> Optional[TokenBudget]:
+        """The model's token budget for this role, or ``None`` when uncapped."""
+        return token_budget(self.model_key, self.role)
 
     def verbalise(
         self, graph: Graph, entity_uri: URIRef, entity_type: str
@@ -91,6 +105,30 @@ class HierarchicalContextVerbaliser(VerbaliserBase):
         ValueError
             If *entity_type* is not a supported entity type.
         """
+        return self.verbalise_after(graph, entity_uri, entity_type, "")
+
+    def verbalise_after(
+        self, graph: Graph, entity_uri: URIRef, entity_type: str, preceding: str
+    ) -> str:
+        """
+        Verbalise the annotation plus the context that fits what ``preceding`` left.
+
+        Parameters
+        ----------
+        graph : Graph
+            RDF graph containing entity triples.
+        entity_uri : URIRef
+            URI of the entity to verbalise.
+        entity_type : str
+            One of ``"class"``, ``"instance"``, ``"predicate"``.
+        preceding : str
+            Joined text of the earlier components of a composite, or ``""``.
+
+        Returns
+        -------
+        str
+            The V2 annotation augmented with budget-fitted context.
+        """
         self._predicates_for(entity_type)
         annotation = AnnotationVerbaliser().verbalise(
             graph, entity_uri, entity_type
@@ -98,7 +136,7 @@ class HierarchicalContextVerbaliser(VerbaliserBase):
         ancestors = self._get_ancestors(graph, entity_uri, entity_type)
         ancestor_labels = [self.get_label_or_local(graph, a) for a in ancestors]
         siblings = self._get_siblings(graph, entity_uri, entity_type)
-        return self._apply_budget(annotation, ancestor_labels, siblings)
+        return self._apply_budget(annotation, ancestor_labels, siblings, preceding)
 
     @staticmethod
     def _predicates_for(entity_type: str) -> tuple[URIRef, URIRef]:
@@ -178,21 +216,21 @@ class HierarchicalContextVerbaliser(VerbaliserBase):
         annotation: str,
         ancestor_labels: list[str],
         sibling_labels: list[str],
+        preceding: str,
     ) -> str:
-        """Fit the output to the model budget, preserving the annotation.
+        """Fit the output to what ``preceding`` left of the budget, keeping the annotation.
 
         Siblings are removed first, then the ancestor chain is shortened from
         its most distant end.  Models without a budget keep the full hierarchy.
         """
-        budget = PPAS_BUDGETS.get(self.model_key)
         output = self._format(annotation, ancestor_labels, sibling_labels)
-        if budget is None or estimate_tokens(output) <= budget:
+        if self.budget is None or self.budget.fits(output, preceding):
             return output
 
         ancestors = list(ancestor_labels)
         while True:
             output = self._format(annotation, ancestors, [])
-            if not ancestors or estimate_tokens(output) <= budget:
+            if not ancestors or self.budget.fits(output, preceding):
                 return output
             ancestors.pop()
 

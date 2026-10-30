@@ -128,3 +128,36 @@ def test_timing_records_refuse_a_multi_pair_column(tmp_path):
     args = cost.argparse.Namespace(timing_dir=str(tmp_path), column="D3")
     with pytest.raises(ValueError, match="one pair"):
         cost.timing_records(args, "C")
+
+
+def test_inventory_limit_is_the_encoders_registered_limit(monkeypatch):
+    monkeypatch.setattr(input_size, "config_max_seq_length", lambda key: 128)
+    pooled = {"source": [100, 200], "candidate": [50]}
+    for condition in input_size.compared_conditions("D1"):
+        record = input_size.condition_record(condition, pooled, 1)
+        assert record["max_seq_length"] == input_size.get_model_config(condition.model_key).max_tokens
+
+
+def test_inventory_counts_texts_over_the_budget(monkeypatch):
+    monkeypatch.setattr(input_size, "config_max_seq_length", lambda key: 512)
+    c4 = next(c for c in input_size.compared_conditions("D1") if c.condition_id == "C4")
+    record = input_size.condition_record(c4, {"source": [400, 430], "candidate": [600]}, 1)
+    assert record["token_budget"] == 420
+    assert record["total"]["n_over_budget"] == 2
+    assert record["total"]["n_over_limit"] == 1
+
+
+@pytest.mark.slow
+@pytest.mark.parametrize("model_key", ["M1", "M2", "M3", "M4", "M5"])
+def test_inventory_and_encoder_agree_on_limit_and_lengths(model_key):
+    from kgsemembed.embeddings import EmbeddingEncoder
+    from kgsemembed.embeddings.models import load_sentence_transformer
+
+    model, info = load_sentence_transformer(model_key)
+    encoder = EmbeddingEncoder(model_key, model)
+    texts = ["Heart", "type: Organ | label: Heart of the body " * 40, ""]
+    counter = input_size.token_length_counter(model_key)
+    for role in ("source", "candidate"):
+        prefixed = [encoder._apply_prefix(text, role) for text in texts]
+        assert encoder.input_lengths(texts, role) == counter(prefixed)
+    assert model.max_seq_length == info["max_seq_length"] == input_size.get_model_config(model_key).max_tokens
