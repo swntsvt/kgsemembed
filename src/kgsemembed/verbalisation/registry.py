@@ -44,13 +44,13 @@ _REGISTRY: dict[str, _VerbaliserFactory] = {
         [AnnotationVerbaliser(), RelationalSignatureVerbaliser()]
     ),
     "V2+V7": lambda model_key, role: CombinedVerbaliser(
-        [AnnotationVerbaliser(), HierarchicalContextVerbaliser(model_key, role)]
+        [AnnotationVerbaliser(), HierarchicalContextVerbaliser(model_key, role, include_annotation=False)]
     ),
     "V2+V8+V7": lambda model_key, role: CombinedVerbaliser(
         [
             AnnotationVerbaliser(),
             RelationalSignatureVerbaliser(),
-            HierarchicalContextVerbaliser(model_key, role),
+            HierarchicalContextVerbaliser(model_key, role, include_annotation=False),
         ]
     ),
     "V6+V3": lambda model_key, role: CombinedVerbaliser(

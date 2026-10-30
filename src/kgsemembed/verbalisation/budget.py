@@ -36,7 +36,8 @@ BUDGET_ENFORCEMENT = {
     "version": 1,
     "counting": "model tokenizer at the pinned revision, special tokens and prompt prefix included",
     "budget_rule": "min(PPAS_BUDGETS[model], ModelConfig.max_tokens)",
-    "composites": "components filled in registered order; each fits what earlier ones left",
+    "composites": "components filled in registered order; each fits what earlier ones left; "
+    "V7 after a V2 component adds only its hierarchy lines",
     "selection": "items in priority order while individual counts fit; joined text checked exactly, items dropped from the end",
     "overflow": "a text still over budget is cut at the last whole word that fits",
 }

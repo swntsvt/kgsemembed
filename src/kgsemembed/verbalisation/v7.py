@@ -61,7 +61,9 @@ class HierarchicalContextVerbaliser(VerbaliserBase):
     budget without ever truncating the annotation text.
     """
 
-    def __init__(self, model_key: str = "M2", role: str = "candidate") -> None:
+    def __init__(
+        self, model_key: str = "M2", role: str = "candidate", include_annotation: bool = True
+    ) -> None:
         """
         Parameters
         ----------
@@ -70,9 +72,14 @@ class HierarchicalContextVerbaliser(VerbaliserBase):
         role : str
             ``"source"`` or ``"candidate"``: the encoder role whose input the
             budget counts.
+        include_annotation : bool
+            Whether to start with the V2 annotation.  A composite that already
+            has a V2 component sets it to ``False``, so the annotation is
+            written once (#183; before, V2+V7 and V2+V8+V7 repeated it).
         """
         self.model_key = model_key
         self.role = role
+        self.include_annotation = include_annotation
 
     @cached_property
     def budget(self) -> Optional[TokenBudget]:
@@ -130,8 +137,10 @@ class HierarchicalContextVerbaliser(VerbaliserBase):
             The V2 annotation augmented with budget-fitted context.
         """
         self._predicates_for(entity_type)
-        annotation = AnnotationVerbaliser().verbalise(
-            graph, entity_uri, entity_type
+        annotation = (
+            AnnotationVerbaliser().verbalise(graph, entity_uri, entity_type)
+            if self.include_annotation
+            else ""
         )
         ancestors = self._get_ancestors(graph, entity_uri, entity_type)
         ancestor_labels = [self.get_label_or_local(graph, a) for a in ancestors]
@@ -246,6 +255,6 @@ class HierarchicalContextVerbaliser(VerbaliserBase):
             lines.append(f"Parents: {' -> '.join(ancestor_labels)}.")
         if sibling_labels:
             lines.append(f"Related types include: {', '.join(sibling_labels)}.")
-        if not lines:
-            return annotation
+        if not lines or not annotation:
+            return annotation or "\n".join(lines)
         return annotation + "\n\n" + "\n".join(lines)

@@ -606,3 +606,29 @@ def test_existing_verbalisers_still_importable() -> None:
             TemplateNLVerbaliser,
         )
     )
+
+
+# ---------------------------------------------------------------------------
+# Composites write the annotation once (#183)
+# ---------------------------------------------------------------------------
+@pytest.mark.parametrize("strategy", ["V2+V7", "V2+V8+V7"])
+def test_composites_with_v2_write_the_annotation_once(strategy: str) -> None:
+    from kgsemembed.verbalisation import build_verbaliser
+
+    g, heart = _budget_graph()
+    out = build_verbaliser(strategy, "M3").verbalise(g, heart, "class")
+    assert out.count("Label: Heart.") == 1
+    assert out.startswith("Label: Heart.")
+    assert _parents_line(out) == "Parents: Organ -> Body -> Thing."
+
+
+def test_v7_alone_still_starts_with_the_annotation() -> None:
+    g, heart = _budget_graph()
+    assert _v("M3").verbalise(g, heart, "class").startswith("Label: Heart.\n\nParents:")
+
+
+def test_context_only_v7_writes_nothing_when_nothing_fits(word_budget) -> None:
+    g, heart = _budget_graph()
+    verbaliser = HierarchicalContextVerbaliser("M2", include_annotation=False)
+    verbaliser.budget = word_budget(2)
+    assert verbaliser.verbalise_after(g, heart, "class", "Label: Heart.") == ""
