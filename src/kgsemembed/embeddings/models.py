@@ -22,6 +22,7 @@ from kgsemembed.utils.errors import ConfigurationError
 PAD_TO_MULTIPLE_OF = 64
 EXPECTED_DEVICE_PREFIX = "mps"
 _COMMIT_HASH = re.compile(r"[0-9a-f]{40}")
+_OFFSET_POSITION_TYPES = frozenset({"roberta", "xlm-roberta", "mpnet"})
 
 
 @dataclass(frozen=True)
@@ -313,6 +314,31 @@ def bucket_sequence_padding(model: SentenceTransformer) -> None:
     model[0].processing_kwargs = {"text": {"pad_to_multiple_of": PAD_TO_MULTIPLE_OF}}
 
 
+def position_capacity(model: SentenceTransformer) -> int:
+    """
+    Return the longest input the model's position embeddings can take.
+
+    RoBERTa-style models (RoBERTa, XLM-R, MPNet) number positions from the
+    padding index plus one, so their usable length is that much shorter than
+    ``max_position_embeddings`` (BioLORD: 514 - 2 = 512).  The tokenizer's
+    ``model_max_length`` cannot serve: sentence-transformers sets it to the
+    model's configured ``max_seq_length`` when loading.
+
+    Parameters
+    ----------
+    model : SentenceTransformer
+        The loaded model.
+
+    Returns
+    -------
+    int
+        Usable input length in tokens.
+    """
+    config = model[0].auto_model.config
+    offset = config.pad_token_id + 1 if config.model_type in _OFFSET_POSITION_TYPES else 0
+    return config.max_position_embeddings - offset
+
+
 def set_input_limit(model: SentenceTransformer, config: ModelConfig) -> None:
     """
     Set the encoder's input limit to the registered one (#183).
@@ -327,12 +353,12 @@ def set_input_limit(model: SentenceTransformer, config: ModelConfig) -> None:
     Raises
     ------
     ConfigurationError
-        If the tokenizer cannot take inputs of that length.
+        If the model's position embeddings cannot take inputs of that length.
     """
-    tokenizer_limit = model.tokenizer.model_max_length
-    if config.max_tokens > tokenizer_limit:
+    capacity = position_capacity(model)
+    if config.max_tokens > capacity:
         raise ConfigurationError(
-            f"{config.model_key}: max_tokens {config.max_tokens} exceeds the tokenizer's limit {tokenizer_limit}"
+            f"{config.model_key}: max_tokens {config.max_tokens} exceeds the model's position capacity {capacity}"
         )
     model.max_seq_length = config.max_tokens
 
