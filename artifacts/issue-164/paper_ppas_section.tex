@@ -31,9 +31,11 @@ selected. We therefore tested PPAS separately.
 
 \paragraph{Controlled ablation.}
 One model (M2) and one key--value representation are held fixed and only the
-selection policy varies, under outcome-blind stress budgets set before any
-run (the pooled median full length, floored to a multiple of 8: 48 tokens on
-D1, 80 on D5). On D1 at 48 tokens PPAS reaches MRR $0.494$, above random
+selection policy varies. At M2's own budget of 420 tokens the policy cannot
+matter: on D5 only 1.8\% of candidates exceed it in this representation, and
+every policy reaches the full-text MRR ($0.178$). We therefore used
+outcome-blind stress budgets set before any run (the pooled median full
+length, floored to a multiple of 8: 48 tokens on D1, 80 on D5). On D1 at 48 tokens PPAS reaches MRR $0.494$, above random
 selection ($0.406 \pm 0.001$ over five seeds), lexicographic deterministic
 selection ($0.357$) and even the untruncated text ($0.453$). On D5 at 80
 tokens PPAS cannot act: almost no D5 entity carries a tiered predicate, and
