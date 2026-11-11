@@ -253,6 +253,9 @@ python scripts/generate_cost_report.py --column D1
 # input record, or C19 != C10).
 python scripts/m4_length_check.py --data_dir data/ --output_dir artifacts/issue-183/
 python scripts/text_limitations.py --data_dir data/ --output_dir artifacts/issue-183/
+# How often the budget binds in each budgeted condition x column (texts
+# verbalised without the budget; tokenizer only, ~10 min)
+python scripts/budget_binding.py --data_dir data/ --output_dir artifacts/issue-183/
 python scripts/rerun_comparison.py --new_dir data/results_issue183/ \
     --new_baseline_dir data/results_ngram_baseline_issue183/ \
     --output artifacts/issue-183/rerun_comparison.md

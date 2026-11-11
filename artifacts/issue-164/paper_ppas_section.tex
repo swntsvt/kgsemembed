@@ -6,21 +6,28 @@
 % D5 (#122, be06539) and D2 (#128 follow-up, 4a42227) are unaffected by #137.
 % Intervals: 95% paired bootstrap over the test reference sources of one pair
 % (2,000 resamples, seed 42); no significance test.
+% Binding counts of the main conditions (#183): artifacts/issue-183/
+% budget_binding.md (scripts/budget_binding.py, tokenizer only; every text
+% the pipeline encodes, verbalised without the budget).
 
 \subsection{Token budgets and predicate-priority sampling}
 \label{sec:ppas}
 
 When an entity's key--value text (V3, V4, V6) exceeds the model's token
-budget, the verbaliser keeps triples greedily in a fixed predicate-tier
-order (for classes: lexical predicates such as labels, SKOS synonyms and
-definitions, then type and hierarchy, then a few structural predicates;
-predicates in no tier come last); we call this predicate-priority sampling
-(PPAS). Only C3, C4, C5 and C7 can
-invoke it, and at the budgets of the main conditions it rarely binds: in a
-controlled re-implementation with M2's real tokenizer, no D1 text exceeds
-420 tokens, and on D5 1.8\% of candidates do, with every selection policy
-reaching the full-text MRR ($0.178$). The main results therefore say little
-about PPAS, and we tested it separately.
+budget (420 tokens for M2, counted with the model's tokenizer on the text
+the encoder receives), the verbaliser keeps triples greedily in a fixed
+predicate-tier order (for classes: lexical predicates such as labels, SKOS
+synonyms and definitions, then type and hierarchy, then a few structural
+predicates; predicates in no tier come last); we call this
+predicate-priority sampling (PPAS). Only C3, C4, C5 and C7 can invoke it.
+On the ontology datasets the budget rarely binds: it shortens at most
+0.7\% of the texts these conditions encode on D1 and D2, 2.7\% on D3 (C7
+only) and none on D4$_{\mathrm{sc}}$. It binds on the instance datasets:
+on D4$_{\mathrm{in}}$ it shortens 19--29\% of the texts, which carry each
+wiki page's abstract and link text, and on D5 1--6\%, or 22\% under C7,
+whose two key--value components share one budget. Where it binds, the
+main results cannot separate what the text contains from how it was
+selected. We therefore tested PPAS separately.
 
 \paragraph{Controlled ablation.}
 One model (M2) and one key--value representation are held fixed and only the
