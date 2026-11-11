@@ -210,7 +210,13 @@ D1 numbers were first produced by the re-run after the D1 known-pair fix
 (section 3; all 15 D1 conditions and B0 at commit 65b0d33, clean tree);
 D2–D5 were unaffected by the fix.
 Every stored C1–C20 and B0 result was re-run at c6931db in #141 with every
-metric unchanged, so that is the commit the stored files now record.
+metric unchanged. After the #183 corrections (token budgets counted on the
+encoder input with each model's tokenizer, M4 at 512 tokens, V7's
+annotation written once, D5 datatype suffixes removed) all of them were
+re-run at 3b23a8b: B0 and every cell no correction touches reproduced
+exactly, and 21 budgeted, M4 or D5 cells changed
+(`artifacts/issue-183/rerun_comparison.md`). The numbers below are from
+that re-run.
 
 B0 per column:
 
@@ -228,12 +234,12 @@ equals Hits@1 except on D1 (0.5398), D2 (0.7446) and D3 (0.6528).
 The effect of re-ranking depends on the dataset.
 
 Number of conditions above / below / equal to B0, per metric, by point
-estimate (as regenerated in #163: 277 C-results, the sanity check C19 left
+estimate (as regenerated in #183: 277 C-results, the sanity check C19 left
 out as in every results table):
 
 | Metric | D1 | D2 | D3 | D4_schema | D4_instance | D5 |
 |---|---|---|---|---|---|---|
-| MRR | 8 / 7 / 0 | 7 / 8 / 0 | 6 / 4 / 0 | 11 / 1 / 0 | 9 / 3 / 0 | 0 / 13 / 0 |
+| MRR | 8 / 7 / 0 | 6 / 9 / 0 | 6 / 4 / 0 | 11 / 1 / 0 | 9 / 3 / 0 | 0 / 13 / 0 |
 | Hits@1 | 8 / 7 / 0 | 6 / 9 / 0 | 5 / 5 / 0 | 9 / 1 / 2 | 9 / 3 / 0 | 0 / 13 / 0 |
 | F1 | 9 / 6 / 0 | 8 / 7 / 0 | 1 / 9 / 0 | 10 / 1 / 1 | 0 / 12 / 0 | 0 / 13 / 0 |
 
@@ -243,11 +249,15 @@ conditions significantly above / below B0:
 
 | | D1 | D2 | D3 | D4_schema | D4_instance | D5 |
 |---|---|---|---|---|---|---|
-| MRR | 5 / 6 of 15 | 5 / 7 of 15 | 1 / 2 of 10 | 0 / 0 of 12 | 4 / 2 of 12 | 0 / 13 of 13 |
+| MRR | 5 / 6 of 15 | 5 / 8 of 15 | 1 / 2 of 10 | 0 / 0 of 12 | 2 / 2 of 12 | 0 / 12 of 13 |
 
-- Significant gains: D1 C4 +0.074, C3 +0.062, C17 +0.052, C6 +0.049, C16
-  +0.022; D2 C4 +0.085, C17 +0.043, C1 +0.033, C7 +0.032, C3 +0.031; D3 C1
-  +0.043; D4_instance C4 +0.041, C3 +0.039, C5 +0.020, C7 +0.018.
+- Significant gains: D1 C4 +0.074, C3 +0.062, C6 +0.059, C17 +0.052, C16
+  +0.018; D2 C4 +0.085, C17 +0.043, C1 +0.033, C7 +0.032, C3 +0.032; D3 C1
+  +0.043; D4_instance C4 +0.040, C3 +0.034.
+- #183 changed three decisions: C5 (+0.013) and C7 (+0.012) on D4_instance
+  are no longer significant gains (before: +0.020, +0.018), C16 on D2
+  (−0.035, before −0.024) is now a significant loss, and C5 on D5 (−0.003)
+  is no longer a significant loss.
 - The #163 cells (C4 on D4/D5, C7 on D1/D2/D5, C15 on D2) grew their
   columns' families from 14/13/11/11/11 (D1/D2/D4_schema/D4_instance/D5) to
   15/15/12/12/13 and the decisions were recomputed, as the #165 plan fixed.
@@ -255,14 +265,15 @@ conditions significantly above / below B0:
   on D1 (+0.005) and C4 on D4_schema (+0.021) are not significant, and C15
   on D2 (−0.092), C4 on D5 and C7 on D5 are significant losses.
 - No condition differs significantly from B0 on D4_schema (44 test
-  reference sources), and every D5 condition is significantly below it.
+  reference sources), and every D5 condition but C5 is significantly below
+  it.
 
 - **Ranking improves on D1, D2 and D4, but not uniformly.** The best
   condition's MRR gain over B0 is:
   - D1: +0.074 (C4, V3/M2);
   - D2: +0.085 (C4);
   - D4_schema: +0.033 (C3, V2+V6/M2; C8 and C10 tie);
-  - D4_instance: +0.041 (C4; C3 +0.039).
+  - D4_instance: +0.040 (C4; C3 +0.034).
 
   Only about half the conditions beat B0 on D1 and D2 MRR. Conditions without
   lexical text collapse: C9 (V8 only) loses 0.44–0.57 MRR on D1–D3.
@@ -278,20 +289,24 @@ conditions significantly above / below B0:
   depends on the score scale (n-gram cosine against embedding cosine) as much
   as on the order. D3's validation sets are small (20% of 4–25 references per
   pair), and D4_instance's F1 counts only judgeable unmatched sources.
-- **Re-ranking reduces every metric on D5.** All 13 D5 conditions are below
-  B0 on MRR, Hits@1, Recall@1, Recall@10 and F1 (D5 section of
-  `baseline_comparison.md`).
+- **Re-ranking does not improve D5.** All 13 D5 conditions are below B0 on
+  MRR, Hits@1, Recall@1 and F1, and all but C14 (+0.005) on Recall@10 (D5
+  section of `baseline_comparison.md`).
 
 ### The D5 regression
 
 On D5, stage 1 puts the gold target first for 1,621 of 10,500 test
 references. It puts it in ranks 2–20 for 1,179, outside the top 20 for 7,533,
-and 167 sources are unreachable. Every embedding condition then orders those
-20 candidates worse than the n-gram did:
+and 167 sources are unreachable. No embedding condition orders those 20
+candidates better than the n-gram did:
 
-- The best, C14 (V4+V6/M3), reaches MRR 0.1550 against B0's 0.1808 (−0.026).
-  The other conditions that read attribute text are next: C5 (V4/M2) −0.030
-  and C3 (V2+V6/M2) −0.045.
+- The best, C5 (V4/M2), reaches MRR 0.1777 against B0's 0.1808 (−0.003
+  [−0.008, 0.001], not significant). The other conditions that read
+  attribute text follow, each significantly below B0: C14 (V4+V6/M3)
+  −0.009, C7 (V6+V3/M2) −0.012, C3 (V2+V6/M2) −0.019, C4 (V3/M2) −0.031.
+  Before #183 these texts carried OpenEA's inlined datatype on every literal
+  and were cut at 512 tokens; removing the suffix raised them by 0.017
+  (C14) to 0.040 (C7).
 - Conditions whose text is labels, annotations or relational signatures (C1,
   C2, C9, C10, C13, C18, C20) score MRR 0.034–0.049. That is about what a
   random order of the same lists would score: 2,800 of 10,500 test references
