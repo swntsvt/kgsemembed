@@ -100,6 +100,11 @@ def test_render_shows_rows_against_b0():
     assert "median of 3 passes" in latex and r"\label{tab:cost_d1}" in latex
 
 
+def test_render_latex_spans_both_columns():
+    lines = _rendered("D1")[1].splitlines()
+    assert lines[0] == r"\begin{table*}[t]" and lines[-1] == r"\end{table*}"
+
+
 def test_render_latex_escapes_the_column_in_the_caption():
     assert r"stage~2 on D4\_instance" in _rendered("D4_instance")[1]
 

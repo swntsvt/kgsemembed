@@ -315,7 +315,7 @@ def render_latex(rows: List[Dict[str, object]], b0: Dict[str, object], context: 
     """
     cheapest = min(row["stage2"] for row in rows)
     head = [
-        r"\begin{table}[t]", r"\centering", r"\footnotesize", r"\setlength{\tabcolsep}{4pt}",
+        r"\begin{table*}[t]", r"\centering", r"\footnotesize", r"\setlength{\tabcolsep}{4pt}",
         r"\begin{threeparttable}",
         rf"\caption{{Computational cost of stage~2 on {_latex_text(context['column'])}, one run per condition. Params: "
         r"model parameters, in millions. Tokens: total encoded tokens, in millions (sources and unique candidates, each capped at the model's limit). "
@@ -329,7 +329,7 @@ def render_latex(rows: List[Dict[str, object]], b0: Dict[str, object], context: 
     ]
     tail = [r"\hline", r"\end{tabular}", r"\begin{tablenotes}\footnotesize",
             rf"\item Timings: {context['note']}; descriptive, specific to this machine and implementation.",
-            r"\end{tablenotes}", r"\end{threeparttable}", r"\end{table}"]
+            r"\end{tablenotes}", r"\end{threeparttable}", r"\end{table*}"]
     return "\n".join(head + [_latex_line(row, cheapest, b0["mrr"]) for row in rows] + tail) + "\n"
 
 
