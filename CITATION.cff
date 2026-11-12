@@ -8,6 +8,14 @@ authors:
     orcid: "https://orcid.org/0009-0002-2873-229X"
 version: v0.3.0-phase2-results
 date-released: "2026-11-12"
+doi: 10.5281/zenodo.24162839
+identifiers:
+  - type: doi
+    value: 10.5281/zenodo.24162839
+    description: "This release (v0.3.0-phase2-results): code and data archive"
+  - type: doi
+    value: 10.5281/zenodo.24162838
+    description: "All versions (Zenodo concept DOI)"
 license: MIT
 repository-code: "https://github.com/swntsvt/kgsemembed"
 abstract: >-
