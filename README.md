@@ -330,7 +330,9 @@ cp -n configs/local/runtime.example.yaml configs/local/runtime.yaml   # never ov
 
 ## Citation
 
-No paper has been published yet. To cite the software:
+No paper has been published yet. To cite the software and its data archive
+(also in `CITATION.cff`, which GitHub offers under "Cite this repository"; a
+Zenodo DOI will be added once the release is archived):
 
 ```bibtex
 @software{sawant_kgsemembed_2026,
