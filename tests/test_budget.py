@@ -179,3 +179,38 @@ def test_representative_inputs_hold_the_budget(dataset_id: str, column: str) -> 
         for uri in _sample_entities(pair, 200):
             text = verbaliser.verbalise(pair.source_graph, URIRef(uri), "instance")
             assert verbaliser.budget.count(text) <= 420, (strategy, uri)
+
+
+def _rich_entity() -> Graph:
+    from rdflib.namespace import RDF, RDFS
+
+    g = _long_entity(60)
+    parents = [URIRef(f"http://example.org/ont#Parent{i}") for i in range(4)]
+    g.add((_ENT, RDFS.label, Literal("Entity " + "word " * 300)))
+    g.add((_ENT, RDFS.subClassOf, parents[0]))
+    for child, parent in zip(parents, parents[1:]):
+        g.add((child, RDFS.subClassOf, parent))
+    for i in range(30):
+        g.add((_ENT, URIRef(f"http://example.org/ont#rel{i}"), URIRef(f"http://example.org/ont#Node{i}")))
+        g.add((URIRef(f"http://example.org/ont#Node{i}"), RDF.type, parents[1]))
+    return g
+
+
+def _budgeted_conditions():
+    from kgsemembed.pipeline.conditions import EXPERIMENT_CONDITIONS
+
+    return [c for c in EXPERIMENT_CONDITIONS if strategy_is_budgeted(c.strategy_name, c.model_key)]
+
+
+@pytest.mark.parametrize("condition", _budgeted_conditions(), ids=lambda c: c.condition_id)
+@pytest.mark.parametrize("role", ["source", "candidate"])
+@pytest.mark.parametrize("entity_type", ["class", "instance"])
+def test_every_budgeted_condition_holds_its_budget_on_the_encoder_input(condition, role, entity_type) -> None:
+    verbaliser = build_verbaliser(condition.strategy_name, condition.model_key, role)
+    text = verbaliser.verbalise(_rich_entity(), _ENT, entity_type)
+    count, _ = encoder_input_counters(condition.model_key, role)
+    assert 0 < count(text) <= budget_tokens(condition.model_key) <= get_model_config(condition.model_key).max_tokens
+
+
+def test_budgeted_conditions_are_the_expected_ones() -> None:
+    assert [c.condition_id for c in _budgeted_conditions()] == ["C3", "C4", "C5", "C6", "C7", "C8", "C16"]

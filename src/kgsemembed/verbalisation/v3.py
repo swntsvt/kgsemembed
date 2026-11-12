@@ -18,7 +18,7 @@ from typing import Optional
 from rdflib import Graph, Literal, URIRef
 from rdflib.namespace import OWL, RDF, RDFS
 
-from kgsemembed.verbalisation.base import VerbaliserBase
+from kgsemembed.verbalisation.base import VerbaliserBase, literal_text
 from kgsemembed.verbalisation.budget import TokenBudget, fit_items, token_budget
 from kgsemembed.verbalisation.ppas import (
     CLASS_TIER_LIST,
@@ -164,7 +164,7 @@ class TemplateNLVerbaliser(VerbaliserBase):
         if isinstance(obj, Literal):
             if obj.language not in (None, "en"):
                 return None
-            value = str(obj)
+            value = literal_text(obj)
         else:
             value = self.get_label_or_local(graph, obj)
 
