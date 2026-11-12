@@ -1,5 +1,7 @@
 # kgsemembed
 
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.24162839.svg)](https://doi.org/10.5281/zenodo.24162839)
+
 Phase 2 of a three-phase knowledge graph (KG) alignment study. Here, dense
 sentence embeddings re-rank stage-1 candidates. Each KG entity is turned into
 text by a verbalisation strategy (V1–V8) and encoded by a
@@ -328,17 +330,20 @@ cp -n configs/local/runtime.example.yaml configs/local/runtime.yaml   # never ov
 
 ## Citation
 
-No paper has been published yet. To cite the software and its data archive
-(also in `CITATION.cff`, which GitHub offers under "Cite this repository"; a
-Zenodo DOI will be added once the release is archived):
+No paper has been published yet. To cite the software and its data archive,
+archived on Zenodo as `10.5281/zenodo.24162839` (this release; all versions:
+`10.5281/zenodo.24162838`), use the entry below or `CITATION.cff`, which
+GitHub offers under "Cite this repository":
 
 ```bibtex
 @software{sawant_kgsemembed_2026,
-  author  = {Sawant, Savita Kiran},
-  title   = {kgsemembed: Verbalisation and Dense Embeddings for Knowledge Graph Alignment},
-  year    = {2026},
-  version = {v0.3.0-phase2-results},
-  url     = {https://github.com/swntsvt/kgsemembed}
+  author    = {Sawant, Savita Kiran},
+  title     = {kgsemembed: Verbalisation and Dense Embeddings for Knowledge Graph Alignment},
+  year      = {2026},
+  version   = {v0.3.0-phase2-results},
+  publisher = {Zenodo},
+  doi       = {10.5281/zenodo.24162839},
+  url       = {https://doi.org/10.5281/zenodo.24162839}
 }
 ```
 
