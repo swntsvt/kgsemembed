@@ -1361,8 +1361,8 @@ python scripts/v8_fix_report.py --old_dir data/results/ --new_dir data/results_i
 
 ## Release (#141)
 
-> **Current release**: `v0.3.0-phase2-results` (#171) replaces this one as
-> the release the paper cites: its archive holds the #183 results (all from
+> **Next release**: `v0.3.0-phase2-results` (#171) will replace this one as
+> the release the paper cites: its archive will hold the #183 results (all from
 > `3b23a8b`), and README "Reproducing the paper tables and figures" lists
 > every command and the outputs each one checks (#170). This section records
 > how #141 built and checked `v0.2.0-phase2-results`; the archive recipe
