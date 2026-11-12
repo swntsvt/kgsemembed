@@ -1,0 +1,9 @@
+Phase 2 results release (#171): the results the paper reports.
+
+- **Code**: this tag (`main`). Model revisions pinned in `MODEL_REGISTRY`; exact environment in `requirements-lock.txt` (macOS arm64, Python 3.12.14). `pyproject.toml` stays at `0.1.0`, the `kgsemembed_version` every stored result records (see the archive's `data/release/README.md`).
+- **Results**: all 19 conditions C1–C20 (278 results; C12 retired in #142; the 7 cells of #163 included) and the stage-1 n-gram baseline B0 (26), from one run at `3b23a8b` (#183, tag `results/issue-183`) on a clean tree on MPS. Since `v0.2.0-phase2-results`, token budgets are counted with each model's tokenizer on the encoder input, M4 runs at 512 tokens, V7's annotation is written once and D5 datatype suffixes are removed; `artifacts/issue-183/rerun_comparison.md` lists the 21 changed cells.
+- **Data archive** (`kgsemembed-v0.3.0-phase2-results-data.tar.gz`, SHA-256 in the `.sha256` asset): `data/results/` (results, per-source sidecars, `report.md`), `data/results_ngram_baseline/`, `data/candidates/` and `data/release/` (README, per-file `MANIFEST.sha256`, lock file). URIs, scores and metrics only; no dataset text. The datasets come from their original releases; D1 requires a SNOMED CT licence.
+
+Reproduce: README, "Reproducing the paper tables and figures". From a fresh clone at this tag with the archive extracted, the report, every paper table, the figure claims, the B0 comparison and paired tests, the coverage table, the cost report and the results inventory regenerate byte-identically, with no model or dataset needed.
+
+Scope: a controlled comparison under a re-ranking protocol over 20 stage-1 candidates per source, not benchmark results.
