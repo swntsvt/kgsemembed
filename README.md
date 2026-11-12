@@ -111,6 +111,12 @@ V7 hierarchical context, V8 relational signature (`src/kgsemembed/verbalisation/
 Models: M1 all-MiniLM-L6-v2, M2 bge-large-en-v1.5, M3 bge-m3, M4 BioLORD-2023,
 M5 stella_en_1.5B_v5 (`src/kgsemembed/embeddings/models.py`).
 
+**Token budgets (#183).** Strategies with a V3–V7 component are held to a
+token budget (M1 200; M2, M4, M5 420), counted with the model's own tokenizer
+on the exact text the encoder receives. V1, V2 and V8 have no budget; any
+input over the model's limit (M1 256, M3 8192, the others 512) is truncated
+and recorded in the result's `encoder_input` block.
+
 ```bash
 # One condition on one dataset (C1 on D2: ~10 s; larger models and datasets take longer)
 venv/bin/python -m kgsemembed.pipeline.run_experiment \
@@ -123,9 +129,9 @@ always pass a separate directory unless you mean to add to or replace the
 stored results.
 
 **Long-running:** omitting `--conditions` and `--datasets` runs all 19
-conditions on every dataset each one covers (278 results). The 271 of the
-#141 re-run took about 20 hours on the M4 Pro, most of it on D4 instances;
-the 7 cells #163 added took 3.6 hours. Run it in `tmux`:
+conditions on every dataset each one covers (278 results). The #183 re-run
+of all of them and B0 took about 24 hours on the M4 Pro, most of it on D4
+instances. Run it in `tmux`:
 
 ```bash
 venv/bin/python -m kgsemembed.pipeline.run_experiment \
@@ -171,83 +177,118 @@ touches the C1–C20 tables. Commands, results and caveats are in `CLAUDE.md`.
   item order changes. The order was frozen on D2 validation before the test
   run. Tracked URI-only artefacts are in `artifacts/issue-134/`.
 
-The ablation D1 numbers predate #137's D1 known-pair fix, so compare them only
-with each other.
+The original ablation D1 runs predate #137's D1 known-pair fix, so compare
+them only with each other. #164 re-ran the D1 runs of #122, #128 and #131 on
+the current D1 population (`data/results_issue164/`, reports in
+`artifacts/issue-164/`); those are the D1 numbers the paper cites. The
+ablation trees are not in the release archive.
 
 ## Reproducing the paper tables and figures
 
-The tagged release `v0.2.0-phase2-results` ships a data archive with all
-stored results, B0, the candidates and a checksum manifest. Rebuilding from it
-needs neither the models nor the datasets:
+The paper cites the release `v0.3.0-phase2-results` (#171). Its data archive
+holds every stored result with its per-source sidecar and `report.md`
+(`data/results/`), B0 (`data/results_ngram_baseline/`), the stage-1
+candidates (`data/candidates/`), the locked requirements and a checksum
+manifest (`data/release/`). Every stored C1–C20 and B0 result comes from one
+run at commit `3b23a8b` (the #183 re-run, kept reachable by the tag
+`results/issue-183`). Rebuilding from the archive needs neither the models
+nor the datasets:
 
 ```bash
-git clone --branch v0.2.0-phase2-results https://github.com/swntsvt/kgsemembed.git && cd kgsemembed
+git clone --branch v0.3.0-phase2-results https://github.com/swntsvt/kgsemembed.git && cd kgsemembed
 python3.12 -m venv venv
 venv/bin/pip install -r requirements-lock.txt && venv/bin/pip install -e . --no-deps
-gh release download v0.2.0-phase2-results
-shasum -a 256 -c kgsemembed-v0.2.0-phase2-results-data.tar.gz.sha256
-tar -xzf kgsemembed-v0.2.0-phase2-results-data.tar.gz && shasum -a 256 -c data/release/MANIFEST.sha256
+gh release download v0.3.0-phase2-results
+shasum -a 256 -c kgsemembed-v0.3.0-phase2-results-data.tar.gz.sha256
+tar -xzf kgsemembed-v0.3.0-phase2-results-data.tar.gz && shasum -a 256 -c data/release/MANIFEST.sha256
 ```
 
-Then, in that checkout (#141 verified the report and tables this way from a
-fresh clone):
+Then, in that checkout, regenerate every output the paper uses and check
+that it is unchanged. The scripts that write files rewrite tracked files, so
+`git diff --exit-code` is the check:
 
 ```bash
-# Results report (a few minutes; per-dataset paired tests from the sidecars)
+# Results report (~10 min; paired tests from the sidecars, then every condition against B0)
 venv/bin/python scripts/generate_report.py --results_dir data/results/ --output report.md
 cmp report.md data/results/report.md
 
-# LaTeX results tables (mrr is the main table; hits_at_1, f1, recall_at_1)
+# Results tables (tab:main_results is mrr; hits_at_1, f1, recall_at_1) and tab:entity_type
 for m in mrr hits_at_1 f1 recall_at_1; do
   venv/bin/python scripts/generate_results_table.py --results_dir data/results/ \
       --baseline_dir data/results_ngram_baseline/ --metric $m | cmp - artifacts/issue-139/tables/$m.tex
 done
+venv/bin/python scripts/generate_entity_type_table.py --results_dir data/results/ \
+    | cmp - artifacts/issue-166/entity_type_table.tex
 
-# Figures 1 and 2 (into figures/, gitignored)
-venv/bin/python scripts/generate_figure1_d3_scatter.py \
-    --results_dir data/results/ --output_dir figures/ --metric mrr
-venv/bin/python scripts/generate_figure2_model_comparison.py \
-    --results_dir data/results/ --output_dir figures/ --metric mrr
+# Tracked outputs written in place
+venv/bin/python scripts/generate_ablation_tests_table.py --results_dir data/results/   # tab:stats, a few min
+venv/bin/python scripts/figure_claims.py --results_dir data/results/ \
+    --output_dir artifacts/issue-149/                                                # ~1.5 min
+venv/bin/python scripts/generate_baseline_comparison.py
+venv/bin/python scripts/baseline_paired_tests.py                                     # ~3.5 min
+venv/bin/python scripts/coverage_table.py --results_dir data/results/ \
+    --output artifacts/issue-163/coverage.md
+venv/bin/python scripts/generate_cost_report.py --column D1     # tab:cost and its figure
+venv/bin/python scripts/results_inventory.py                    # reads git refs; seconds
+git diff --exit-code
 ```
 
-Four generated outputs postdate the tag:
+| Output | Paper | Generated by |
+|---|---|---|
+| `data/results/report.md` | every number in the results text | `generate_report.py` |
+| `artifacts/issue-139/tables/{mrr,hits_at_1,f1,recall_at_1}.tex` | results tables | `generate_results_table.py` |
+| `artifacts/issue-166/entity_type_table.tex` | `tab:entity_type` | `generate_entity_type_table.py` |
+| `artifacts/issue-188/tables/ablation_tests.tex` | `tab:stats` | `generate_ablation_tests_table.py` |
+| `artifacts/issue-181/cost_D1.{tex,md}`, `cost_vs_mrr_D1.{pdf,png}` | cost table and figure | `generate_cost_report.py` |
+| `artifacts/issue-149/figure_claims.{md,json}` | Figure 1 and 2 claims | `figure_claims.py` |
+| `artifacts/issue-165/baseline_paired_tests.{md,json}` | paired tests against B0 | `baseline_paired_tests.py` |
+| `artifacts/issue-137/baseline_comparison.md` | descriptive B0 comparison | `generate_baseline_comparison.py` |
+| `artifacts/issue-163/coverage.md` | condition × dataset coverage | `coverage_table.py` |
+| `artifacts/issue-138/results_inventory.md` | result provenance | `results_inventory.py` |
 
-- the paired intervals behind the figures' claims (`figure_claims.py`, #149);
-- the descriptive B0 comparison, regenerated after #142/#145 (#143) and
-  without the sanity check C19 (#165);
-- the paired intervals of every condition against B0
-  (`baseline_paired_tests.py`, #165), also a section of `report.md` on
-  `develop`;
-- the results inventory, which since #168 records only whether each source
-  commit is on `develop`/`main` and which release tags contain it. It no
-  longer changes when a branch is created, but does when a later release tag
-  contains the commit.
+The inventory records, per source commit, only whether it is on
+`develop`/`main` and which `v*` release tags contain it, so it changes only
+when a new release tag contains a stored result's commit.
 
-Reproducing them needs a checkout of `develop` that includes #143 (until the
-next release), with the same archive extracted into it. The scripts rewrite
-tracked files, so the last step checks that they regenerate unchanged. The
-hand-written protocol notes in `artifacts/issue-137/` and
-`artifacts/issue-138/` were also corrected in #143, so read them on `develop`
-rather than at the tag.
+**Figures.** `figures/` is not tracked, so a local copy may be older than the
+code (a Figure 1 rendered before #149 has the same points but different
+callouts). Regenerate every figure from the release before exporting it to
+the paper:
 
 ```bash
-git checkout develop
-venv/bin/python scripts/figure_claims.py --results_dir data/results/ \
-    --output_dir artifacts/issue-149/                       # ~1.5 min
-venv/bin/python scripts/generate_baseline_comparison.py
-venv/bin/python scripts/baseline_paired_tests.py            # ~3.5 min
-venv/bin/python scripts/results_inventory.py                # reads git refs; seconds
-git diff --exit-code artifacts/issue-149/figure_claims.md artifacts/issue-149/figure_claims.json \
-    artifacts/issue-137/baseline_comparison.md artifacts/issue-165/ \
-    artifacts/issue-138/results_inventory.md
+for m in mrr hits_at_1 f1; do
+  venv/bin/python scripts/generate_figure1_d3_scatter.py \
+      --results_dir data/results/ --output_dir figures/ --metric $m
+  venv/bin/python scripts/generate_figure2_model_comparison.py \
+      --results_dir data/results/ --output_dir figures/ --metric $m
+done
 ```
 
-`artifacts/issue-139/metric_ceilings.json` (the ceilings and reference counts
-the tables read) is rebuilt by
-`scripts/metric_ceilings.py --data_dir data/ --output_dir artifacts/issue-139/`.
-That needs the datasets and takes about 2 minutes. The paper's methods text is
-in `artifacts/issue-138/paper_methods_section.tex`, and its figures text in
-`artifacts/issue-149/paper_figures_section.tex`.
+**Outputs that need more than the archive.** These read the datasets (and,
+where noted, the models), which are not redistributed (see "Data"):
+
+| Output | Needs | Command |
+|---|---|---|
+| `artifacts/issue-139/metric_ceilings.{json,md}` (ceilings, reference counts) | datasets, ~2 min | `scripts/metric_ceilings.py --data_dir data/ --output_dir artifacts/issue-139/` |
+| `artifacts/issue-181/encoded_input_size.*`, `artifacts/issue-183/{text_limitations,budget_binding}.*` | datasets, tokenizers | `encoded_input_size.py`, `text_limitations.py`, `budget_binding.py` |
+| `artifacts/issue-183/m4_length_check.*` | datasets, M4, ~15 min | `m4_length_check.py` |
+| `artifacts/issue-181/timing/` (the timed runs the cost table reads) | datasets, every model, ~11 h idle machine | `encode_timing.py` |
+| `artifacts/issue-138/reference_statistics.md`, `release_checks.md` | datasets, original release archives | `reference_statistics.py`, `release_checks.py` |
+| the stored results themselves | datasets, every model, ~24 h | `run_experiment` and `ngram_baseline` (see "Running") |
+
+The commands and their arguments are in `CLAUDE.md`. The paper's own text
+was written from these tracked files: methods, protocol, metrics and
+statistics `artifacts/issue-138/paper_methods_section.tex`; figures
+`artifacts/issue-149/paper_figures_section.tex`; PPAS
+`artifacts/issue-164/paper_ppas_section.tex`; cost
+`artifacts/issue-181/paper_cost_section.tex`; limitations
+`artifacts/issue-183/paper_limitations.tex`.
+
+**Earlier releases.** `v0.2.0-phase2-results` holds the #141 results
+(`c6931db`), which #183 replaced (token budgets counted with each model's
+tokenizer, M4 at 512; `artifacts/issue-183/rerun_comparison.md` lists the 21
+changed cells). Use it only to reproduce those earlier numbers.
+`v0.2.1-phase2-docs` changed documentation and figure claims only.
 
 ## Repository layout
 
@@ -282,7 +323,7 @@ No paper has been published yet. To cite the software:
   author  = {Sawant, Savita Kiran},
   title   = {kgsemembed: Verbalisation and Dense Embeddings for Knowledge Graph Alignment},
   year    = {2026},
-  version = {v0.2.0-phase2-results},
+  version = {v0.3.0-phase2-results},
   url     = {https://github.com/swntsvt/kgsemembed}
 }
 ```
