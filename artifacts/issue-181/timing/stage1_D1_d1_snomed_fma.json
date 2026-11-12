@@ -3,19 +3,19 @@
   "pair_name": "d1_snomed_fma",
   "n_sources": 24182,
   "score_seconds": [
-    21.890474083003937,
-    21.998040792008396,
-    22.028299041994615
+    22.228265875019133,
+    22.233878375031054,
+    22.186735833995044
   ],
-  "dataset_load_seconds": 33.18455162500322,
+  "dataset_load_seconds": 33.32333654211834,
   "repeats": 3,
-  "git_commit": "bf8d7f6760573610abb4547bb9c1cf71ad950884",
+  "git_commit": "85fb8d4d52f93891a00ee97f08b6011f64c73155",
   "machine": {
     "chip": "Apple M4 Pro",
     "memory_bytes": 68719476736,
     "platform": "macOS-27.2-arm64-arm-64bit",
     "versions": {
-      "python": "3.12.15",
+      "python": "3.12.16",
       "torch": "2.11.0",
       "transformers": "5.5.4",
       "sentence_transformers": "5.4.0",

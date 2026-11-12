@@ -6,34 +6,34 @@
   "pair_name": "d1_snomed_fma",
   "n_source_texts": 24182,
   "n_candidate_texts": 50103,
-  "verbalise_seconds": 2.362194749992341,
+  "verbalise_seconds": 14.856006416957825,
   "source_encode_seconds": [
-    443.0283258330019,
-    442.62025849998463,
-    443.49716212501517
+    447.7277997499332,
+    450.59801624994725,
+    450.57693816698156
   ],
   "candidate_encode_seconds": [
-    1398.0250380830257,
-    1398.1132134170039,
-    1398.9585088750173
+    1428.7778784998227,
+    1429.651020207908,
+    1429.929396333173
   ],
-  "rank_evaluate_seconds": 4.414258417004021,
+  "rank_evaluate_seconds": 4.4163506659679115,
   "metrics": {
     "mrr": 0.779208934153015,
     "hits_at_1": 0.7148751357220413,
-    "f1": 0.3218925941966219,
-    "precision": 0.224445115506568,
-    "recall": 0.568886337543054,
+    "f1": 0.3219834352839279,
+    "precision": 0.22450366120631085,
+    "recall": 0.5690776884806735,
     "threshold": 0.81
   },
   "reproduces_stored": true,
-  "git_commit": "bf8d7f6760573610abb4547bb9c1cf71ad950884",
+  "git_commit": "85fb8d4d52f93891a00ee97f08b6011f64c73155",
   "machine": {
     "chip": "Apple M4 Pro",
     "memory_bytes": 68719476736,
     "platform": "macOS-27.2-arm64-arm-64bit",
     "versions": {
-      "python": "3.12.15",
+      "python": "3.12.16",
       "torch": "2.11.0",
       "transformers": "5.5.4",
       "sentence_transformers": "5.4.0",
@@ -48,11 +48,12 @@
     "device": "mps",
     "hf_revision": "d4aa6901d3a41ba39fb536a557fa166f842b0e09",
     "hf_revision_pinned": "d4aa6901d3a41ba39fb536a557fa166f842b0e09",
+    "max_seq_length": 512,
     "device_override": false,
     "n_parameters": 335141888,
     "embedding_dimension": 1024,
-    "load_seconds": 2.683140041976003
+    "load_seconds": 2.7034706668928266
   },
-  "dataset_load_seconds": 33.97705691601732,
+  "dataset_load_seconds": 33.21272729197517,
   "repeats": 3
 }

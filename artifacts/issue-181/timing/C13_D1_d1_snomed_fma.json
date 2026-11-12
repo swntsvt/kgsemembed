@@ -6,18 +6,18 @@
   "pair_name": "d1_snomed_fma",
   "n_source_texts": 24182,
   "n_candidate_texts": 50103,
-  "verbalise_seconds": 2.614026916009607,
+  "verbalise_seconds": 2.6545156249776483,
   "source_encode_seconds": [
-    1044.8130705830117,
-    1030.4277655000042,
-    1032.1172990420018
+    1048.3689061249606,
+    1039.986578833079,
+    1040.06939220801
   ],
   "candidate_encode_seconds": [
-    2207.108718333009,
-    2212.2869175829983,
-    2219.0954667919723
+    2177.710187167162,
+    2176.78325149999,
+    2177.9955395420548
   ],
-  "rank_evaluate_seconds": 0.4969581670011394,
+  "rank_evaluate_seconds": 0.485533291939646,
   "metrics": {
     "mrr": 0.7131967130390401,
     "hits_at_1": 0.6290988056460369,
@@ -27,13 +27,13 @@
     "threshold": 0.7
   },
   "reproduces_stored": true,
-  "git_commit": "bf8d7f6760573610abb4547bb9c1cf71ad950884",
+  "git_commit": "85fb8d4d52f93891a00ee97f08b6011f64c73155",
   "machine": {
     "chip": "Apple M4 Pro",
     "memory_bytes": 68719476736,
     "platform": "macOS-27.2-arm64-arm-64bit",
     "versions": {
-      "python": "3.12.15",
+      "python": "3.12.16",
       "torch": "2.11.0",
       "transformers": "5.5.4",
       "sentence_transformers": "5.4.0",
@@ -48,11 +48,12 @@
     "device": "mps",
     "hf_revision": "7817065102fd9e1b031fe874e910c01f40b2f001",
     "hf_revision_pinned": "7817065102fd9e1b031fe874e910c01f40b2f001",
+    "max_seq_length": 512,
     "device_override": false,
     "n_parameters": 1544842752,
     "embedding_dimension": 1024,
-    "load_seconds": 7.314473708014702
+    "load_seconds": 7.172559417085722
   },
-  "dataset_load_seconds": 33.46874450001633,
+  "dataset_load_seconds": 33.34123175009154,
   "repeats": 3
 }
