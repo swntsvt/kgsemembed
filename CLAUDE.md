@@ -232,6 +232,13 @@ python scripts/generate_figure2_model_comparison.py \
 python scripts/figure_claims.py --results_dir data/results/ \
     --output_dir artifacts/issue-149/
 
+# Paper's ablation-tests table tab:stats (#188; a table*): MRR B - A of the 12
+# registered comparisons per column, $^{*}$ when Holm-significant, --- where
+# not covered; computed with run_paired_tests as generate_report.py does (all
+# three metrics, a few minutes). Default output
+# artifacts/issue-188/tables/ablation_tests.tex, uploaded to the paper as is.
+python scripts/generate_ablation_tests_table.py --results_dir data/results/
+
 # Condition x column coverage (#163; registry and result files only, seconds):
 # every cell run (pair count), by design (reason) or registered but not run;
 # a gap with no registered reason raises. artifacts/issue-163/coverage.md.
@@ -242,7 +249,8 @@ python scripts/coverage_table.py --results_dir data/results/ \
 # (tokenizer only, no model) into artifacts/issue-181/encoded_input_size.{json,md};
 # wall-clock timing, one model per process (refuses uncommitted src/ or scripts/,
 # any metric that differs from the stored result and any pass whose embeddings
-# differ; D1 ~11 h: run in tmux, machine idle); then the table and figure.
+# differ; D1 ~11 h: run in tmux, machine idle); then the table (a table*:
+# one column of the SAGE layout is too narrow, #188) and figure.
 python scripts/encoded_input_size.py --data_dir data/ --output_dir artifacts/issue-181/
 python scripts/encode_timing.py --stage1 --dataset D1
 python scripts/encode_timing.py --model M2 --dataset D1     # M1..M5 in turn
