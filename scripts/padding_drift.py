@@ -69,7 +69,7 @@ def sample_texts(model_key: str, data_dir: str, n: int) -> List[str]:
         ``2 * n`` texts.
     """
     pair = next(p for p in load_dataset("D4", data_dir) if p.dataset_id == "D4_instance")
-    verbaliser = build_verbaliser(_STRATEGY, model_key)
+    verbaliser = build_verbaliser(_STRATEGY, model_key, "source")
     texts = [
         verbaliser.verbalise(pair.source_graph, URIRef(uri), "instance")
         for uri in sorted(pair.source_entities)

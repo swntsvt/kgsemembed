@@ -1,0 +1,59 @@
+{
+  "condition_id": "C1",
+  "strategy": "V1",
+  "model_key": "M1",
+  "column": "D1",
+  "pair_name": "d1_snomed_fma",
+  "n_source_texts": 24182,
+  "n_candidate_texts": 50103,
+  "verbalise_seconds": 0.8664916660636663,
+  "source_encode_seconds": [
+    11.99346841685474,
+    11.961176000069827,
+    12.059564750175923
+  ],
+  "candidate_encode_seconds": [
+    26.561660583829507,
+    26.8881630001124,
+    26.966507208067924
+  ],
+  "rank_evaluate_seconds": 0.48355766595341265,
+  "metrics": {
+    "mrr": 0.7185559759655422,
+    "hits_at_1": 0.6527687296416939,
+    "f1": 0.32452830188679244,
+    "precision": 0.2458596214511041,
+    "recall": 0.47722923842326825,
+    "threshold": 0.82
+  },
+  "reproduces_stored": true,
+  "git_commit": "85fb8d4d52f93891a00ee97f08b6011f64c73155",
+  "machine": {
+    "chip": "Apple M4 Pro",
+    "memory_bytes": 68719476736,
+    "platform": "macOS-27.2-arm64-arm-64bit",
+    "versions": {
+      "python": "3.12.16",
+      "torch": "2.11.0",
+      "transformers": "5.5.4",
+      "sentence_transformers": "5.4.0",
+      "numpy": "2.5.3",
+      "scipy": "1.18.1",
+      "rdflib": "7.6.0"
+    }
+  },
+  "model": {
+    "model_key": "M1",
+    "model_id": "sentence-transformers/all-MiniLM-L6-v2",
+    "device": "mps",
+    "hf_revision": "1110a243fdf4706b3f48f1d95db1a4f5529b4d41",
+    "hf_revision_pinned": "1110a243fdf4706b3f48f1d95db1a4f5529b4d41",
+    "max_seq_length": 256,
+    "device_override": false,
+    "n_parameters": 22713216,
+    "embedding_dimension": 384,
+    "load_seconds": 2.0201746670063585
+  },
+  "dataset_load_seconds": 33.46549962507561,
+  "repeats": 3
+}

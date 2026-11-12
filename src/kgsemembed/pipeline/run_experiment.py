@@ -64,7 +64,9 @@ from kgsemembed.utils.errors import DataError
 from kgsemembed.utils.logging import RunContext, get_logger, init_logging
 from kgsemembed.verbalisation.base import VerbaliserBase, annotation_predicates_digest
 from kgsemembed.verbalisation.v8 import v8_exclusions_digest
-from kgsemembed.verbalisation.ppas import PPAS_BUDGETS, strategy_uses_ppas
+from kgsemembed.verbalisation.budget import budget_tokens
+from kgsemembed.pipeline.encoder_inputs import encoder_input_record
+from kgsemembed.verbalisation.ppas import strategy_uses_ppas
 from kgsemembed.verbalisation.registry import build_verbaliser
 
 _CONFIG_DIR = Path(__file__).resolve().parents[3] / "configs"
@@ -78,6 +80,8 @@ _RANDOM_SEED = 42
 _FAILURE_KEY = "n_failed_pairs"
 _PER_ENTITY_TYPE_KEY = "per_entity_type"
 _POPULATION_KEY = "population"
+_ENCODER_INPUT_KEY = "encoder_input"
+_INPUTS_KEY = "inputs"
 PER_SOURCE_KEY = "per_source"
 _COUNT_KEYS = ("tp", "fp", "fn")
 _VAL = "val"
@@ -527,9 +531,10 @@ def _process_pair(
     encoder: EmbeddingEncoder,
     candidates: Dict[str, List[str]],
 ) -> Dict[str, object]:
-    verbaliser = build_verbaliser(condition.strategy_name, condition.model_key)
+    source_verbaliser = build_verbaliser(condition.strategy_name, condition.model_key, "source")
+    candidate_verbaliser = build_verbaliser(condition.strategy_name, condition.model_key, "candidate")
     source_texts = _verbalise_uris(
-        verbaliser,
+        source_verbaliser,
         pair.source_graph,
         pair.source_entities,
         pair.entity_type,
@@ -537,12 +542,16 @@ def _process_pair(
     )
     candidate_uris = _unique_candidate_uris(pair, candidates)
     candidate_texts = _verbalise_uris(
-        verbaliser,
+        candidate_verbaliser,
         pair.target_graph,
         candidate_uris,
         pair.entity_type,
         "candidate verbalisation",
     )
+    record, inputs = encoder_input_record(condition, encoder, {
+        "source": (source_verbaliser, pair.source_entities, source_texts),
+        "candidate": (candidate_verbaliser, candidate_uris, candidate_texts),
+    })
     source_embeddings = encoder.encode_batch(source_texts, role="source", show_progress=True)
     candidate_embeddings = encoder.encode_batch(
         candidate_texts, role="candidate", show_progress=True
@@ -551,7 +560,10 @@ def _process_pair(
     ranked_lists = _build_ranked_lists(
         pair, source_embeddings, candidates, candidate_index, candidate_embeddings
     )
-    return with_per_source(pair, ranked_lists, _evaluate_pair(pair, ranked_lists))
+    result = with_per_source(pair, ranked_lists, _evaluate_pair(pair, ranked_lists))
+    result[_ENCODER_INPUT_KEY] = record
+    result[PER_SOURCE_KEY][_INPUTS_KEY] = inputs
+    return result
 
 
 def _evaluate_pair(
@@ -870,7 +882,7 @@ def _write_result(
         "model_id": MODEL_REGISTRY[condition.model_key].model_id,
         "apply_ppas": condition.apply_ppas,
         "ppas_effective": _effective_ppas(condition),
-        "token_budget": PPAS_BUDGETS.get(condition.model_key),
+        "token_budget": budget_tokens(condition.model_key),
         "metrics": {key: metrics[key] for key in _METRIC_KEYS},
         "counts": {key: metrics[key] for key in _COUNT_KEYS},
         "per_entity_type": metrics.get(_PER_ENTITY_TYPE_KEY, {}),
@@ -880,6 +892,7 @@ def _write_result(
         "candidates_sha256": _candidate_digest(candidates),
         "annotation_predicates_sha256": annotation_predicates_digest(),
         "v8_exclusions_sha256": v8_exclusions_digest(),
+        "encoder_input": metrics.get(_ENCODER_INPUT_KEY),
         **_provenance(model_info),
     }
     sidecar = link_to_result(metrics[PER_SOURCE_KEY], payload)

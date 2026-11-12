@@ -350,3 +350,26 @@ def test_encoder_is_exported_from_package() -> None:
 
     assert "EmbeddingEncoder" in embeddings.__all__
     assert embeddings.EmbeddingEncoder is EmbeddingEncoder
+
+
+# ---------------------------------------------------------------------------
+# Input lengths and truncation (#183)
+# ---------------------------------------------------------------------------
+def _word_tokenizer(texts, **_kwargs):
+    return {"input_ids": [[0] + text.split() + [0] for text in texts]}
+
+
+def test_input_lengths_count_the_prefixed_text_with_special_tokens() -> None:
+    encoder, model = _make_encoder("M5")
+    model.tokenizer = _word_tokenizer
+    prefix_words = len(get_model_config("M5").query_prefix.format("").split())
+    assert encoder.input_lengths(["a b"], "candidate") == [4]
+    assert encoder.input_lengths(["a b"], "source") == [4 + prefix_words]
+
+
+def test_truncation_summary_counts_inputs_over_the_limit() -> None:
+    encoder, model = _make_encoder("M2")
+    model.tokenizer = _word_tokenizer
+    model.max_seq_length = 4
+    summary = encoder.truncation_summary(["a", "a b", "a b c d e"], "candidate")
+    assert summary == {"n_inputs": 3, "n_truncated": 1, "tokens_discarded": 3, "max_length": 7}

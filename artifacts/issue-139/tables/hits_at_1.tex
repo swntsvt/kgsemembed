@@ -2,7 +2,7 @@
 \scriptsize
 \setlength{\tabcolsep}{4pt}
 \begin{threeparttable}
-\caption{Mean test Hits@1 per condition per dataset (primary metric; fraction of test reference sources whose top-ranked candidate is a gold target, a source with several gold targets counted once). D3 values are means over 21 pairs. Ceiling row: the most the metric can reach on the stored top-20 candidate lists. Dashes in dataset columns indicate conditions not run on that dataset. Bold: best result per dataset column. B0: stage-1 character 3-gram cosine order of the same top-20 candidate lists every condition re-ranks, evaluated under the same populations, validation-tuned threshold and metric definitions; it is not an external matching system.}
+\caption{Mean test Hits@1 per condition per dataset (primary metric; fraction of test reference sources whose top-ranked candidate is a gold target, a source with several gold targets counted once). D3 values are means over 21 pairs. Ceiling row: the most the metric can reach on the stored top-20 candidate lists. Dashes in dataset columns indicate conditions not run on that dataset. Bold: best result per dataset column. C20 (V2, M2) is the controlled baseline for C10 (V2+V8, M2): the two differ only by the V8 component, and C20 forms its own group (E), placed after group B so it sits beside C10. $\ddagger$: M4 (BioLORD) evaluated on D1 and D2 only. B0: stage-1 character 3-gram cosine order of the same top-20 candidate lists every condition re-ranks, evaluated under the same populations, validation-tuned threshold and metric definitions; it is not an external matching system.}
 \label{tab:ranking_hits_at_1}
 \begin{tabular}{llllrrrrrrr}
 \hline
@@ -15,29 +15,29 @@ C2 & V2 & M1 & A & 0.6011 & 0.7563 & 0.6832 & 0.8636 & 0.8768 & 0.0114 & 0.7562 
 C17 & V1 & M4$^\ddagger$ & A & 0.6914 & 0.8072 & --- & --- & --- & --- & --- \\
 \hline
 C9 & V8 & M2 & B & 0.0517 & 0.1018 & 0.1563 & 0.7727 & 0.2696 & 0.0114 & 0.2704 \\
-C3 & V2+V6 & M2 & B & 0.6971 & 0.8055 & 0.6497 & \textbf{0.9091} & \textbf{0.9261} & 0.0979 & 0.7975 \\
+C3 & V2+V6 & M2 & B & 0.6971 & 0.8063 & 0.6497 & \textbf{0.9091} & 0.9152 & 0.1318 & 0.7955 \\
 C10 & V2+V8 & M2 & B & 0.5596 & 0.6344 & 0.5594 & \textbf{0.9091} & 0.8899 & 0.0104 & 0.7105 \\
 C18 & V2+V8 & M1 & B & 0.5616 & 0.6194 & 0.5754 & 0.8864 & 0.8580 & 0.0062 & 0.7001 \\
 \hline
 C20 & V2 & M2 & E & 0.5353 & 0.7204 & 0.6940 & 0.8636 & 0.8848 & 0.0109 & 0.7396 \\
 \hline
-C4 & V3 & M2 & C & \textbf{0.7149} & \textbf{0.8723} & 0.6631 & --- & --- & --- & --- \\
-C5 & V4 & M2 & C & --- & --- & --- & 0.8864 & 0.8949 & 0.1162 & --- \\
-C6 & V2+V7 & M4$^\ddagger$ & C & 0.6784 & 0.7496 & --- & --- & --- & --- & --- \\
-C7 & V6+V3 & M2 & C & --- & --- & 0.6957 & 0.8864 & 0.8906 & --- & --- \\
-C8 & V5 & M2 & C & --- & --- & --- & \textbf{0.9091} & 0.7341 & 0.0271 & --- \\
+C4 & V3 & M2 & C & \textbf{0.7149} & \textbf{0.8723} & 0.6631 & 0.8864 & \textbf{0.9232} & 0.1186 & 0.8120 \\
+C5 & V4 & M2 & C & --- & --- & --- & 0.8864 & 0.8833 & 0.1502 & --- \\
+C6 & V2+V7 & M4$^\ddagger$ & C & 0.6932 & 0.7270 & --- & --- & --- & --- & --- \\
+C7 & V6+V3 & M2 & C & 0.6165 & 0.7947 & 0.6957 & 0.8864 & 0.8833 & 0.1412 & 0.7753 \\
+C8 & V5 & M2 & C & --- & --- & --- & \textbf{0.9091} & 0.7355 & 0.0269 & --- \\
 C11 & V2+V8 & M4$^\ddagger$ & C & 0.5928 & 0.7045 & --- & --- & --- & --- & --- \\
 C13 & V2+V8 & M5 & C & 0.6291 & 0.7204 & 0.6381 & 0.8864 & 0.8928 & 0.0143 & 0.7533 \\
-C16 & V2+V8+V7 & M4$^\ddagger$ & C & 0.6371 & 0.7304 & --- & --- & --- & --- & --- \\
+C16 & V2+V8+V7 & M4$^\ddagger$ & C & 0.6330 & 0.7145 & --- & --- & --- & --- & --- \\
 \hline
-C14 & V4+V6 & M3 & D & --- & --- & --- & --- & --- & 0.1247 & --- \\
-C15 & V2+V8 & M3 & D & 0.6078 & --- & --- & --- & --- & --- & --- \\
+C14 & V4+V6 & M3 & D & --- & --- & --- & --- & --- & 0.1403 & --- \\
+C15 & V2+V8 & M3 & D & 0.6078 & 0.6711 & --- & --- & --- & --- & --- \\
 \hline
 \multicolumn{4}{l}{Top-20 ceiling} & 0.8860 & 0.9499 & 0.8618 & 0.9318 & 0.9725 & 0.2667 & 0.9204 \\
 \hline
 \end{tabular}
 \begin{tablenotes}
-\item[*] Mean over D1--D4 (D4 schema and instance), shown only for conditions run on all of them; excludes D5 (recall@20 ceiling 26.67\%).
+\item[*] Mean over D1--D4 (D4 schema and instance), shown only for conditions run on all of them; excludes D5 (top-20 ceiling 26.67\% on every metric).
 \end{tablenotes}
 \end{threeparttable}
 \end{table*}

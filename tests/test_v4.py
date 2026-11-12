@@ -8,6 +8,7 @@ from unittest.mock import patch
 from rdflib import BNode, Graph, Literal, URIRef
 
 from kgsemembed.verbalisation.base import LABEL_PREDICATES
+from kgsemembed.verbalisation import v4 as v4_module
 from kgsemembed.verbalisation.v4 import StructuredKVVerbaliser
 from kgsemembed.verbalisation.ppas import (
     INSTANCE_TIER_LIST,
@@ -222,7 +223,7 @@ def test_reflexive_triples_excluded() -> None:
 
 
 def test_ppas_invoked_when_above_threshold_not_m3() -> None:
-    """PPAS is applied when triple count > threshold and model is not M3."""
+    """Tier order is applied when triple count > threshold and model is not M3."""
     g = Graph()
     g.add((_ENT, LABEL_PREDICATES[0], Literal("Entity", lang="en")))
     for i in range(25):
@@ -236,16 +237,15 @@ def test_ppas_invoked_when_above_threshold_not_m3() -> None:
         "kgsemembed.verbalisation.v4.should_apply_ppas", return_value=True
     ) as mock_apply:
         with patch(
-            "kgsemembed.verbalisation.v4.ppas_sample",
-            side_effect=lambda triples, tier_list, budget, fn: triples[:10],
-        ) as mock_sample:
+            "kgsemembed.verbalisation.v4.tier_order", side_effect=v4_module.tier_order
+        ) as mock_order:
             v.verbalise(g, _ENT, "instance")
             mock_apply.assert_called_once()
-            mock_sample.assert_called_once()
+            mock_order.assert_called_once()
 
 
 def test_ppas_not_invoked_when_below_threshold() -> None:
-    """PPAS is not applied when triple count is at or below threshold."""
+    """Graph order is kept when triple count is at or below threshold and the text fits."""
     g = Graph()
     g.add((_ENT, LABEL_PREDICATES[0], Literal("Entity", lang="en")))
     for i in range(15):
@@ -258,9 +258,9 @@ def test_ppas_not_invoked_when_below_threshold() -> None:
     triples = list(g.triples((_ENT, None, None)))
     assert should_apply_ppas(triples, "M2") is False
 
-    with patch("kgsemembed.verbalisation.v4.ppas_sample") as mock_sample:
+    with patch("kgsemembed.verbalisation.v4.tier_order") as mock_order:
         v.verbalise(g, _ENT, "instance")
-        mock_sample.assert_not_called()
+        mock_order.assert_not_called()
 
 
 def test_ppas_not_invoked_for_m3() -> None:
@@ -279,7 +279,7 @@ def test_ppas_not_invoked_for_m3() -> None:
 
 
 def test_ppas_preserves_order_after_sampling() -> None:
-    """PPAS-sampled triples preserve their original order."""
+    """Every triple reaches tier ordering when PPAS applies."""
     g = Graph()
     g.add((_ENT, LABEL_PREDICATES[0], Literal("Entity", lang="en")))
     for i in range(25):
@@ -288,21 +288,21 @@ def test_ppas_preserves_order_after_sampling() -> None:
         g.add((pred, LABEL_PREDICATES[0], Literal(f"Prop {i}", lang="en")))
 
     v = StructuredKVVerbaliser(model_key="M2")
-    sampled = []
+    ordered = []
 
-    def _track_sample(triples, tier_list, budget, fn):
-        sampled.extend(triples)
+    def _track_order(triples, tier_list):
+        ordered.extend(triples)
         return triples
 
     with patch(
         "kgsemembed.verbalisation.v4.should_apply_ppas", return_value=True
     ):
         with patch(
-            "kgsemembed.verbalisation.v4.ppas_sample", side_effect=_track_sample
+            "kgsemembed.verbalisation.v4.tier_order", side_effect=_track_order
         ):
             v.verbalise(g, _ENT, "instance")
 
-    assert len(sampled) > 0
+    assert len(ordered) == 26
 
 
 def test_ppas_never_applied_for_m3_with_many_triples() -> None:
@@ -319,7 +319,7 @@ def test_ppas_never_applied_for_m3_with_many_triples() -> None:
 
 
 def test_more_than_twenty_triples() -> None:
-    """Entity with more than 20 triples triggers PPAS for non-M3 models."""
+    """Entity with more than 20 triples is tier-ordered for non-M3 models."""
     g = Graph()
     g.add((_ENT, LABEL_PREDICATES[0], Literal("Entity", lang="en")))
     for i in range(25):
@@ -331,30 +331,45 @@ def test_more_than_twenty_triples() -> None:
     assert should_apply_ppas(triples, "M1") is True
 
     v = StructuredKVVerbaliser(model_key="M1")
-    with patch("kgsemembed.verbalisation.v4.ppas_sample") as mock_sample:
+    with patch(
+        "kgsemembed.verbalisation.v4.tier_order", side_effect=v4_module.tier_order
+    ) as mock_order:
         v.verbalise(g, _ENT, "instance")
-        mock_sample.assert_called_once()
+        mock_order.assert_called_once()
 
 
 def test_exactly_twenty_triples() -> None:
-    """Exactly 20 triples does NOT trigger PPAS (at threshold)."""
+    """Exactly 20 triples that fit keep graph order (at threshold)."""
     g = Graph()
-     # 1 label + 19 properties = 20 total (at threshold, not above)
+    # 1 label + 19 properties = 20 total (at threshold, not above)
     g.add((_ENT, LABEL_PREDICATES[0], Literal("Entity", lang="en")))
     for i in range(19):
         pred = URIRef(f"http://example.org/ont#p{i}")
         g.add((_ENT, pred, Literal(f"v{i}")))
 
-     # Verify real should_apply_ppas returns False for 20 triples
+    # Verify real should_apply_ppas returns False for 20 triples
     triples = list(g.triples((_ENT, None, None)))
     assert len(triples) == 20
     assert should_apply_ppas(triples, "M1") is False
 
     v = StructuredKVVerbaliser(model_key="M1")
-    with patch("kgsemembed.verbalisation.v4.ppas_sample") as mock_sample:
+    with patch("kgsemembed.verbalisation.v4.tier_order") as mock_order:
         result = v.verbalise(g, _ENT, "instance")
-        mock_sample.assert_not_called()
+        mock_order.assert_not_called()
         assert len(result) > 0
+
+
+def test_few_triples_over_budget_are_tier_ordered_and_capped(word_budget) -> None:
+    """At or below the threshold, a text over budget is still held to it (#183)."""
+    g = _make_untiered_graph(5)
+    v = StructuredKVVerbaliser(model_key="M2")
+    v.budget = word_budget(9)
+    with patch(
+        "kgsemembed.verbalisation.v4.tier_order", side_effect=v4_module.tier_order
+    ) as mock_order:
+        result = v.verbalise(g, _ENT, "instance")
+        mock_order.assert_called_once()
+    assert result == "combatant 0: Force 0 | combatant 1: Force 1"
 
 
 # ---------------------------------------------------------------------------
@@ -423,30 +438,16 @@ def test_untiered_predicates_log_no_warning() -> None:
     assert records == []
 
 
-def test_untiered_predicates_appended_as_lowest_tier() -> None:
-    """Untiered predicates reach PPAS as a synthetic tier after the configured ones."""
+def test_untiered_predicates_appended_as_lowest_tier(word_budget) -> None:
+    """Untiered predicates come after the configured tiers, in graph order."""
     g = _make_untiered_graph()
-    captured: list[list[list[str]]] = []
-
-    def _capture_tiers(triples, tier_list, budget, fn):
-        captured.append(tier_list)
-        return triples
-
+    g.add((_ENT, URIRef("http://www.w3.org/2000/01/rdf-schema#label"), Literal("Ent")))
     v = StructuredKVVerbaliser(model_key="M2")
-    with patch(
-        "kgsemembed.verbalisation.v4.ppas_sample", side_effect=_capture_tiers
-    ):
-        v.verbalise(g, _ENT, "instance")
-
-    tier_list = captured[0]
-    assert tier_list[: len(INSTANCE_TIER_LIST)] == INSTANCE_TIER_LIST
-    assert len(tier_list) == len(INSTANCE_TIER_LIST) + 1
-    assert tier_list[-1] == sorted(
-        f"http://dbpedia.org/ontology/combatant_{i}" for i in range(49)
-    )
+    v.budget = word_budget(12)
+    assert v.verbalise(g, _ENT, "instance") == "label: Ent | combatant 0: Force 0 | combatant 1: Force 1"
 
 
-def test_untiered_predicates_respect_token_budget() -> None:
+def test_untiered_predicates_respect_token_budget(word_budget) -> None:
     """Large untiered entities are capped to the budget instead of bypassing it."""
     g = Graph()
     value = " ".join(["word"] * 20)
@@ -455,17 +456,25 @@ def test_untiered_predicates_respect_token_budget() -> None:
         g.add((_ENT, pred, Literal(f"{value} {i}")))
 
     v = StructuredKVVerbaliser(model_key="M2")
+    v.budget = word_budget(100)
     with _capture_warnings() as records:
         result = v.verbalise(g, _ENT, "instance")
 
-    assert result != ""
     assert records == []
+    assert len(result.split()) <= 100
+    assert result.count(" | ") == 3
 
-    triples = list(g.triples((_ENT, None, None)))
-    unit_cost = estimate_tokens(v._verbalise_triple(*triples[0]))
-    affordable = PPAS_BUDGETS["M2"] // unit_cost
-    assert affordable < len(triples)
-    assert result.count(" | ") == affordable - 1
+
+def test_budget_holds_under_the_real_tokenizer() -> None:
+    """With the model's tokenizer, the encoder input stays within the budget."""
+    g = Graph()
+    value = " ".join(["word"] * 20)
+    for i in range(40):
+        g.add((_ENT, URIRef(f"http://dbpedia.org/ontology/combatant_{i}"), Literal(f"{value} {i}")))
+    v = StructuredKVVerbaliser(model_key="M2")
+    result = v.verbalise(g, _ENT, "instance")
+    assert 0 < v.budget.count(result) <= PPAS_BUDGETS["M2"]
+    assert result.count(" | ") < 39
 
 
 def test_tiered_predicates_selected_before_untiered() -> None:
@@ -506,17 +515,14 @@ def test_no_fallback_when_predicates_tiered() -> None:
     assert records == []
 
 
-def test_fallback_preserves_ppas_selection_when_non_empty() -> None:
-    """A non-empty PPAS result is used verbatim, never replaced by fallback."""
+def test_fallback_preserves_ppas_selection_when_non_empty(word_budget) -> None:
+    """A non-empty selection is used verbatim, never replaced by fallback."""
     g = _make_untiered_graph()
     v = StructuredKVVerbaliser(model_key="M2")
+    v.budget = word_budget(14)
 
-    with patch(
-        "kgsemembed.verbalisation.v4.ppas_sample",
-        side_effect=lambda t, tier_list, budget, fn: t[:3],
-    ):
-        with _capture_warnings() as records:
-            result = v.verbalise(g, _ENT, "instance")
+    with _capture_warnings() as records:
+        result = v.verbalise(g, _ENT, "instance")
 
     assert result.count(" | ") == 2
     assert records == []

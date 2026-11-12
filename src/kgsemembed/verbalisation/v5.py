@@ -12,18 +12,21 @@ literal-valued and blank-node edges are never followed.  Each entity draws from
 a local RNG seeded from ``RANDOM_SEED`` and its own URI, so repeated
 verbalisation of the same entity is fully reproducible while different entities
 follow distinct walk sequences, and global random state is never modified.
-Concatenated walks are capped to the model token budget (models without a
-budget, e.g. ``"M3"``, retain every walk).
+Concatenated walks are capped to the model token budget, counted with the
+model's tokenizer (#183): walks are kept up to the first that does not fit
+(models without a budget, e.g. ``"M3"``, retain every walk).
 """
 
 import random
 import zlib
+from functools import cached_property
+from typing import Optional
 
 from rdflib import Graph, URIRef
 from rdflib.namespace import OWL, RDF
 
 from kgsemembed.verbalisation.base import VerbaliserBase
-from kgsemembed.verbalisation.ppas import PPAS_BUDGETS, estimate_tokens
+from kgsemembed.verbalisation.budget import TokenBudget, fit_prefix, token_budget
 
 WALK_DEPTH = 4
 WALKS_PER_ENTITY = 10
@@ -45,14 +48,23 @@ class NeighbourhoodWalkVerbaliser(VerbaliserBase):
     joined with `` | `` and capped to the model token budget.
     """
 
-    def __init__(self, model_key: str = "M2") -> None:
+    def __init__(self, model_key: str = "M2", role: str = "candidate") -> None:
         """
         Parameters
         ----------
         model_key : str
             Model key used to look up the token budget (e.g. "M1", "M2").
+        role : str
+            ``"source"`` or ``"candidate"``: the encoder role whose input the
+            budget counts.
         """
         self.model_key = model_key
+        self.role = role
+
+    @cached_property
+    def budget(self) -> Optional[TokenBudget]:
+        """The model's token budget for this role, or ``None`` when uncapped."""
+        return token_budget(self.model_key, self.role)
 
     def verbalise(
         self, graph: Graph, entity_uri: URIRef, entity_type: str
@@ -75,6 +87,31 @@ class NeighbourhoodWalkVerbaliser(VerbaliserBase):
             Budget-capped walks joined with `` | ``, or the entity's readable
             label when it has no eligible outgoing relationships.
         """
+        return self.verbalise_after(graph, entity_uri, entity_type, "")
+
+    def verbalise_after(
+        self, graph: Graph, entity_uri: URIRef, entity_type: str, preceding: str
+    ) -> str:
+        """
+        Render walks that fit what ``preceding`` left of the budget.
+
+        Parameters
+        ----------
+        graph : Graph
+            RDF graph containing entity triples.
+        entity_uri : URIRef
+            URI of the entity to verbalise.
+        entity_type : str
+            One of ``"class"``, ``"instance"``, ``"predicate"``.
+        preceding : str
+            Joined text of the earlier components of a composite, or ``""``.
+
+        Returns
+        -------
+        str
+            Walks up to the first that does not fit, joined with `` | ``, or
+            the entity's label when it has no eligible outgoing relationships.
+        """
         skipped = self._skipped_predicates(entity_type)
         if not self._get_outgoing_triples(graph, entity_uri, skipped):
             return self.get_label_or_local(graph, entity_uri)
@@ -85,7 +122,7 @@ class NeighbourhoodWalkVerbaliser(VerbaliserBase):
             for _ in range(WALKS_PER_ENTITY)
         ]
         texts = [self._render_walk(graph, entity_uri, walk) for walk in walks]
-        return self._apply_budget(texts)
+        return _WALK_SEPARATOR.join(fit_prefix(texts, _WALK_SEPARATOR, self.budget, preceding))
 
     @staticmethod
     def _entity_rng(entity_uri: URIRef) -> random.Random:
@@ -152,20 +189,3 @@ class NeighbourhoodWalkVerbaliser(VerbaliserBase):
             parts.append(f"[{self.get_label_or_local(graph, pred)}]")
             parts.append(self.get_label_or_local(graph, obj))
         return " ".join(parts)
-
-    def _apply_budget(self, walks: list[str]) -> str:
-        """Concatenate *walks*, stopping before the model token budget is exceeded.
-
-        Models without a configured budget (e.g. ``"M3"``) retain every walk.
-        """
-        budget = PPAS_BUDGETS.get(self.model_key)
-        if budget is None:
-            return _WALK_SEPARATOR.join(walks)
-
-        selected: list[str] = []
-        for walk in walks:
-            candidate = _WALK_SEPARATOR.join(selected + [walk])
-            if estimate_tokens(candidate) > budget:
-                break
-            selected.append(walk)
-        return _WALK_SEPARATOR.join(selected)

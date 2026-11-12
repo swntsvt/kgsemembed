@@ -1,6 +1,7 @@
 """Tests for the results inventory script (#138)."""
 
 import json
+import subprocess
 import sys
 from collections import Counter
 from dataclasses import replace
@@ -89,32 +90,47 @@ def test_candidate_hashes_group_by_pair() -> None:
 
 
 def test_commit_info_for_missing_and_existing_commits() -> None:
-    missing = inventory.commit_info("0" * 40, "develop")
-    assert (missing.exists, missing.refs, missing.on_develop) == (False, (), False)
+    missing = inventory.commit_info("0" * 40, "develop", "main")
+    assert (missing.exists, missing.release_tags, missing.on_develop, missing.on_main) == (False, (), False, False)
     head = inventory._git("rev-parse", "HEAD")
-    info = inventory.commit_info(head, "HEAD")
+    info = inventory.commit_info(head, "HEAD", "HEAD")
     assert info.exists and info.subject and len(info.date) == 10
-    assert info.on_develop
+    assert info.on_develop and info.on_main
 
 
-def test_short_ref_strips_known_prefixes_only() -> None:
-    assert inventory.short_ref("refs/heads/develop") == "develop"
-    assert inventory.short_ref("refs/remotes/origin/fix/issue-1") == "origin/fix/issue-1"
-    assert inventory.short_ref("refs/tags/results/issue-120") == "results/issue-120"
-    assert inventory.short_ref("refs/pull/146/head") == "refs/pull/146/head"
+def test_release_tags_lists_only_v_tags_sorted(monkeypatch) -> None:
+    calls = []
+
+    def fake_git(*args):
+        calls.append(args)
+        return "v0.2.1-phase2-docs\nv0.2.0-phase2-results\n"
+
+    monkeypatch.setattr(inventory, "_git", fake_git)
+    assert inventory.release_tags("a" * 40) == ("v0.2.0-phase2-results", "v0.2.1-phase2-docs")
+    assert calls == [("tag", "--contains", "a" * 40, "--list", "v*")]
 
 
-def test_containing_refs_never_lists_symbolic_head(monkeypatch) -> None:
-    listed = "refs/remotes/origin/HEAD\nrefs/remotes/origin/main\nrefs/tags/t\n"
-    monkeypatch.setattr(inventory, "_git", lambda *args: listed)
-    assert inventory.containing_refs("a" * 40) == ("origin/main", "t")
+def test_release_tags_ignore_new_branches_and_other_tags(tmp_path: Path, monkeypatch) -> None:
+    git = ["git", "-C", str(tmp_path), "-c", "user.name=t", "-c", "user.email=t@t"]
+    subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
+    subprocess.run([*git, "commit", "-q", "--allow-empty", "-m", "c"], check=True)
+    subprocess.run([*git, "tag", "v1.0"], check=True)
+    monkeypatch.setattr(inventory, "_REPO_ROOT", tmp_path)
+    commit = inventory._git("rev-parse", "HEAD")
+    before = inventory.commit_info(commit, "HEAD", "HEAD")
+    subprocess.run([*git, "branch", "feature/x"], check=True)
+    subprocess.run([*git, "tag", "results/issue-1"], check=True)
+    assert inventory.commit_info(commit, "HEAD", "HEAD") == before
+    assert before.release_tags == ("v1.0",)
 
 
 def test_develop_ref_prefers_the_remote_tracking_branch(monkeypatch) -> None:
     monkeypatch.setattr(inventory, "_git", lambda *args: "abc")
     assert inventory.develop_ref() == "origin/develop"
+    assert inventory.tracking_ref("main") == "origin/main"
     monkeypatch.setattr(inventory, "_git", lambda *args: None)
     assert inventory.develop_ref() == "develop"
+    assert inventory.tracking_ref("main") == "main"
 
 
 def test_group_section_lists_conditions_in_numeric_order() -> None:
@@ -123,14 +139,16 @@ def test_group_section_lists_conditions_in_numeric_order() -> None:
     assert lines[4].endswith("| 3 | C1, C2, C10 |")
 
 
-def test_commit_section_marks_unreferenced_and_missing_commits() -> None:
+def test_commit_section_marks_untagged_and_missing_commits() -> None:
     infos = [
-        inventory.CommitInfo("a" * 40, True, "2026-01-01", "x | y", False, ()),
-        inventory.CommitInfo("b" * 40, False, "", "", False, ()),
+        inventory.CommitInfo("a" * 40, True, "2026-01-01", "x | y", True, False, ()),
+        inventory.CommitInfo("b" * 40, False, "", "", False, False, ()),
+        inventory.CommitInfo("c" * 40, True, "2026-01-02", "z", True, True, ("v1", "v2")),
     ]
     lines = inventory.commit_section(infos, Counter({"a" * 40: 2}))
-    assert "**missing**" in lines[4] and "**none**" in lines[5]
-    assert "x \\| y" in lines[5]
+    assert lines[4].endswith("| no | no | **missing** |")
+    assert lines[5].endswith("| yes | no | none |") and "x \\| y" in lines[5]
+    assert lines[6].endswith("| yes | yes | v1, v2 |")
 
 
 def test_flag_section_states_when_nothing_is_flagged() -> None:

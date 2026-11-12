@@ -22,6 +22,7 @@ from kgsemembed.utils.errors import ConfigurationError
 PAD_TO_MULTIPLE_OF = 64
 EXPECTED_DEVICE_PREFIX = "mps"
 _COMMIT_HASH = re.compile(r"[0-9a-f]{40}")
+_OFFSET_POSITION_TYPES = frozenset({"roberta", "xlm-roberta", "mpnet"})
 
 
 @dataclass(frozen=True)
@@ -40,7 +41,9 @@ class ModelConfig:
         stored result was produced with, so a new upstream commit cannot
         change a re-run.
     max_tokens : int
-        Maximum input sequence length supported by the model.
+        Encoder input limit in tokens, special tokens and prompt prefix
+        included: the loader sets ``SentenceTransformer.max_seq_length`` to it
+        (#183), so the model truncates every longer input there.
     ppas_budget : Optional[int]
         Verbalisation token budget for PPAS, or ``None`` when uncapped.
     query_prefix : Optional[str]
@@ -119,6 +122,11 @@ MODEL_REGISTRY: Dict[str, ModelConfig] = {
         model_key="M4",
         model_id="FremyCompany/BioLORD-2023",
         revision="167aab527b238a50ca65224e6319215d2ff4fc9f",
+        # The model's own sentence_bert_config.json sets 128, which every M4
+        # result before #183 was encoded at.  512 is its architectural limit
+        # (514 positions, offset by 2), registered by the rule fixed on #183
+        # before scripts/m4_length_check.py compared the two on validation
+        # sources only (artifacts/issue-183/m4_length_check.md).
         max_tokens=512,
         ppas_budget=420,
         query_prefix=None,
@@ -308,6 +316,55 @@ def bucket_sequence_padding(model: SentenceTransformer) -> None:
     model[0].processing_kwargs = {"text": {"pad_to_multiple_of": PAD_TO_MULTIPLE_OF}}
 
 
+def position_capacity(model: SentenceTransformer) -> int:
+    """
+    Return the longest input the model's position embeddings can take.
+
+    RoBERTa-style models (RoBERTa, XLM-R, MPNet) number positions from the
+    padding index plus one, so their usable length is that much shorter than
+    ``max_position_embeddings`` (BioLORD: 514 - 2 = 512).  The tokenizer's
+    ``model_max_length`` cannot serve: sentence-transformers sets it to the
+    model's configured ``max_seq_length`` when loading.
+
+    Parameters
+    ----------
+    model : SentenceTransformer
+        The loaded model.
+
+    Returns
+    -------
+    int
+        Usable input length in tokens.
+    """
+    config = model[0].auto_model.config
+    offset = config.pad_token_id + 1 if config.model_type in _OFFSET_POSITION_TYPES else 0
+    return config.max_position_embeddings - offset
+
+
+def set_input_limit(model: SentenceTransformer, config: ModelConfig) -> None:
+    """
+    Set the encoder's input limit to the registered one (#183).
+
+    Parameters
+    ----------
+    model : SentenceTransformer
+        The loaded model.
+    config : ModelConfig
+        Its registry entry; ``max_tokens`` is the limit.
+
+    Raises
+    ------
+    ConfigurationError
+        If the model's position embeddings cannot take inputs of that length.
+    """
+    capacity = position_capacity(model)
+    if config.max_tokens > capacity:
+        raise ConfigurationError(
+            f"{config.model_key}: max_tokens {config.max_tokens} exceeds the model's position capacity {capacity}"
+        )
+    model.max_seq_length = config.max_tokens
+
+
 def load_sentence_transformer(
     model_key: str,
 ) -> Tuple[SentenceTransformer, Dict[str, str]]:
@@ -324,7 +381,8 @@ def load_sentence_transformer(
     Tuple[SentenceTransformer, Dict[str, str]]
         The model placed on the selected device, and provenance metadata
         holding ``model_key``, ``model_id``, ``device``, ``hf_revision`` (as
-        loaded) and ``hf_revision_pinned``.
+        loaded), ``hf_revision_pinned`` and ``max_seq_length`` (the input
+        limit set from the registry).
 
     Raises
     ------
@@ -335,6 +393,7 @@ def load_sentence_transformer(
     device = _select_device()
     print(f"Loading model {config.model_id}@{config.revision[:12]} on device {device}")
     model = SentenceTransformer(config.model_id, device=device, revision=config.revision)
+    set_input_limit(model, config)
     bucket_sequence_padding(model)
     if config.bidirectional_attention:
         enable_bidirectional_attention(model)
@@ -346,5 +405,6 @@ def load_sentence_transformer(
         "device": device,
         "hf_revision": revision,
         "hf_revision_pinned": config.revision,
+        "max_seq_length": model.max_seq_length,
     }
     return model, model_info

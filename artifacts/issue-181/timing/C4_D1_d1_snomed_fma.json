@@ -1,0 +1,59 @@
+{
+  "condition_id": "C4",
+  "strategy": "V3",
+  "model_key": "M2",
+  "column": "D1",
+  "pair_name": "d1_snomed_fma",
+  "n_source_texts": 24182,
+  "n_candidate_texts": 50103,
+  "verbalise_seconds": 14.856006416957825,
+  "source_encode_seconds": [
+    447.7277997499332,
+    450.59801624994725,
+    450.57693816698156
+  ],
+  "candidate_encode_seconds": [
+    1428.7778784998227,
+    1429.651020207908,
+    1429.929396333173
+  ],
+  "rank_evaluate_seconds": 4.4163506659679115,
+  "metrics": {
+    "mrr": 0.779208934153015,
+    "hits_at_1": 0.7148751357220413,
+    "f1": 0.3219834352839279,
+    "precision": 0.22450366120631085,
+    "recall": 0.5690776884806735,
+    "threshold": 0.81
+  },
+  "reproduces_stored": true,
+  "git_commit": "85fb8d4d52f93891a00ee97f08b6011f64c73155",
+  "machine": {
+    "chip": "Apple M4 Pro",
+    "memory_bytes": 68719476736,
+    "platform": "macOS-27.2-arm64-arm-64bit",
+    "versions": {
+      "python": "3.12.16",
+      "torch": "2.11.0",
+      "transformers": "5.5.4",
+      "sentence_transformers": "5.4.0",
+      "numpy": "2.5.3",
+      "scipy": "1.18.1",
+      "rdflib": "7.6.0"
+    }
+  },
+  "model": {
+    "model_key": "M2",
+    "model_id": "BAAI/bge-large-en-v1.5",
+    "device": "mps",
+    "hf_revision": "d4aa6901d3a41ba39fb536a557fa166f842b0e09",
+    "hf_revision_pinned": "d4aa6901d3a41ba39fb536a557fa166f842b0e09",
+    "max_seq_length": 512,
+    "device_override": false,
+    "n_parameters": 335141888,
+    "embedding_dimension": 1024,
+    "load_seconds": 2.7034706668928266
+  },
+  "dataset_load_seconds": 33.21272729197517,
+  "repeats": 3
+}

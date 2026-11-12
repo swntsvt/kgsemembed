@@ -1,0 +1,25 @@
+cff-version: 1.2.0
+message: "If you use this software or its data archive, please cite it as below."
+title: "kgsemembed: Verbalisation and Dense Embeddings for Knowledge Graph Alignment"
+type: software
+authors:
+  - family-names: Sawant
+    given-names: Savita Kiran
+    orcid: "https://orcid.org/0009-0002-2873-229X"
+version: v0.3.0-phase2-results
+date-released: "2026-11-12"
+license: MIT
+repository-code: "https://github.com/swntsvt/kgsemembed"
+abstract: >-
+  Phase 2 of a three-phase knowledge graph alignment study: verbalisation
+  strategies and sentence-embedding models re-rank the top-20 character
+  n-gram candidates of each source entity on five OAEI and OpenEA datasets,
+  compared with the stage-1 n-gram order. The release's data archive holds
+  every stored result, per-source sidecar, the baseline and the candidate
+  lists (URIs, scores and metrics only; no dataset text).
+keywords:
+  - knowledge graph alignment
+  - ontology matching
+  - entity alignment
+  - sentence embeddings
+  - verbalisation

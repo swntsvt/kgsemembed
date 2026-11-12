@@ -1,0 +1,337 @@
+{
+  "sample": 2000,
+  "seed": 183,
+  "d5": {
+    "conditions": {
+      "C1": {
+        "strategy": "V1",
+        "model_key": "M1",
+        "source": {
+          "tokens": 9787,
+          "id_tokens": 9787,
+          "id_token_share": 1.0,
+          "texts_with_id_share": 1.0
+        },
+        "candidate": {
+          "tokens": 13744,
+          "id_tokens": 8674,
+          "id_token_share": 0.6311117578579744,
+          "texts_with_id_share": 0.835
+        }
+      },
+      "C2": {
+        "strategy": "V2",
+        "model_key": "M1",
+        "source": {
+          "tokens": 15787,
+          "id_tokens": 9787,
+          "id_token_share": 0.6199404573383164,
+          "texts_with_id_share": 1.0
+        },
+        "candidate": {
+          "tokens": 20734,
+          "id_tokens": 8674,
+          "id_token_share": 0.4183466769557249,
+          "texts_with_id_share": 0.835
+        }
+      },
+      "C3": {
+        "strategy": "V2+V6",
+        "model_key": "M2",
+        "source": {
+          "tokens": 152969,
+          "id_tokens": 58840,
+          "id_token_share": 0.38465309964764105,
+          "texts_with_id_share": 1.0
+        },
+        "candidate": {
+          "tokens": 347350,
+          "id_tokens": 36502,
+          "id_token_share": 0.1050870879516338,
+          "texts_with_id_share": 0.9195
+        }
+      },
+      "C9": {
+        "strategy": "V8",
+        "model_key": "M2",
+        "source": {
+          "tokens": 56622,
+          "id_tokens": 0,
+          "id_token_share": 0.0,
+          "texts_with_id_share": 0.0
+        },
+        "candidate": {
+          "tokens": 139115,
+          "id_tokens": 0,
+          "id_token_share": 0.0,
+          "texts_with_id_share": 0.0
+        }
+      },
+      "C10": {
+        "strategy": "V2+V8",
+        "model_key": "M2",
+        "source": {
+          "tokens": 72409,
+          "id_tokens": 9787,
+          "id_token_share": 0.13516275601099312,
+          "texts_with_id_share": 1.0
+        },
+        "candidate": {
+          "tokens": 159849,
+          "id_tokens": 8674,
+          "id_token_share": 0.05426371137761262,
+          "texts_with_id_share": 0.835
+        }
+      },
+      "C18": {
+        "strategy": "V2+V8",
+        "model_key": "M1",
+        "source": {
+          "tokens": 72409,
+          "id_tokens": 9787,
+          "id_token_share": 0.13516275601099312,
+          "texts_with_id_share": 1.0
+        },
+        "candidate": {
+          "tokens": 159849,
+          "id_tokens": 8674,
+          "id_token_share": 0.05426371137761262,
+          "texts_with_id_share": 0.835
+        }
+      },
+      "C4": {
+        "strategy": "V3",
+        "model_key": "M2",
+        "source": {
+          "tokens": 213156,
+          "id_tokens": 133177,
+          "id_token_share": 0.624786541312466,
+          "texts_with_id_share": 1.0
+        },
+        "candidate": {
+          "tokens": 469790,
+          "id_tokens": 158014,
+          "id_token_share": 0.33635028416952256,
+          "texts_with_id_share": 0.918
+        }
+      },
+      "C5": {
+        "strategy": "V4",
+        "model_key": "M2",
+        "source": {
+          "tokens": 137182,
+          "id_tokens": 49053,
+          "id_token_share": 0.35757606683092535,
+          "texts_with_id_share": 0.9255
+        },
+        "candidate": {
+          "tokens": 327946,
+          "id_tokens": 27833,
+          "id_token_share": 0.0848706799290127,
+          "texts_with_id_share": 0.773
+        }
+      },
+      "C7": {
+        "strategy": "V6+V3",
+        "model_key": "M2",
+        "source": {
+          "tokens": 348451,
+          "id_tokens": 181443,
+          "id_token_share": 0.5207130988288167,
+          "texts_with_id_share": 1.0
+        },
+        "candidate": {
+          "tokens": 635536,
+          "id_tokens": 147083,
+          "id_token_share": 0.23143142166612118,
+          "texts_with_id_share": 0.9175
+        }
+      },
+      "C8": {
+        "strategy": "V5",
+        "model_key": "M2",
+        "source": {
+          "tokens": 521030,
+          "id_tokens": 330135,
+          "id_token_share": 0.633619945108727,
+          "texts_with_id_share": 1.0
+        },
+        "candidate": {
+          "tokens": 483952,
+          "id_tokens": 156575,
+          "id_token_share": 0.3235341521473204,
+          "texts_with_id_share": 0.945
+        }
+      },
+      "C13": {
+        "strategy": "V2+V8",
+        "model_key": "M5",
+        "source": {
+          "tokens": 77559,
+          "id_tokens": 14000,
+          "id_token_share": 0.18050774249281193,
+          "texts_with_id_share": 1.0
+        },
+        "candidate": {
+          "tokens": 203235,
+          "id_tokens": 12685,
+          "id_token_share": 0.062415430413068615,
+          "texts_with_id_share": 0.835
+        }
+      },
+      "C14": {
+        "strategy": "V4+V6",
+        "model_key": "M3",
+        "source": {
+          "tokens": 282412,
+          "id_tokens": 74634,
+          "id_token_share": 0.2642734727986063,
+          "texts_with_id_share": 0.9255
+        },
+        "candidate": {
+          "tokens": 653908,
+          "id_tokens": 42538,
+          "id_token_share": 0.06505196449653468,
+          "texts_with_id_share": 0.7735
+        }
+      },
+      "C20": {
+        "strategy": "V2",
+        "model_key": "M2",
+        "source": {
+          "tokens": 15787,
+          "id_tokens": 9787,
+          "id_token_share": 0.6199404573383164,
+          "texts_with_id_share": 1.0
+        },
+        "candidate": {
+          "tokens": 20734,
+          "id_tokens": 8674,
+          "id_token_share": 0.4183466769557249,
+          "texts_with_id_share": 0.835
+        }
+      }
+    },
+    "identifiers": {
+      "source": 7964,
+      "target": 8233,
+      "shared": 0
+    },
+    "unit_datatypes": {
+      "usDollar": 6391,
+      "poundSterling": 126,
+      "japaneseYen": 15,
+      "euro": 13,
+      "swedishKrona": 5,
+      "canadianDollar": 2,
+      "hongKongDollar": 1,
+      "indianRupee": 1
+    }
+  },
+  "d4_instance": {
+    "C3": {
+      "strategy": "V2+V6",
+      "model_key": "M2",
+      "source": {
+        "tokens": 295770,
+        "metadata_tokens": 102061,
+        "metadata_token_share": 0.34506880346214963,
+        "per_family_share": {
+          "dbkwik_page": 0.22839368428170537,
+          "dublin_core": 0.050194407816884744,
+          "foaf": 0.038070122054298945,
+          "roles_v1_annotation": 0.028410589309260575
+        }
+      },
+      "candidate": {
+        "tokens": 303101,
+        "metadata_tokens": 108728,
+        "metadata_token_share": 0.3587187109247413,
+        "per_family_share": {
+          "dbkwik_page": 0.2742848093539777,
+          "roles_v1_annotation": 0.03968644115327894,
+          "foaf": 0.022537042108076187,
+          "dublin_core": 0.022210418309408415
+        }
+      }
+    },
+    "C4": {
+      "strategy": "V3",
+      "model_key": "M2",
+      "source": {
+        "tokens": 305949,
+        "metadata_tokens": 147743,
+        "metadata_token_share": 0.4829007448953911,
+        "per_family_share": {
+          "dbkwik_page": 0.2924572396052937,
+          "dublin_core": 0.08962931730451808,
+          "foaf": 0.056450584901405136,
+          "roles_v1_annotation": 0.04436360308417416
+        }
+      },
+      "candidate": {
+        "tokens": 306160,
+        "metadata_tokens": 148119,
+        "metadata_token_share": 0.4837960543506663,
+        "per_family_share": {
+          "dbkwik_page": 0.3600796968905148,
+          "roles_v1_annotation": 0.050342957930493856,
+          "dublin_core": 0.040462503266266006,
+          "foaf": 0.03291089626339169
+        }
+      }
+    },
+    "C5": {
+      "strategy": "V4",
+      "model_key": "M2",
+      "source": {
+        "tokens": 265206,
+        "metadata_tokens": 130634,
+        "metadata_token_share": 0.492575582754538,
+        "per_family_share": {
+          "dbkwik_page": 0.3239142402509747,
+          "roles_v1_annotation": 0.06551133835584413,
+          "dublin_core": 0.05597912566080707,
+          "foaf": 0.04717087848691206
+        }
+      },
+      "candidate": {
+        "tokens": 273675,
+        "metadata_tokens": 135030,
+        "metadata_token_share": 0.49339545080844066,
+        "per_family_share": {
+          "dbkwik_page": 0.3590828537498858,
+          "roles_v1_annotation": 0.08029231752991688,
+          "foaf": 0.029421759386133187,
+          "dublin_core": 0.024598520142504795
+        }
+      }
+    },
+    "C7": {
+      "strategy": "V6+V3",
+      "model_key": "M2",
+      "source": {
+        "tokens": 354206,
+        "metadata_tokens": 184703,
+        "metadata_token_share": 0.5214564406023613,
+        "per_family_share": {
+          "dbkwik_page": 0.2736712534513814,
+          "dublin_core": 0.11933168833955382,
+          "foaf": 0.07678582519776628,
+          "roles_v1_annotation": 0.05166767361365985
+        }
+      },
+      "candidate": {
+        "tokens": 347733,
+        "metadata_tokens": 179063,
+        "metadata_token_share": 0.5149439368711052,
+        "per_family_share": {
+          "dbkwik_page": 0.3506972303462714,
+          "roles_v1_annotation": 0.0653346101750481,
+          "dublin_core": 0.054984715284428,
+          "foaf": 0.04392738106535762
+        }
+      }
+    }
+  }
+}

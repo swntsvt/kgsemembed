@@ -197,20 +197,24 @@ def test_budget_retains_highest_priority_tier() -> None:
 
 
 def test_selected_triples_never_exceed_budget() -> None:
-    """The estimated cost of the retained triples stays within the budget.
-
-    Uses separator-free predicate and object names so the rendered pair and
-    the implementation's internal cost estimate share the same token count.
-    """
-    from kgsemembed.verbalisation.ppas import estimate_tokens
-
+    """The encoder input of the retained pairs stays within the budget (#183)."""
     g = Graph()
     for i in range(200):
         g.add((_ENT, URIRef(f"http://example.org/ont#p{i}"), Literal(f"v{i}")))
-    result = SchemaAwareVerbaliser(model_key="M1").verbalise(g, _ENT, "instance")
+    verbaliser = SchemaAwareVerbaliser(model_key="M1")
+    result = verbaliser.verbalise(g, _ENT, "instance")
 
-    total = sum(estimate_tokens(pair) for pair in result.split(" | "))
-    assert total <= PPAS_BUDGETS["M1"]
+    assert verbaliser.budget.count(result) <= PPAS_BUDGETS["M1"]
+    assert 0 < result.count(" | ") < 199
+
+
+def test_pairs_fit_what_earlier_components_left(word_budget) -> None:
+    g = Graph()
+    for i in range(5):
+        g.add((_ENT, URIRef(f"http://example.org/ont#p{i}"), Literal(f"v{i}")))
+    verbaliser = SchemaAwareVerbaliser(model_key="M2")
+    verbaliser.budget = word_budget(6)
+    assert verbaliser.verbalise_after(g, _ENT, "instance", "one two") == "p0: v0"
 
 
 def test_m3_output_exceeds_budgeted_output() -> None:

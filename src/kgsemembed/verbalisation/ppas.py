@@ -144,6 +144,36 @@ def untiered_predicates(
     return untiered
 
 
+def tier_order(triples: List[Tuple], tier_list: List[List[str]]) -> List[Tuple]:
+    """Order triples by predicate tier, appending untiered ones in graph order.
+
+    This is the order :func:`ppas_sample` visits triples in when nothing is
+    dropped, with untiered predicates as the synthetic last tier.
+
+    Parameters
+    ----------
+    triples : list of tuple
+        RDF triples as ``(subject, predicate, object)`` rdflib tuples.
+    tier_list : list of list of str
+        Predicate URI strings grouped by tier priority.
+
+    Returns
+    -------
+    list of tuple
+        Every triple once, highest-priority tier first.
+    """
+    ordered: List[Tuple] = []
+    selected: set = set()
+    for tier in tier_list:
+        tier_predicates = set(tier)
+        for index, triple in enumerate(triples):
+            if index not in selected and str(triple[1]) in tier_predicates:
+                ordered.append(triple)
+                selected.add(index)
+    ordered.extend(triple for index, triple in enumerate(triples) if index not in selected)
+    return ordered
+
+
 def ppas_sample(
     triples: List[Tuple],
     tier_list: List[List[str]],

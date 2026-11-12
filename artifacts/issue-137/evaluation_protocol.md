@@ -37,12 +37,14 @@ construction:
 - threshold selection;
 - metric definitions and denominators.
 
-`baseline_comparison.md` checks this for every stored result: 271 of 271
-C-results match B0 on candidates, population block and protocol version.
+`baseline_comparison.md` checks this for every stored result: 277 of 277
+C-results (the sanity check C19 left out) match B0 on candidates, population
+block and protocol version.
 
 A condition's difference from B0 is therefore what embedding re-ranking adds
-or costs on identical inputs. Neither B0 nor the conditions can exceed the
-stage-1 candidate recall@20 (section 4).
+or costs on identical inputs. Neither B0 nor any condition can exceed the
+ceilings the stage-1 lists set (section 4): the ranking ceiling for MRR and
+Hits@k, candidate recall@20 for Recall@k.
 
 ## 2. Datasets and reference alignments
 
@@ -59,8 +61,9 @@ counterpart in a local copy of the OAEI MELT track repository
 (`oaei.webdatacommons.org/`). That covers the 4 D1 files, the 3 D2 files, all
 63 D3 files and the 3 D4 files; the SHA-256 values are in
 `dataset_provenance.md`. D5 is not distributed through that repository. Its
-files are recorded by SHA-256 only, and their identity with the OpenEA v2.0
-archive has not been rechecked here.
+eight files (triples, `ent_links` and the fold-1 splits) are byte-identical to
+`D_W_15K_V2/` in the OpenEA v2.0 archive, whose SHA-512 matches the digest
+pykeen pins for it (#138, `artifacts/issue-138/release_checks.md`).
 
 **D1 provenance.** All four local D1 files (`source.rdf`, `target.rdf`,
 `reference.rdf`, `input.rdf`) are byte-identical to
@@ -135,8 +138,8 @@ was a false positive.
 | D5 | 14,762 (with triples) | 14,992 Wikidata entities | 1,500 | 10,500 | 10,500 |
 
 D5 has 167 test links whose DBpedia source has no triples. Those sources are
-never ranked but stay in every denominator, contributing 0 to MRR and Recall@k
-and a false negative to F1.
+never ranked but stay in every denominator, contributing 0 to MRR, Hits@k and
+Recall@k and a false negative to F1.
 
 ## 4. Metrics
 
@@ -147,13 +150,22 @@ and a false negative to F1.
   several gold targets (1:N) is credited with the best one. A reference source
   with no ranked list, or with no gold target among its candidates, scores 0.
   Ranked sources without a reference are not in the mean.
+- **Hits@k** (k = 1, 5, 10; #139) is the fraction of test reference sources
+  with a gold target in their top k, with MRR's denominator and its credit for
+  a 1:N source. Hits@1 is the other primary metric; Recall@1 equals it on 1:1
+  references and is lower wherever a source has several gold targets (D1, D2,
+  one D3 pair).
 - **Recall@k** (k = 1, 5, 10) is the number of test reference *pairs* whose
   target appears in the source's top k, divided by the number of test
   references. Its denominator is therefore pairs, while MRR's is sources.
-- **Candidate recall@20** is Recall@20 of the stage-1 lists. It is the
-  ceiling no re-ranking can exceed. `candidate_recall_at_20` in every B0
-  result equals `scripts/compute_recall_at_20.py` (the same
-  `compute_recall_at_k`).
+- **Candidate recall@20** is Recall@20 of the stage-1 lists. It caps
+  Recall@k only. `candidate_recall_at_20` in every B0 result equals
+  `scripts/compute_recall_at_20.py` (the same `compute_recall_at_k`).
+- **Ranking ceiling** (`artifacts/issue-139/metric_ceilings.md`): the share
+  of test reference sources with a gold target in their list. It caps MRR and
+  Hits@k, and differs from candidate recall@20 under 1:N references (D1
+  0.8860 against 0.8578, D2 0.9499 against 0.9465). Every results table
+  prints its metric's ceiling row.
 
 **Pair-level matching metrics** (threshold-dependent):
 
@@ -173,16 +185,19 @@ and a false negative to F1.
 
 - Each column is one pair, except D3, which is the unweighted mean over its 21
   pairs. That covers the main table, its ranking companion, the comparison and
-  the report. The Section 4.3 entity-type table instead weights D3 by
-  `n_refs`.
+  the report. The Section 4.3 entity-type table and the report's entity-type
+  section share one definition (#166): D3 only, unweighted means over the
+  pairs reporting each entity type, plus micro F1 pooled over them.
 - Mean* in the main table averages D1–D4 (both D4 columns) and leaves out D5.
 - Since #140 the primary tests are per-dataset paired tests over test
   reference sources (`evaluation/paired_tests.py`; D3 pairs are strata). The
   cross-dataset Wilcoxon summary (`evaluation/stats.py`) treats dataset
   columns, not pairs, as observations: the 21 D3 pairs share seven
   ontologies, so they are not independent.
-- B0 is not part of the C1–C20 ablation groups or their Wilcoxon families. Its
-  comparisons are descriptive: one pair per column, no intervals.
+- B0 is not part of the C1–C20 ablation groups or their Wilcoxon families.
+  Since #165 every condition is tested against it per column with the #140
+  paired intervals and randomisation tests; on MRR, Holm across every
+  condition compared with B0 on one column (`baseline_paired_tests.md`).
 
 ## 5. Results against B0
 
@@ -195,64 +210,103 @@ D1 numbers were first produced by the re-run after the D1 known-pair fix
 (section 3; all 15 D1 conditions and B0 at commit 65b0d33, clean tree);
 D2–D5 were unaffected by the fix.
 Every stored C1–C20 and B0 result was re-run at c6931db in #141 with every
-metric unchanged, so that is the commit the stored files now record.
+metric unchanged. After the #183 corrections (token budgets counted on the
+encoder input with each model's tokenizer, M4 at 512 tokens, V7's
+annotation written once, D5 datatype suffixes removed) all of them were
+re-run at 3b23a8b: B0 and every cell no correction touches reproduced
+exactly, and 21 budgeted, M4 or D5 cells changed
+(`artifacts/issue-183/rerun_comparison.md`). The numbers below are from
+that re-run.
 
 B0 per column:
 
 | Metric | D1 | D2 | D3 | D4_schema | D4_instance | D5 |
 |---|---|---|---|---|---|---|
 | MRR | 0.7055 | 0.8175 | 0.7200 | 0.8879 | 0.9049 | 0.1808 |
-| Recall@1 | 0.5398 | 0.7446 | 0.6528 | 0.8636 | 0.8696 | 0.1544 |
+| Hits@1 | 0.6126 | 0.7546 | 0.6556 | 0.8636 | 0.8696 | 0.1544 |
 | F1 | 0.3062 | 0.6626 | 0.5140 | 0.8090 | 0.8802 | 0.1730 |
+| Ranking ceiling (MRR, Hits@1) | 0.8860 | 0.9499 | 0.8618 | 0.9318 | 0.9725 | 0.2667 |
 | Candidate recall@20 | 0.8578 | 0.9465 | 0.8621 | 0.9318 | 0.9725 | 0.2667 |
 
-The effect of re-ranking depends on the dataset. Descriptively, on one pair
-per column:
+Recall@1, a secondary table since #139, is in `baseline_comparison.md`; it
+equals Hits@1 except on D1 (0.5398), D2 (0.7446) and D3 (0.6528).
 
-Number of conditions above / below / equal to B0, per metric (as regenerated
-in #143: 271 C-results, after #142 retired C12 and #145 re-ran V8):
+The effect of re-ranking depends on the dataset.
+
+Number of conditions above / below / equal to B0, per metric, by point
+estimate (as regenerated in #183: 277 C-results, the sanity check C19 left
+out as in every results table):
 
 | Metric | D1 | D2 | D3 | D4_schema | D4_instance | D5 |
 |---|---|---|---|---|---|---|
-| MRR | 7 / 8 / 0 | 6 / 7 / 0 | 6 / 4 / 0 | 10 / 1 / 0 | 8 / 3 / 0 | 0 / 11 / 0 |
-| Recall@1 | 7 / 8 / 0 | 5 / 8 / 0 | 5 / 5 / 0 | 8 / 1 / 2 | 8 / 3 / 0 | 0 / 11 / 0 |
-| F1 | 9 / 6 / 0 | 7 / 6 / 0 | 1 / 9 / 0 | 9 / 1 / 1 | 0 / 11 / 0 | 0 / 11 / 0 |
+| MRR | 8 / 7 / 0 | 6 / 9 / 0 | 6 / 4 / 0 | 11 / 1 / 0 | 9 / 3 / 0 | 0 / 13 / 0 |
+| Hits@1 | 8 / 7 / 0 | 6 / 9 / 0 | 5 / 5 / 0 | 9 / 1 / 2 | 9 / 3 / 0 | 0 / 13 / 0 |
+| F1 | 9 / 6 / 0 | 8 / 7 / 0 | 1 / 9 / 0 | 10 / 1 / 1 | 0 / 12 / 0 | 0 / 13 / 0 |
+
+With paired intervals (#165, `artifacts/issue-165/baseline_paired_tests.md`;
+MRR, Holm across every condition compared with B0 on one column, alpha 0.05),
+conditions significantly above / below B0:
+
+| | D1 | D2 | D3 | D4_schema | D4_instance | D5 |
+|---|---|---|---|---|---|---|
+| MRR | 5 / 6 of 15 | 5 / 8 of 15 | 1 / 2 of 10 | 0 / 0 of 12 | 2 / 2 of 12 | 0 / 12 of 13 |
+
+- Significant gains: D1 C4 +0.074, C3 +0.062, C6 +0.059, C17 +0.052, C16
+  +0.018; D2 C4 +0.085, C17 +0.043, C1 +0.033, C7 +0.032, C3 +0.032; D3 C1
+  +0.043; D4_instance C4 +0.040, C3 +0.034.
+- #183 changed three decisions: C5 (+0.013) and C7 (+0.012) on D4_instance
+  are no longer significant gains (before: +0.020, +0.018), C16 on D2
+  (−0.035, before −0.024) is now a significant loss, and C5 on D5 (−0.003)
+  is no longer a significant loss.
+- The #163 cells (C4 on D4/D5, C7 on D1/D2/D5, C15 on D2) grew their
+  columns' families from 14/13/11/11/11 (D1/D2/D4_schema/D4_instance/D5) to
+  15/15/12/12/13 and the decisions were recomputed, as the #165 plan fixed.
+  Of the new cells, C4 on D4_instance and C7 on D2 are significant gains, C7
+  on D1 (+0.005) and C4 on D4_schema (+0.021) are not significant, and C15
+  on D2 (−0.092), C4 on D5 and C7 on D5 are significant losses.
+- No condition differs significantly from B0 on D4_schema (44 test
+  reference sources), and every D5 condition but C5 is significantly below
+  it.
 
 - **Ranking improves on D1, D2 and D4, but not uniformly.** The best
   condition's MRR gain over B0 is:
   - D1: +0.074 (C4, V3/M2);
   - D2: +0.085 (C4);
   - D4_schema: +0.033 (C3, V2+V6/M2; C8 and C10 tie);
-  - D4_instance: +0.039 (C3).
+  - D4_instance: +0.040 (C4; C3 +0.034).
 
   Only about half the conditions beat B0 on D1 and D2 MRR. Conditions without
   lexical text collapse: C9 (V8 only) loses 0.44–0.57 MRR on D1–D3.
 - **Better ranking does not always give better matching F1.**
   - On D3, 6 of 10 conditions beat B0 on MRR, but only 1 of 10 on F1 (C1,
     +0.033).
-  - On D4_instance, 8 of 11 beat it on MRR, and none on F1. The best F1 is
+  - On D4_instance, 9 of 12 beat it on MRR, and none on F1. The best F1 is
     C20's 0.8036 against B0's 0.8802.
-  - On D1, by contrast, 9 of 15 beat B0 on F1 while 7 do on MRR.
+  - On D1, by contrast, 9 of 15 beat B0 on F1 while 8 do on MRR.
 
   F1 depends on the top-1 score clearing a threshold tuned on validation. How
   well that threshold separates correct from incorrect top-1 predictions
   depends on the score scale (n-gram cosine against embedding cosine) as much
   as on the order. D3's validation sets are small (20% of 4–25 references per
   pair), and D4_instance's F1 counts only judgeable unmatched sources.
-- **Re-ranking reduces every metric on D5.** All 11 D5 conditions are below
-  B0 on MRR, Recall@1, Recall@10 and F1 (D5 section of
-  `baseline_comparison.md`).
+- **Re-ranking does not improve D5.** All 13 D5 conditions are below B0 on
+  MRR, Hits@1, Recall@1 and F1, and all but C14 (+0.005) on Recall@10 (D5
+  section of `baseline_comparison.md`).
 
 ### The D5 regression
 
 On D5, stage 1 puts the gold target first for 1,621 of 10,500 test
 references. It puts it in ranks 2–20 for 1,179, outside the top 20 for 7,533,
-and 167 sources are unreachable. Every embedding condition then orders those
-20 candidates worse than the n-gram did:
+and 167 sources are unreachable. No embedding condition orders those 20
+candidates better than the n-gram did:
 
-- The best, C14 (V4+V6/M3), reaches MRR 0.1550 against B0's 0.1808 (−0.026).
-  The other conditions that read attribute text are next: C5 (V4/M2) −0.030
-  and C3 (V2+V6/M2) −0.045.
+- The best, C5 (V4/M2), reaches MRR 0.1777 against B0's 0.1808 (−0.003
+  [−0.008, 0.001], not significant). The other conditions that read
+  attribute text follow, each significantly below B0: C14 (V4+V6/M3)
+  −0.009, C7 (V6+V3/M2) −0.012, C3 (V2+V6/M2) −0.019, C4 (V3/M2) −0.031.
+  Before #183 these texts carried OpenEA's inlined datatype on every literal
+  and were cut at 512 tokens; removing the suffix raised them by 0.017
+  (C14) to 0.040 (C7).
 - Conditions whose text is labels, annotations or relational signatures (C1,
   C2, C9, C10, C13, C18, C20) score MRR 0.034–0.049. That is about what a
   random order of the same lists would score: 2,800 of 10,500 test references
@@ -296,14 +350,15 @@ only from Mean*, as before.
   test), so absolute D1 precision stays low. D1 results without
   `"n_train_refs": 726` in their population record predate the fix and are
   not comparable; the report, the results table and the ablation runners
-  refuse to combine them with post-fix results. The ablation and
-  serialization results of #122–#134 were not re-run, so their D1 numbers
-  remain on the pre-fix population.
-- **D5 release identity.** Checksums are recorded but not compared with the
-  OpenEA v2.0 archive.
+  refuse to combine them with post-fix results. The D1 runs of the #122,
+  #128 (and its validation follow-up) and #131 ablations were re-run on the
+  post-fix population in #164 (`data/results_issue164/`,
+  `artifacts/issue-164/`); the #134 serialization results were not, so their
+  D1 numbers remain on the pre-fix population.
 - **One pair per column.** D1, D2, D4 and D5 are single pairs, and D3's 21
-  pairs share seven ontologies. The comparisons with B0 are descriptive. No
-  claim is made beyond these five datasets.
+  pairs share seven ontologies. The intervals against B0 (#165) resample test
+  sources within these pairs, so they describe these pairs, not other
+  ontologies or graphs. No claim is made beyond these five datasets.
 - **No external systems.** BERTMapLt, LogMap, AML and other systems were not
   run or reproduced (#137, scope item 4).
 

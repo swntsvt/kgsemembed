@@ -1,24 +1,26 @@
 """Structured key-value verbalisation strategy for instance entities.
 
 Serialises an entity as deterministic pipe-separated predicate-value pairs.
-Integrates with PPAS for entities exceeding the triple count threshold.
-
-Predicates absent from every configured tier are appended as a synthetic
-lowest-priority tier, mirroring :mod:`kgsemembed.verbalisation.v3`, so that
-untiered triples are selected within the model token budget rather than
-bypassing PPAS.
+Pairs keep graph order unless the entity exceeds the PPAS triple-count
+threshold or its text does not fit the model token budget; then they are
+taken in PPAS tier order, untiered predicates last, and kept while they fit.
+The budget holds for every entity, counted with the model's tokenizer (#183).
 """
+
+from functools import cached_property
+from typing import Optional
 
 from rdflib import Graph, URIRef
 
 from kgsemembed.verbalisation.base import VerbaliserBase
+from kgsemembed.verbalisation.budget import TokenBudget, fit_items, token_budget
 from kgsemembed.verbalisation.ppas import (
     INSTANCE_TIER_LIST,
-    PPAS_BUDGETS,
-    ppas_sample,
     should_apply_ppas,
-    untiered_predicates,
+    tier_order,
 )
+
+_PAIR_SEPARATOR = " | "
 
 
 class StructuredKVVerbaliser(VerbaliserBase):
@@ -37,14 +39,23 @@ class StructuredKVVerbaliser(VerbaliserBase):
     >>> "type: Drug | CAS number: 50-78-2"
     """
 
-    def __init__(self, model_key: str = "M2") -> None:
+    def __init__(self, model_key: str = "M2", role: str = "candidate") -> None:
         """
         Parameters
         ----------
         model_key : str
             Model key used to determine whether PPAS applies (e.g. "M1", "M2").
+        role : str
+            ``"source"`` or ``"candidate"``: the encoder role whose input the
+            budget counts.
         """
         self.model_key = model_key
+        self.role = role
+
+    @cached_property
+    def budget(self) -> Optional[TokenBudget]:
+        """The model's token budget for this role, or ``None`` when uncapped."""
+        return token_budget(self.model_key, self.role)
 
     def verbalise(
         self, graph: Graph, entity_uri: URIRef, entity_type: str
@@ -67,41 +78,38 @@ class StructuredKVVerbaliser(VerbaliserBase):
             Non-empty key-value string for entities with retrievable data;
             empty string only for entities with no retrievable information.
         """
-        triples = self._collect_triples(graph, entity_uri)
+        return self.verbalise_after(graph, entity_uri, entity_type, "")
 
-        if should_apply_ppas(triples, self.model_key):
-            triples = self._select_triples(triples)
-
-        pairs: list[str] = []
-        for subj, pred, obj in triples:
-            pair = self._format_pair(graph, pred, obj)
-            if pair:
-                pairs.append(pair)
-
-        return " | ".join(pairs)
-
-    def _select_triples(self, triples: list[tuple]) -> list[tuple]:
+    def verbalise_after(
+        self, graph: Graph, entity_uri: URIRef, entity_type: str, preceding: str
+    ) -> str:
         """
-        Apply PPAS with untiered predicates as the lowest-priority tier.
+        Render pairs that fit what ``preceding`` left of the budget.
 
         Parameters
         ----------
-        triples : list of tuple
-            Collected triples for the entity, in original order.
+        graph : Graph
+            RDF graph containing entity triples.
+        entity_uri : URIRef
+            URI of the entity to verbalise.
+        entity_type : str
+            One of ``"class"``, ``"instance"``, ``"predicate"`` (ignored).
+        preceding : str
+            Joined text of the earlier components of a composite, or ``""``.
 
         Returns
         -------
-        list of tuple
-            Triples selected in tier-priority order within the model token
-            budget; entities whose predicates are all untiered are selected
-            from the appended synthetic tier.
+        str
+            The kept pairs joined with `` | ``.
         """
-        augmented = INSTANCE_TIER_LIST + [
-            untiered_predicates(triples, INSTANCE_TIER_LIST)
-        ]
-        return ppas_sample(
-            triples,
-            augmented,
-            PPAS_BUDGETS[self.model_key],
-            self._verbalise_triple,
-        )
+        triples = self._collect_triples(graph, entity_uri)
+        pairs = self._pairs(graph, triples)
+        if self.budget is None:
+            return _PAIR_SEPARATOR.join(pairs)
+        if should_apply_ppas(triples, self.model_key) or not self.budget.fits(_PAIR_SEPARATOR.join(pairs), preceding):
+            pairs = self._pairs(graph, tier_order(triples, INSTANCE_TIER_LIST))
+        return _PAIR_SEPARATOR.join(fit_items(pairs, _PAIR_SEPARATOR, self.budget, preceding))
+
+    def _pairs(self, graph: Graph, triples: list[tuple]) -> list[str]:
+        """Render each triple as a ``key: value`` pair, dropping empty ones."""
+        return [pair for _subj, pred, obj in triples if (pair := self._format_pair(graph, pred, obj))]

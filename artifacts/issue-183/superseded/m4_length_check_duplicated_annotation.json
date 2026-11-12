@@ -1,0 +1,302 @@
+{
+  "git_commit": "81537960175bd935bf82f4797c2d97c013579f56",
+  "budgets": {
+    "128": 128,
+    "512": 420
+  },
+  "rows": {
+    "C6/D1": {
+      "n_sources": 1151,
+      "mrr_128": 0.7532846742191568,
+      "mrr_512": 0.7478521783435678,
+      "delta": -0.005432495875589027,
+      "ci_low": -0.012465391845821829,
+      "ci_high": 0.0014905260778413684,
+      "truncation_128": {
+        "source": {
+          "n_inputs": 1151,
+          "n_truncated": 0,
+          "tokens_discarded": 0,
+          "max_length": 128
+        },
+        "candidate": {
+          "n_inputs": 14811,
+          "n_truncated": 0,
+          "tokens_discarded": 0,
+          "max_length": 128
+        }
+      },
+      "truncation_512": {
+        "source": {
+          "n_inputs": 1151,
+          "n_truncated": 0,
+          "tokens_discarded": 0,
+          "max_length": 206
+        },
+        "candidate": {
+          "n_inputs": 14811,
+          "n_truncated": 0,
+          "tokens_discarded": 0,
+          "max_length": 412
+        }
+      }
+    },
+    "C6/D2": {
+      "n_sources": 299,
+      "mrr_128": 0.84338535860275,
+      "mrr_512": 0.8592517385995647,
+      "delta": 0.015866379996814728,
+      "ci_low": 0.005293869777565518,
+      "ci_high": 0.028260239156978183,
+      "truncation_128": {
+        "source": {
+          "n_inputs": 299,
+          "n_truncated": 0,
+          "tokens_discarded": 0,
+          "max_length": 98
+        },
+        "candidate": {
+          "n_inputs": 2285,
+          "n_truncated": 0,
+          "tokens_discarded": 0,
+          "max_length": 128
+        }
+      },
+      "truncation_512": {
+        "source": {
+          "n_inputs": 299,
+          "n_truncated": 0,
+          "tokens_discarded": 0,
+          "max_length": 98
+        },
+        "candidate": {
+          "n_inputs": 2285,
+          "n_truncated": 0,
+          "tokens_discarded": 0,
+          "max_length": 420
+        }
+      }
+    },
+    "C16/D1": {
+      "n_sources": 1151,
+      "mrr_128": 0.7258385924507458,
+      "mrr_512": 0.7227030671497122,
+      "delta": -0.0031355253010335593,
+      "ci_low": -0.011749174599413647,
+      "ci_high": 0.005426227015334218,
+      "truncation_128": {
+        "source": {
+          "n_inputs": 1151,
+          "n_truncated": 0,
+          "tokens_discarded": 0,
+          "max_length": 128
+        },
+        "candidate": {
+          "n_inputs": 14811,
+          "n_truncated": 0,
+          "tokens_discarded": 0,
+          "max_length": 128
+        }
+      },
+      "truncation_512": {
+        "source": {
+          "n_inputs": 1151,
+          "n_truncated": 0,
+          "tokens_discarded": 0,
+          "max_length": 220
+        },
+        "candidate": {
+          "n_inputs": 14811,
+          "n_truncated": 0,
+          "tokens_discarded": 0,
+          "max_length": 404
+        }
+      }
+    },
+    "C16/D2": {
+      "n_sources": 299,
+      "mrr_128": 0.8254683258027741,
+      "mrr_512": 0.8314516401472924,
+      "delta": 0.005983314344518376,
+      "ci_low": -0.003944773871613496,
+      "ci_high": 0.01693443204417288,
+      "truncation_128": {
+        "source": {
+          "n_inputs": 299,
+          "n_truncated": 0,
+          "tokens_discarded": 0,
+          "max_length": 112
+        },
+        "candidate": {
+          "n_inputs": 2285,
+          "n_truncated": 0,
+          "tokens_discarded": 0,
+          "max_length": 128
+        }
+      },
+      "truncation_512": {
+        "source": {
+          "n_inputs": 299,
+          "n_truncated": 0,
+          "tokens_discarded": 0,
+          "max_length": 112
+        },
+        "candidate": {
+          "n_inputs": 2285,
+          "n_truncated": 0,
+          "tokens_discarded": 0,
+          "max_length": 420
+        }
+      }
+    },
+    "C11/D1": {
+      "n_sources": 1151,
+      "mrr_128": 0.6870721527379293,
+      "mrr_512": 0.6870721527379293,
+      "delta": 0.0,
+      "ci_low": 0.0,
+      "ci_high": 0.0,
+      "truncation_128": {
+        "source": {
+          "n_inputs": 1151,
+          "n_truncated": 0,
+          "tokens_discarded": 0,
+          "max_length": 95
+        },
+        "candidate": {
+          "n_inputs": 14811,
+          "n_truncated": 8,
+          "tokens_discarded": 218,
+          "max_length": 186
+        }
+      },
+      "truncation_512": {
+        "source": {
+          "n_inputs": 1151,
+          "n_truncated": 0,
+          "tokens_discarded": 0,
+          "max_length": 95
+        },
+        "candidate": {
+          "n_inputs": 14811,
+          "n_truncated": 0,
+          "tokens_discarded": 0,
+          "max_length": 186
+        }
+      }
+    },
+    "C11/D2": {
+      "n_sources": 299,
+      "mrr_128": 0.8223898082593734,
+      "mrr_512": 0.8234581843277495,
+      "delta": 0.0010683760683761756,
+      "ci_low": -9.290226681535341e-05,
+      "ci_high": 0.00278706800445927,
+      "truncation_128": {
+        "source": {
+          "n_inputs": 299,
+          "n_truncated": 0,
+          "tokens_discarded": 0,
+          "max_length": 41
+        },
+        "candidate": {
+          "n_inputs": 2285,
+          "n_truncated": 58,
+          "tokens_discarded": 2210,
+          "max_length": 265
+        }
+      },
+      "truncation_512": {
+        "source": {
+          "n_inputs": 299,
+          "n_truncated": 0,
+          "tokens_discarded": 0,
+          "max_length": 41
+        },
+        "candidate": {
+          "n_inputs": 2285,
+          "n_truncated": 0,
+          "tokens_discarded": 0,
+          "max_length": 265
+        }
+      }
+    },
+    "C17/D1": {
+      "n_sources": 1151,
+      "mrr_128": 0.77271314974016,
+      "mrr_512": 0.77271314974016,
+      "delta": 0.0,
+      "ci_low": 0.0,
+      "ci_high": 0.0,
+      "truncation_128": {
+        "source": {
+          "n_inputs": 1151,
+          "n_truncated": 0,
+          "tokens_discarded": 0,
+          "max_length": 78
+        },
+        "candidate": {
+          "n_inputs": 14811,
+          "n_truncated": 1,
+          "tokens_discarded": 12,
+          "max_length": 140
+        }
+      },
+      "truncation_512": {
+        "source": {
+          "n_inputs": 1151,
+          "n_truncated": 0,
+          "tokens_discarded": 0,
+          "max_length": 78
+        },
+        "candidate": {
+          "n_inputs": 14811,
+          "n_truncated": 0,
+          "tokens_discarded": 0,
+          "max_length": 140
+        }
+      }
+    },
+    "C17/D2": {
+      "n_sources": 299,
+      "mrr_128": 0.8786231884057972,
+      "mrr_512": 0.8786231884057972,
+      "delta": 0.0,
+      "ci_low": 0.0,
+      "ci_high": 0.0,
+      "truncation_128": {
+        "source": {
+          "n_inputs": 299,
+          "n_truncated": 0,
+          "tokens_discarded": 0,
+          "max_length": 21
+        },
+        "candidate": {
+          "n_inputs": 2285,
+          "n_truncated": 0,
+          "tokens_discarded": 0,
+          "max_length": 126
+        }
+      },
+      "truncation_512": {
+        "source": {
+          "n_inputs": 299,
+          "n_truncated": 0,
+          "tokens_discarded": 0,
+          "max_length": 21
+        },
+        "candidate": {
+          "n_inputs": 2285,
+          "n_truncated": 0,
+          "tokens_discarded": 0,
+          "max_length": 126
+        }
+      }
+    }
+  },
+  "decision": {
+    "limit": 512,
+    "worse_at_512": [],
+    "rule": "512 unless the 95% interval of validation MRR (512 - 128) for C6 or C16 lies entirely below 0 on D1 or D2"
+  }
+}

@@ -292,3 +292,97 @@ def test_an_unexpected_value_type_makes_a_comparison_untested(tmp_path: Path) ->
     path.write_text(json.dumps(sidecar), encoding="utf-8")
     rows = [r for r in pt.run_paired_tests(tmp_path, None, _FAST) if r["dataset_id"] == "D5"]
     assert rows and not any(r["tested"] for r in rows)
+
+
+# ---------------------------------------------------------------------------
+# Conditions against the stage-1 baseline B0 (#165)
+# ---------------------------------------------------------------------------
+def test_baseline_comparisons_cover_every_condition_column_but_the_sanity_check() -> None:
+    cells = pt.baseline_comparisons()
+    assert ("C1", "D4_schema") in cells and ("C1", "D4_instance") in cells
+    assert not any(condition == "C19" for condition, _ in cells)
+    assert ("C17", "D3") not in cells and ("C14", "D5") in cells
+    assert len(cells) == len(set(cells))
+
+
+def _seed_baseline(results_dir: Path, baseline_dir: Path) -> None:
+    _write(baseline_dir, "B0", "D1", "p", _sidecar(*_lists(40, 3)))
+    _write(results_dir, "C1", "D1", "p", _sidecar(*_lists(40, 1)))
+    _write(results_dir, "C2", "D1", "p", _sidecar(*_lists(40, 3)))
+
+
+def _cell(rows: List[dict], condition: str, column: str, metric: str = "mrr") -> dict:
+    return next(r for r in rows if (r["condition_b"], r["dataset_id"], r["metric"]) == (condition, column, metric))
+
+
+def test_baseline_tests_read_b0_from_its_own_tree(tmp_path: Path) -> None:
+    results, baseline = tmp_path / "results", tmp_path / "baseline"
+    _seed_baseline(results, baseline)
+    rows = pt.run_baseline_tests(results, baseline, None, _FAST)
+    gain = _cell(rows, "C1", "D1")
+    assert gain["tested"] and gain["condition_a"] == "B0" and gain["group"] == "B0"
+    assert gain["delta"] > 0 and gain["value_a"] < gain["value_b"]
+    assert _cell(rows, "C2", "D1")["delta"] == 0
+    assert all(r["metric"] in pt.METRICS for r in rows)
+
+
+def test_baseline_family_is_every_condition_on_a_column_untested_ones_included(tmp_path: Path) -> None:
+    results, baseline = tmp_path / "results", tmp_path / "baseline"
+    _seed_baseline(results, baseline)
+    rows = pt.run_baseline_tests(results, baseline, None, _FAST)
+    d1 = [r for r in rows if r["dataset_id"] == "D1" and r["metric"] == "mrr"]
+    expected = sum(1 for _, column in pt.baseline_comparisons() if column == "D1")
+    assert len(d1) == expected
+    tested = [r for r in d1 if r["tested"]]
+    assert {r["condition_b"] for r in tested} == {"C1", "C2"}
+    assert all(r["family_size"] == expected for r in tested)
+    assert all("p_holm" not in r for r in d1 if not r["tested"])
+    assert _cell(rows, "C1", "D1", "hits_at_1").get("p_holm") is None
+
+
+def test_baseline_holm_treats_untested_cells_as_p_one() -> None:
+    rows = [
+        {"metric": "mrr", "dataset_id": "D1", "tested": True, "p_value": 0.01},
+        {"metric": "mrr", "dataset_id": "D1", "tested": False},
+        {"metric": "mrr", "dataset_id": "D2", "tested": True, "p_value": 0.01},
+    ]
+    pt.apply_baseline_holm(rows)
+    assert rows[0]["p_holm"] == pytest.approx(0.02) and rows[0]["family_size"] == 2
+    assert rows[2]["p_holm"] == pytest.approx(0.01) and rows[2]["family_size"] == 1
+    assert "p_holm" not in rows[1]
+
+
+def test_a_stale_b0_sidecar_makes_its_cells_untested(tmp_path: Path) -> None:
+    results, baseline = tmp_path / "results", tmp_path / "baseline"
+    _seed_baseline(results, baseline)
+    path = baseline / "B0" / "D1" / "p_results.json"
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    path.write_text(json.dumps({**payload, "run_timestamp": "2026-10-22T00:00:00Z"}), encoding="utf-8")
+    rows = pt.run_baseline_tests(results, baseline, None, _FAST)
+    cell = _cell(rows, "C1", "D1")
+    assert not cell["tested"] and "sidecar differs from its result" in cell["reason"]
+
+
+def test_a_b0_result_from_another_setup_is_not_compared(tmp_path: Path) -> None:
+    results, baseline = tmp_path / "results", tmp_path / "baseline"
+    _seed_baseline(results, baseline)
+    sidecar = _sidecar(*_lists(40, 3))
+    _write(baseline, "B0", "D1", "p", sidecar, {**_payload(sidecar), "candidates_sha256": "d" * 64})
+    cell = _cell(pt.run_baseline_tests(results, baseline, None, _FAST), "C1", "D1")
+    assert not cell["tested"]
+
+
+def test_baseline_summary_counts_gains_and_losses_per_column() -> None:
+    rows = [
+        {"metric": "mrr", "dataset_id": "D1", "tested": True, "delta": 0.1, "significant": True},
+        {"metric": "mrr", "dataset_id": "D1", "tested": True, "delta": -0.2, "significant": False},
+        {"metric": "mrr", "dataset_id": "D1", "tested": False},
+        {"metric": "f1", "dataset_id": "D1", "tested": True, "delta": 0.3},
+        {"metric": "mrr", "dataset_id": "D5", "tested": True, "delta": -0.1, "significant": True},
+    ]
+    assert pt.baseline_summary(rows) == [
+        {"dataset_id": "D1", "n_cells": 3, "n_tested": 2, "above": 1, "below": 1,
+         "significant_gain": 1, "significant_loss": 0},
+        {"dataset_id": "D5", "n_cells": 1, "n_tested": 1, "above": 0, "below": 1,
+         "significant_gain": 0, "significant_loss": 1},
+    ]

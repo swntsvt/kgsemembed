@@ -358,11 +358,11 @@ def test_m3_includes_all_walks() -> None:
 
 
 def test_budget_never_exceeded() -> None:
-    from kgsemembed.verbalisation.ppas import PPAS_BUDGETS, estimate_tokens
+    from kgsemembed.verbalisation.ppas import PPAS_BUDGETS
 
-    g = _deep_graph()
-    out = _v("M1").verbalise(g, _HEART, "instance")
-    assert estimate_tokens(out) <= PPAS_BUDGETS["M1"]
+    verbaliser = _v("M1")
+    out = verbaliser.verbalise(_deep_graph(), _HEART, "instance")
+    assert 0 < verbaliser.budget.count(out) <= PPAS_BUDGETS["M1"]
 
 
 def test_budget_truncates_relative_to_unbounded() -> None:
@@ -372,13 +372,11 @@ def test_budget_truncates_relative_to_unbounded() -> None:
     assert 0 < len(capped) < len(uncapped) == WALKS_PER_ENTITY
 
 
-def test_budget_uses_estimate_tokens() -> None:
-    g = _deep_graph()
-    with patch.object(
-        v5_module, "estimate_tokens", wraps=v5_module.estimate_tokens
-    ) as spy:
-        _v("M1").verbalise(g, _HEART, "instance")
-    assert spy.called
+def test_walks_stop_at_the_first_that_does_not_fit(word_budget) -> None:
+    full = _v("M3").verbalise(_deep_graph(), _HEART, "instance").split(" | ")
+    verbaliser = _v("M2")
+    verbaliser.budget = word_budget(len(full[0].split()))
+    assert verbaliser.verbalise(_deep_graph(), _HEART, "instance") == full[0]
 
 
 # ---------------------------------------------------------------------------

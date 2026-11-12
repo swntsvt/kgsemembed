@@ -1,0 +1,28 @@
+\begin{table*}[t]
+\footnotesize
+\setlength{\tabcolsep}{4pt}
+\caption{Registered ablation comparisons, re-ranking MRR difference B~$-$~A per dataset column (positive when B is better), from the per-dataset paired tests (Section~\ref{sec:statistics}). $^{*}$: significant after Holm adjustment within the ablation group and column ($\alpha = 0.05$). ---: comparison not covered by that column. Intervals, $p$-values, Hits@1 and F1 are in the released results report.}
+\label{tab:stats}
+\begin{tabular}{lllrrrrrr}
+\hline
+\textbf{Grp} & \textbf{A} & \textbf{B} & \textbf{D1} & \textbf{D2} & \textbf{D3} & \textbf{D4$_{\mathrm{sc}}$} & \textbf{D4$_{\mathrm{in}}$} & \textbf{D5} \\
+\hline
+A & C1 & C2 & $-0.035$$^{*}$ & $-0.033$$^{*}$ & $-0.021$ & $-0.006$ & $+0.002$ & $0.000$ \\
+A & C1 & C17 & $+0.039$$^{*}$ & $+0.010$ & --- & --- & --- & --- \\
+A & C2 & C17 & $+0.074$$^{*}$ & $+0.043$$^{*}$ & --- & --- & --- & --- \\
+\hline
+B & C3 & C10 & $-0.118$$^{*}$ & $-0.152$$^{*}$ & $-0.078$$^{*}$ & $0.000$ & $-0.021$$^{*}$ & $-0.119$$^{*}$ \\
+B & C9 & C10 & $+0.468$$^{*}$ & $+0.447$$^{*}$ & $+0.366$$^{*}$ & $+0.116$$^{*}$ & $+0.445$$^{*}$ & $-0.002$$^{*}$ \\
+B & C18 & C10 & $+0.002$ & $+0.010$ & $-0.022$ & $+0.011$ & $+0.021$$^{*}$ & $+0.009$$^{*}$ \\
+\hline
+C & C10 & C13 & $+0.064$$^{*}$ & $+0.074$$^{*}$ & $+0.073$$^{*}$ & $-0.011$ & $+0.002$ & $+0.005$$^{*}$ \\
+C & C11 & C13 & $+0.026$$^{*}$ & $-0.001$ & --- & --- & --- & --- \\
+C & C6 & C16 & $-0.041$$^{*}$ & $-0.020$$^{*}$ & --- & --- & --- & --- \\
+\hline
+D & C5 & C14 & --- & --- & --- & --- & --- & $-0.006$$^{*}$ \\
+D & C10 & C15 & $+0.046$$^{*}$ & $+0.027$$^{*}$ & --- & --- & --- & --- \\
+\hline
+E & C20 & C10 & $+0.028$$^{*}$ & $-0.074$$^{*}$ & $-0.100$$^{*}$ & $+0.027$ & $+0.006$$^{*}$ & $+0.001$ \\
+\hline
+\end{tabular}
+\end{table*}

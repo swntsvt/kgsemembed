@@ -178,6 +178,7 @@ def _patch_cpu_and_mock_transformer(
     monkeypatch.setattr(models.torch.backends.mps, "is_available", lambda: False)
     monkeypatch.setattr(models.torch.cuda, "is_available", lambda: False)
     fake = MagicMock(name="SentenceTransformer")
+    fake.return_value.__getitem__.return_value.auto_model.config = _position_config(8192)
     monkeypatch.setattr(models, "SentenceTransformer", fake)
     return fake
 
@@ -221,6 +222,7 @@ def test_factory_selects_mps_over_cuda(
     monkeypatch.setattr(models.torch.backends.mps, "is_available", lambda: True)
     monkeypatch.setattr(models.torch.cuda, "is_available", lambda: True)
     fake = MagicMock(name="SentenceTransformer")
+    fake.return_value.__getitem__.return_value.auto_model.config = _position_config(512)
     monkeypatch.setattr(models, "SentenceTransformer", fake)
     load_sentence_transformer("M2")
     fake.assert_called_once_with(
@@ -231,6 +233,10 @@ def test_factory_selects_mps_over_cuda(
 # ---------------------------------------------------------------------------
 # Model metadata
 # ---------------------------------------------------------------------------
+def _position_config(capacity: int) -> SimpleNamespace:
+    return SimpleNamespace(model_type="bert", max_position_embeddings=capacity, pad_token_id=0)
+
+
 class _FakeModel:
     """Stand-in exposing only the attributes the revision lookup inspects."""
 
@@ -246,7 +252,7 @@ class _FakeModel:
 
 
 def _model_with_commit_hash(commit_hash: str) -> _FakeModel:
-    config = SimpleNamespace(_commit_hash=commit_hash)
+    config = SimpleNamespace(_commit_hash=commit_hash, **vars(_position_config(512)))
     return _FakeModel(module=SimpleNamespace(auto_model=SimpleNamespace(config=config)))
 
 
@@ -269,6 +275,7 @@ def test_loader_returns_model_and_metadata_tuple(
         "device": "cpu",
         "hf_revision": "abc123",
         "hf_revision_pinned": MODEL_REGISTRY["M1"].revision,
+        "max_seq_length": 256,
     }
 
 
@@ -277,8 +284,28 @@ def test_metadata_holds_exactly_the_expected_keys(
 ) -> None:
     _, model_info = _load_with_model(monkeypatch, _model_with_commit_hash("abc123"))
     assert set(model_info) == {
-        "model_key", "model_id", "device", "hf_revision", "hf_revision_pinned"
+        "model_key", "model_id", "device", "hf_revision", "hf_revision_pinned", "max_seq_length"
     }
+
+
+def test_loader_sets_the_registered_input_limit(monkeypatch: pytest.MonkeyPatch) -> None:
+    model, model_info = _load_with_model(monkeypatch, _model_with_commit_hash("abc123"))
+    assert model.max_seq_length == MODEL_REGISTRY["M1"].max_tokens == model_info["max_seq_length"]
+
+
+def test_input_limit_beyond_the_position_capacity_is_refused() -> None:
+    model = _FakeModel(module=SimpleNamespace(auto_model=SimpleNamespace(config=_position_config(256))))
+    with pytest.raises(ConfigurationError, match="exceeds the model's position capacity 256"):
+        models.set_input_limit(model, MODEL_REGISTRY["M2"])
+
+
+@pytest.mark.parametrize("model_type, positions, pad, capacity", [
+    ("bert", 512, 0, 512), ("mpnet", 514, 1, 512), ("xlm-roberta", 8194, 1, 8192), ("qwen2", 131072, None, 131072),
+])
+def test_position_capacity_accounts_for_offset_positions(model_type, positions, pad, capacity) -> None:
+    config = SimpleNamespace(model_type=model_type, max_position_embeddings=positions, pad_token_id=pad)
+    model = _FakeModel(module=SimpleNamespace(auto_model=SimpleNamespace(config=config)))
+    assert models.position_capacity(model) == capacity
 
 
 def test_metadata_records_selected_device(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -391,7 +418,7 @@ def test_load_sentence_transformer_returns_instance() -> None:
     model, model_info = load_sentence_transformer("M1")
     assert isinstance(model, SentenceTransformer)
     assert set(model_info) == {
-        "model_key", "model_id", "device", "hf_revision", "hf_revision_pinned"
+        "model_key", "model_id", "device", "hf_revision", "hf_revision_pinned", "max_seq_length"
     }
     assert model_info["hf_revision"] == MODEL_REGISTRY["M1"].revision
 
